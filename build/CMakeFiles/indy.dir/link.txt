@@ -1,0 +1,1 @@
+/usr/bin/c++ -O2 -g -DNDEBUG -flto=thin -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/indy.dir/src/frontend/main.cpp.o CMakeFiles/indy.dir/src/frontend/SdlFrontend.cpp.o CMakeFiles/indy.dir/src/frontend/HostTerminal.cpp.o -o bin/indy  -Wl,-rpath,/opt/homebrew/lib lib/libindy_core.a /opt/homebrew/lib/libSDL3.0.dylib

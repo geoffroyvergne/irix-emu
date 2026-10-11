@@ -1,0 +1,6 @@
+/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles/indy_core.dir
+/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles/indy.dir
+/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles/indy_tests.dir
+/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles/test.dir
+/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles/edit_cache.dir
+/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles/rebuild_cache.dir

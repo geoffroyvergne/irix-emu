@@ -1,0 +1,232 @@
+#pragma once
+
+#include "indy/core/WarnOnce.hpp"
+#include "indy/cpu/Cpu.hpp"
+#include "indy/cpu/Instruction.hpp"
+#include "indy/cpu/Tlb.hpp"
+#include "indy/memory/MemoryBus.hpp"
+
+#include <array>
+#include <functional>
+#include <optional>
+#include <string_view>
+#include <vector>
+
+namespace indy {
+
+// MIPS R4600 "Orion" (MIPS III, 64-bit, big-endian on the Indy).
+//
+// Implemented: MIPS III integer ISA, exact branch delay slots, COP0 (TLB,
+// exceptions, interrupts, Count/Compare timer), 32-bit compatibility address
+// space with full segment/mode checks, COP1 register file / moves / branches.
+// Not yet: FPU arithmetic, caches, 64-bit address segments (KX/SX/UX).
+//
+// Fault policy:
+//   * architectural faults raise real MIPS exceptions (vectored via COP0)
+//   * unimplemented instruction  -> warn once per PC, skip it, keep running
+//   * access to an undecoded physical address -> bus error: reads take a Data
+//     Bus Error exception, posted writes complete; both are reported to the
+//     board (the MC latches them and interrupts on IP6 for writes)
+//   * unrecoverable states (handler itself unfetchable) -> halt
+class R4600 final : public Cpu {
+public:
+    // `traceInstructions`: log this many executed instructions after each reset.
+    explicit R4600(MemoryBus& bus, uint64_t traceInstructions = 0)
+        : bus_(bus), traceLimit_(traceInstructions) {}
+
+    void reset() override;
+    [[nodiscard]] Cycles run(Cycles budget) override;
+    [[nodiscard]] Cycles elapsedInRun() const noexcept override { return runElapsed_; }
+    void setInterruptLine(unsigned line, bool asserted) override;
+
+    // Board hook for bus errors on data accesses (physical address, write?).
+    using BusErrorHook = std::function<void(PhysAddr, bool isWrite)>;
+    void setBusErrorHook(BusErrorHook hook) { busErrorHook_ = std::move(hook); }
+
+    // Address of the next instruction to execute.
+    [[nodiscard]] uint64_t pc() const noexcept override { return pc_; }
+
+    // Service a pending interrupt or fetch/decode/execute one instruction.
+    // Returns false if the CPU is (or just became) halted.
+    bool tick();
+
+    // ---- State inspection (debugger, tests) ------------------------------
+    [[nodiscard]] uint64_t gpr(unsigned index) const noexcept { return gpr_[index & 31]; }
+    [[nodiscard]] uint64_t hi() const noexcept { return hi_; }
+    [[nodiscard]] uint64_t lo() const noexcept { return lo_; }
+    [[nodiscard]] uint64_t cop0(unsigned reg) const noexcept { return cop0_[reg & 31]; }
+    [[nodiscard]] const Tlb& tlb() const noexcept { return tlb_; }
+    [[nodiscard]] uint64_t fpr(unsigned index) const noexcept { return fpr_[index & 31]; }
+    [[nodiscard]] uint32_t fcr31() const noexcept { return fcr31_; }
+    [[nodiscard]] bool halted() const noexcept { return halted_; }
+
+    // Recently executed instructions, oldest first (for post-mortems).
+    struct HistoryEntry {
+        VirtAddr pc;
+        uint32_t insn;
+    };
+    static constexpr size_t kHistorySize = 32;
+    [[nodiscard]] std::vector<HistoryEntry> history() const;
+    void logHistory() const;
+    [[nodiscard]] uint64_t instructionsExecuted() const noexcept { return executed_; }
+
+    static constexpr unsigned kHardwareInterruptLines = 6;
+
+    // FCR0: FPU implementation 0x20 (R4600 on-chip FPU), revision 2.0.
+    static constexpr uint32_t kFcr0 = 0x2020;
+
+    // Architectural COP0 register numbers (MIPS III / R4000 family).
+    enum Cop0Reg : unsigned {
+        kIndex    = 0,  // TLB index for TLBR/TLBWI; P bit set by a failed TLBP
+        kRandom   = 1,  // TLB index for TLBWR; cycles Wired..47
+        kEntryLo0 = 2,  // even-page PFN and flags
+        kEntryLo1 = 3,  // odd-page PFN and flags
+        kContext  = 4,  // PTEBase | BadVPN2: page-table pointer for refill handlers
+        kPageMask = 5,  // TLB page size
+        kWired    = 6,  // entries below this are never chosen by TLBWR
+        kBadVAddr = 8,  // faulting virtual address
+        kCount    = 9,  // free-running timer, half the pipeline clock
+        kEntryHi  = 10, // VPN2 and current ASID
+        kCompare  = 11, // timer interrupt (IP7) when Count == Compare
+        kStatus   = 12, // CU, BEV, IM, KSU, ERL, EXL, IE
+        kCause    = 13, // BD, CE, IP, ExcCode
+        kEPC      = 14, // restart address after an exception
+        kPRId     = 15, // processor implementation/revision
+        kConfig   = 16, // cache and endianness configuration
+        kLLAddr   = 17,
+        kWatchLo  = 18,
+        kWatchHi  = 19,
+        kXContext = 20,
+        kECC      = 26,
+        kCacheErr = 27,
+        kTagLo    = 28,
+        kTagHi    = 29,
+        kErrorEPC = 30, // restart address after reset/NMI/cache error (ERL)
+    };
+
+    // Cause.ExcCode values.
+    enum class ExcCode : uint8_t {
+        Int  = 0,  // interrupt
+        Mod  = 1,  // TLB modified
+        TLBL = 2,  // TLB miss/invalid on load or fetch
+        TLBS = 3,  // TLB miss/invalid on store
+        AdEL = 4,  // address error on load or fetch
+        AdES = 5,  // address error on store
+        IBE  = 6,  // bus error on fetch
+        DBE  = 7,  // bus error on data access
+        Sys  = 8,  // SYSCALL
+        Bp   = 9,  // BREAK
+        RI   = 10, // reserved instruction
+        CpU  = 11, // coprocessor unusable
+        Ov   = 12, // integer overflow
+        Tr   = 13, // trap
+        FPE  = 15, // floating point
+    };
+
+private:
+    enum class Access { Fetch, Load, Store };
+
+    // ---- Register file -----------------------------------------------------
+    // $zero is hard-wired: every write path goes through here and re-zeroes it,
+    // which is cheaper than branching on the register index.
+    void setGpr(unsigned index, uint64_t value) noexcept {
+        gpr_[index] = value;
+        gpr_[0] = 0;
+    }
+
+    // ---- Execution (R4600Execute.cpp) ---------------------------------------
+    void execute(mips::Instruction insn);
+    void executeSpecial(mips::Instruction insn);
+    void executeRegImm(mips::Instruction insn);
+    void executeCop0(mips::Instruction insn);
+    void executeCop1(mips::Instruction insn);
+
+    // ---- COP1 register file ----------------------------------------------------
+    // Status.FR = 1: 32 independent 64-bit registers. FR = 0 (MIPS II
+    // compatible): 32-bit accesses to an odd register reach the upper half of
+    // the even register, and 64-bit values live in even/odd pairs.
+    [[nodiscard]] bool fpr64Mode() const noexcept;
+    [[nodiscard]] uint32_t readFpr32(unsigned reg) const noexcept;
+    void writeFpr32(unsigned reg, uint32_t value) noexcept;
+    [[nodiscard]] uint64_t readFpr64(unsigned reg) const noexcept;
+    void writeFpr64(unsigned reg, uint64_t value) noexcept;
+    void writeFcr31(uint32_t value);
+
+    // Control flow. pc_ already points at the delay slot when a branch executes.
+    void branch(bool taken, int64_t offset) noexcept;
+    void branchLikely(bool taken, int64_t offset) noexcept; // nullifies slot if not taken
+    void jump(VirtAddr target) noexcept {
+        nextPc_ = target;
+        branchPending_ = true;
+    }
+    void link(unsigned reg) noexcept { setGpr(reg, currentPc_ + 8); }
+    void trap(bool condition);
+
+    [[nodiscard]] VirtAddr effectiveAddress(mips::Instruction insn) const noexcept {
+        return gpr_[insn.rs()] + static_cast<uint64_t>(insn.simm());
+    }
+    template <BusWord T, bool SignExtend> void loadOp(mips::Instruction insn);
+    // Unaligned access pairs (LWL/LWR, LDL/LDR, SWL/SWR, SDL/SDR), big-endian.
+    template <BusWord T> void loadUnaligned(mips::Instruction insn, bool left);
+    template <BusWord T> void storeUnaligned(mips::Instruction insn, bool left);
+    template <BusWord T> void storeOp(mips::Instruction insn);
+    template <BusWord T> [[nodiscard]] bool load(VirtAddr vaddr, T& out);
+    template <BusWord T> [[nodiscard]] bool store(VirtAddr vaddr, T value);
+
+    // ---- MMU (R4600.cpp) -----------------------------------------------------
+    // Virtual -> physical for the current mode. On failure the appropriate
+    // exception has already been raised and nullopt is returned.
+    [[nodiscard]] std::optional<PhysAddr> translate(VirtAddr vaddr, Access access);
+    [[nodiscard]] bool kernelMode() const noexcept;
+
+    // ---- Exceptions & COP0 (R4600.cpp) ---------------------------------------
+    void raiseException(ExcCode code, unsigned coprocessor = 0, bool tlbRefill = false);
+    void raiseAddressError(VirtAddr vaddr, Access access);
+    void raiseTlbException(VirtAddr vaddr, Access access, Tlb::Outcome outcome);
+    [[nodiscard]] bool interruptPending() const noexcept;
+    [[nodiscard]] bool coprocessorUsable(unsigned cop) const noexcept;
+
+    void writeCop0(unsigned reg, uint64_t value);
+    void tlbRead();
+    void tlbWrite(unsigned index);
+    void tlbProbe();
+    void eret();
+    void advanceTimers() noexcept;
+
+    // ---- Diagnostics -------------------------------------------------------
+    void unimplemented(mips::Instruction insn);
+    void unmappedAccess(PhysAddr addr, unsigned bytes, bool isWrite);
+    void halt(std::string_view reason);
+
+    MemoryBus& bus_;
+    Tlb tlb_;
+    BusErrorHook busErrorHook_;
+
+    std::array<uint64_t, 32> gpr_{};
+    uint64_t hi_ = 0;
+    uint64_t lo_ = 0;
+    VirtAddr pc_ = 0;           // next instruction to execute
+    VirtAddr nextPc_ = 0;       // the one after it (a branch rewrites this)
+    VirtAddr currentPc_ = 0;    // instruction currently executing
+    bool branchPending_ = false; // the next instruction is a delay slot
+    bool inDelaySlot_ = false;   // the current instruction is a delay slot
+    bool llBit_ = false;         // LL/SC reservation
+    std::array<uint64_t, 32> cop0_{};
+    bool countPhase_ = false;    // Count increments every other cycle
+    std::array<uint64_t, 32> fpr_{}; // COP1 floating-point registers
+    uint32_t fcr31_ = 0;             // COP1 control/status
+
+    bool halted_ = false;
+    uint64_t executed_ = 0;
+    std::array<HistoryEntry, kHistorySize> history_{};
+    size_t historyNext_ = 0; // ring write position; executed_ tells how many are valid
+    Cycles runElapsed_ = 0;
+    uint64_t traceLimit_;
+    uint64_t traceRemaining_ = 0;
+
+    WarnOnce unimplementedWarnings_;
+    WarnOnce unmappedWarnings_;
+    WarnOnce exceptionLog_{64};
+};
+
+} // namespace indy
