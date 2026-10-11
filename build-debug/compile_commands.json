@@ -31,6 +31,12 @@
 },
 {
   "directory": "/Users/gv/dev/projects/irix-emu/build-debug",
+  "command": "/usr/bin/c++  -I/Users/gv/dev/projects/irix-emu/include -g -std=c++23 -arch arm64 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wnon-virtual-dtor -Woverloaded-virtual -Wnull-dereference -Wimplicit-fallthrough -Werror -O0 -g3 -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=undefined -ffp-model=strict -o CMakeFiles/indy_core.dir/src/cpu/Fpu.cpp.o -c /Users/gv/dev/projects/irix-emu/src/cpu/Fpu.cpp",
+  "file": "/Users/gv/dev/projects/irix-emu/src/cpu/Fpu.cpp",
+  "output": "CMakeFiles/indy_core.dir/src/cpu/Fpu.cpp.o"
+},
+{
+  "directory": "/Users/gv/dev/projects/irix-emu/build-debug",
   "command": "/usr/bin/c++  -I/Users/gv/dev/projects/irix-emu/include -g -std=c++23 -arch arm64 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wnon-virtual-dtor -Woverloaded-virtual -Wnull-dereference -Wimplicit-fallthrough -Werror -O0 -g3 -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=undefined -o CMakeFiles/indy_core.dir/src/cpu/Tlb.cpp.o -c /Users/gv/dev/projects/irix-emu/src/cpu/Tlb.cpp",
   "file": "/Users/gv/dev/projects/irix-emu/src/cpu/Tlb.cpp",
   "output": "CMakeFiles/indy_core.dir/src/cpu/Tlb.cpp.o"
@@ -64,6 +70,12 @@
   "command": "/usr/bin/c++  -I/Users/gv/dev/projects/irix-emu/include -g -std=c++23 -arch arm64 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wnon-virtual-dtor -Woverloaded-virtual -Wnull-dereference -Wimplicit-fallthrough -Werror -O0 -g3 -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=undefined -o CMakeFiles/indy_core.dir/src/scsi/CdRomDrive.cpp.o -c /Users/gv/dev/projects/irix-emu/src/scsi/CdRomDrive.cpp",
   "file": "/Users/gv/dev/projects/irix-emu/src/scsi/CdRomDrive.cpp",
   "output": "CMakeFiles/indy_core.dir/src/scsi/CdRomDrive.cpp.o"
+},
+{
+  "directory": "/Users/gv/dev/projects/irix-emu/build-debug",
+  "command": "/usr/bin/c++  -I/Users/gv/dev/projects/irix-emu/include -g -std=c++23 -arch arm64 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wnon-virtual-dtor -Woverloaded-virtual -Wnull-dereference -Wimplicit-fallthrough -Werror -O0 -g3 -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=undefined -o CMakeFiles/indy_core.dir/src/scsi/ScsiDisk.cpp.o -c /Users/gv/dev/projects/irix-emu/src/scsi/ScsiDisk.cpp",
+  "file": "/Users/gv/dev/projects/irix-emu/src/scsi/ScsiDisk.cpp",
+  "output": "CMakeFiles/indy_core.dir/src/scsi/ScsiDisk.cpp.o"
 },
 {
   "directory": "/Users/gv/dev/projects/irix-emu/build-debug",
@@ -109,6 +121,12 @@
 },
 {
   "directory": "/Users/gv/dev/projects/irix-emu/build-debug",
+  "command": "/usr/bin/c++  -I/Users/gv/dev/projects/irix-emu/include -g -std=c++23 -arch arm64 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wnon-virtual-dtor -Woverloaded-virtual -Wnull-dereference -Wimplicit-fallthrough -Werror -O0 -g3 -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=undefined -o CMakeFiles/indy_core.dir/src/hpc/SgiNvram.cpp.o -c /Users/gv/dev/projects/irix-emu/src/hpc/SgiNvram.cpp",
+  "file": "/Users/gv/dev/projects/irix-emu/src/hpc/SgiNvram.cpp",
+  "output": "CMakeFiles/indy_core.dir/src/hpc/SgiNvram.cpp.o"
+},
+{
+  "directory": "/Users/gv/dev/projects/irix-emu/build-debug",
   "command": "/usr/bin/c++  -I/Users/gv/dev/projects/irix-emu/include -g -std=c++23 -arch arm64 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wnon-virtual-dtor -Woverloaded-virtual -Wnull-dereference -Wimplicit-fallthrough -Werror -O0 -g3 -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=undefined -o CMakeFiles/indy_core.dir/src/hpc/Ioc2.cpp.o -c /Users/gv/dev/projects/irix-emu/src/hpc/Ioc2.cpp",
   "file": "/Users/gv/dev/projects/irix-emu/src/hpc/Ioc2.cpp",
   "output": "CMakeFiles/indy_core.dir/src/hpc/Ioc2.cpp.o"
@@ -118,6 +136,12 @@
   "command": "/usr/bin/c++  -I/Users/gv/dev/projects/irix-emu/include -g -std=c++23 -arch arm64 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wnon-virtual-dtor -Woverloaded-virtual -Wnull-dereference -Wimplicit-fallthrough -Werror -O0 -g3 -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=undefined -o CMakeFiles/indy_core.dir/src/input/Kbc8042.cpp.o -c /Users/gv/dev/projects/irix-emu/src/input/Kbc8042.cpp",
   "file": "/Users/gv/dev/projects/irix-emu/src/input/Kbc8042.cpp",
   "output": "CMakeFiles/indy_core.dir/src/input/Kbc8042.cpp.o"
+},
+{
+  "directory": "/Users/gv/dev/projects/irix-emu/build-debug",
+  "command": "/usr/bin/c++  -I/Users/gv/dev/projects/irix-emu/include -g -std=c++23 -arch arm64 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wnon-virtual-dtor -Woverloaded-virtual -Wnull-dereference -Wimplicit-fallthrough -Werror -O0 -g3 -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=undefined -o CMakeFiles/indy_core.dir/src/input/TextKeys.cpp.o -c /Users/gv/dev/projects/irix-emu/src/input/TextKeys.cpp",
+  "file": "/Users/gv/dev/projects/irix-emu/src/input/TextKeys.cpp",
+  "output": "CMakeFiles/indy_core.dir/src/input/TextKeys.cpp.o"
 },
 {
   "directory": "/Users/gv/dev/projects/irix-emu/build-debug",

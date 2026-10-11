@@ -779,6 +779,8 @@ CMakeFiles/indy.dir/src/frontend/main.cpp.o: \
   /opt/homebrew/include/SDL3/SDL_tray.h \
   /opt/homebrew/include/SDL3/SDL_version.h \
   /opt/homebrew/include/SDL3/SDL_oldnames.h \
+  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/deque \
+  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__fwd/deque.h \
   /Users/gv/dev/projects/irix-emu/include/indy/core/EmulationThread.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/core/System.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/core/Scheduler.hpp \
@@ -823,9 +825,7 @@ CMakeFiles/indy.dir/src/frontend/main.cpp.o: \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__algorithm/push_heap.h \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__algorithm/sift_down.h \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__algorithm/pop_heap.h \
-  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__fwd/deque.h \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__fwd/queue.h \
-  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/deque \
   /Users/gv/dev/projects/irix-emu/include/indy/cpu/Cpu.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/graphics/GraphicsSubsystem.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/core/MmioDevice.hpp \
@@ -976,6 +976,8 @@ CMakeFiles/indy.dir/src/frontend/main.cpp.o: \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__iterator/unreachable_sentinel.h \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__ranges/rbegin.h \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__ranges/rend.h \
+  /Users/gv/dev/projects/irix-emu/include/indy/hpc/SgiNvram.hpp \
+  /Users/gv/dev/projects/irix-emu/include/indy/input/TextKeys.hpp \
   /opt/homebrew/include/SDL3/SDL_main.h \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/charconv \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__charconv/from_chars_floating_point.h \

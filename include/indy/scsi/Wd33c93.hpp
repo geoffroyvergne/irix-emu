@@ -6,6 +6,7 @@
 #include "indy/scsi/ScsiDmaPort.hpp"
 
 #include <array>
+#include <cstdlib>
 #include <deque>
 #include <functional>
 #include <optional>
@@ -120,6 +121,22 @@ private:
     void execute(uint8_t command);
     void selectAndTransfer();
 
+    // A Select-and-Transfer whose data phase stopped because the transfer
+    // count (or the DMA chain) ran out. The driver reloads DMA and re-issues
+    // the command with a non-zero COMMAND PHASE to continue where it paused.
+    struct SatState {
+        uint8_t id = 0;
+        uint8_t lun = 0;
+        ScsiTarget* target = nullptr;
+        std::vector<uint8_t> cdb;
+        std::vector<uint8_t> dataOut;
+        size_t dataOutWanted = 0;
+        bool executed = false;
+        ScsiCommandResult result;
+        size_t dataInPos = 0;
+    };
+    std::optional<SatState> sat_;
+
     // ---- Phase-driven path (select + Transfer Info) -----------------------
     struct Connection {
         ScsiTarget* target = nullptr;
@@ -130,6 +147,7 @@ private:
         ScsiCommandResult result;
         size_t dataInPos = 0;
         bool ackHeld = false; // COMMAND COMPLETE received, waiting for Negate ACK
+        std::optional<uint8_t> lun; // from IDENTIFY; else CDB byte 1 bits 7:5
     };
     void select(bool withAtn);
     void transferInfo(bool singleByte);
@@ -138,6 +156,13 @@ private:
     void targetReceive(uint8_t byte);       // initiator -> target (output phases)
     [[nodiscard]] uint8_t targetSend();     // target -> initiator (input phases)
     void runCommand();
+    // Targets here have a single logical unit; other LUNs get the SCSI-2
+    // "not supported" answers.
+    static ScsiCommandResult executeOn(ScsiTarget& target, uint8_t lun, std::span<const uint8_t> cdb,
+                                       std::span<const uint8_t> dataOut);
+    static size_t dataOutLengthOn(const ScsiTarget& target, uint8_t lun, std::span<const uint8_t> cdb) {
+        return lun == 0 ? target.dataOutLength(cdb) : 0;
+    }
     void storeTransferCount(uint32_t count);
     [[nodiscard]] static bool isInputPhase(BusPhase p) {
         return p == BusPhase::DataIn || p == BusPhase::Status || p == BusPhase::MsgIn;
@@ -162,6 +187,7 @@ private:
     ScsiDmaPort* dma_ = nullptr;
     std::function<void(bool)> irq_;
     WarnOnce warnings_;
+    bool traceScsi_ = std::getenv("INDY_TRACE_SCSI") != nullptr; // log every command
 };
 
 } // namespace indy

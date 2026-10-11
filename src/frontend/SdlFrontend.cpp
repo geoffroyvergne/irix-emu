@@ -1,6 +1,7 @@
 #include "SdlFrontend.hpp"
 
 #include "indy/core/Log.hpp"
+#include "indy/input/TextKeys.hpp"
 
 #include <algorithm>
 #include <array>
@@ -81,7 +82,42 @@ bool SdlFrontend::pumpEvents(CommandQueue& commands) {
         handleEvent(event, commands);
     }
     flushMouse(commands, /*force=*/false); // at most one motion packet per frame
+    feedPaste(commands);
     return !quitRequested_;
+}
+
+void SdlFrontend::startPaste() {
+    if (!pasteQueue_.empty()) {
+        pasteQueue_.clear(); // the hotkey again while pasting cancels
+        log::info("Paste cancelled");
+        return;
+    }
+    if (!SDL_HasClipboardText()) {
+        log::info("Paste: the clipboard holds no text");
+        return;
+    }
+    char* text = SDL_GetClipboardText();
+    const TypedText typed = keyEventsForText(text != nullptr ? text : "");
+    SDL_free(text);
+    pasteQueue_.assign(typed.events.begin(), typed.events.end());
+    log::info("Pasting {} key presses into the PS/2 keyboard{}", typed.events.size() / 2,
+              typed.skipped != 0 ? std::format(" ({} characters with no US-keyboard key skipped)", typed.skipped)
+                                 : std::string{});
+}
+
+void SdlFrontend::feedPaste(CommandQueue& commands) {
+    // Wait until the host modifiers of the hotkey are released, or the guest
+    // would see Ctrl/Alt/Cmd held during the paste. Then type at a steady pace
+    // (about 1,000 characters per second at 60 frames per second).
+    constexpr size_t kEventsPerFrame = 64;
+    if (pasteQueue_.empty() ||
+        (SDL_GetModState() & (SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI | SDL_KMOD_SHIFT)) != 0) {
+        return;
+    }
+    for (size_t i = 0; i < kEventsPerFrame && !pasteQueue_.empty(); ++i) {
+        commands.push(pasteQueue_.front());
+        pasteQueue_.pop_front();
+    }
 }
 
 void SdlFrontend::setMouseCapture(bool captured) {
@@ -155,6 +191,12 @@ void SdlFrontend::handleEvent(const SDL_Event& event, CommandQueue& commands) {
     case SDL_EVENT_KEY_DOWN:
     case SDL_EVENT_KEY_UP: {
         const bool down = event.type == SDL_EVENT_KEY_DOWN;
+        // Host hotkey: Ctrl+Alt+V (or Cmd+V on macOS) types the clipboard.
+        const bool ctrlAlt = (event.key.mod & SDL_KMOD_CTRL) != 0 && (event.key.mod & SDL_KMOD_ALT) != 0;
+        if (event.key.key == SDLK_V && (ctrlAlt || (event.key.mod & SDL_KMOD_GUI) != 0)) {
+            if (down && !event.key.repeat) startPaste();
+            break;
+        }
         // Host hotkey: Ctrl+Alt+G releases the captured mouse.
         if (event.key.key == SDLK_G && (event.key.mod & SDL_KMOD_CTRL) != 0 && (event.key.mod & SDL_KMOD_ALT) != 0) {
             if (down) setMouseCapture(false);

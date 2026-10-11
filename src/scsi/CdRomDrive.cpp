@@ -1,13 +1,15 @@
 #include "indy/scsi/CdRomDrive.hpp"
 
 #include "indy/core/Log.hpp"
+#include "indy/scsi/ScsiUtil.hpp"
 
 #include <algorithm>
-#include <cstring>
 #include <format>
 #include <system_error>
 
 namespace indy {
+
+using namespace scsi;
 
 namespace {
 
@@ -19,24 +21,7 @@ enum : uint8_t {
     kReadToc = 0x43,
 };
 
-// Sense keys / additional sense codes.
-constexpr uint8_t kSenseNotReady = 0x02, kSenseIllegalRequest = 0x05, kSenseUnitAttention = 0x06;
-constexpr uint8_t kAscInvalidOpcode = 0x20, kAscLbaOutOfRange = 0x21, kAscInvalidField = 0x24;
-constexpr uint8_t kAscMediumChanged = 0x28, kAscNoMedium = 0x3A;
 
-void putBe16(std::vector<uint8_t>& v, size_t at, uint32_t x) {
-    v[at] = static_cast<uint8_t>(x >> 8); v[at + 1] = static_cast<uint8_t>(x);
-}
-void putBe32(std::vector<uint8_t>& v, size_t at, uint32_t x) {
-    v[at] = static_cast<uint8_t>(x >> 24); v[at + 1] = static_cast<uint8_t>(x >> 16);
-    v[at + 2] = static_cast<uint8_t>(x >> 8); v[at + 3] = static_cast<uint8_t>(x);
-}
-uint32_t be16(std::span<const uint8_t> b, size_t at) { return uint32_t{b[at]} << 8 | b[at + 1]; }
-uint32_t be32(std::span<const uint8_t> b, size_t at) {
-    return uint32_t{b[at]} << 24 | uint32_t{b[at + 1]} << 16 | uint32_t{b[at + 2]} << 8 | b[at + 3];
-}
-
-ScsiCommandResult good(std::vector<uint8_t> data = {}) { return {kScsiGood, std::move(data)}; }
 
 } // namespace
 
@@ -136,15 +121,9 @@ ScsiCommandResult CdRomDrive::execute(std::span<const uint8_t> cdb, std::span<co
         return good();
 
     case kRequestSense: {
-        std::vector<uint8_t> s(18, 0);
-        s[0] = 0x70;          // current error, fixed format
-        s[2] = sense_.key;
-        s[7] = 10;            // additional sense length
-        s[12] = sense_.asc;
-        s[13] = sense_.ascq;
+        auto data = senseData({sense_.key, sense_.asc, sense_.ascq});
         sense_ = {};
-        s.resize(std::min<size_t>(s.size(), cdb.size() > 4 ? cdb[4] : 18));
-        return good(std::move(s));
+        return good(truncated(std::move(data), cdb.size() > 4 ? cdb[4] : 18));
     }
 
     case kInquiry:
@@ -193,18 +172,8 @@ ScsiCommandResult CdRomDrive::read(uint64_t lba, uint32_t blocks) {
 }
 
 ScsiCommandResult CdRomDrive::inquiry(std::span<const uint8_t> cdb) const {
-    std::vector<uint8_t> d(36, 0);
-    d[0] = static_cast<uint8_t>(ScsiDeviceType::CdRom);
-    d[1] = 0x80;   // removable medium
-    d[2] = 0x02;   // SCSI-2
-    d[3] = 0x02;   // response data format
-    d[4] = 31;     // additional length
-    std::memcpy(&d[8], "TOSHIBA ", 8);
-    std::memcpy(&d[16], "CD-ROM XM-3401TA", 16);
-    std::memcpy(&d[32], "0283", 4);
-    const size_t allocation = cdb.size() > 4 ? cdb[4] : 36;
-    d.resize(std::min(d.size(), allocation));
-    return good(std::move(d));
+    return good(truncated(inquiryData(ScsiDeviceType::CdRom, true, "TOSHIBA", "CD-ROM XM-3401TA", "0283"),
+                          cdb.size() > 4 ? cdb[4] : 36));
 }
 
 ScsiCommandResult CdRomDrive::modeSense(std::span<const uint8_t> cdb) const {

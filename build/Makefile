@@ -237,6 +237,30 @@ src/core/System.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/core/System.cpp.s
 .PHONY : src/core/System.cpp.s
 
+src/cpu/Fpu.o: src/cpu/Fpu.cpp.o
+.PHONY : src/cpu/Fpu.o
+
+# target to build an object file
+src/cpu/Fpu.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/cpu/Fpu.cpp.o
+.PHONY : src/cpu/Fpu.cpp.o
+
+src/cpu/Fpu.i: src/cpu/Fpu.cpp.i
+.PHONY : src/cpu/Fpu.i
+
+# target to preprocess a source file
+src/cpu/Fpu.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/cpu/Fpu.cpp.i
+.PHONY : src/cpu/Fpu.cpp.i
+
+src/cpu/Fpu.s: src/cpu/Fpu.cpp.s
+.PHONY : src/cpu/Fpu.s
+
+# target to generate assembly for a file
+src/cpu/Fpu.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/cpu/Fpu.cpp.s
+.PHONY : src/cpu/Fpu.cpp.s
+
 src/cpu/R4600.o: src/cpu/R4600.cpp.o
 .PHONY : src/cpu/R4600.o
 
@@ -549,6 +573,30 @@ src/hpc/Pit8254.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/hpc/Pit8254.cpp.s
 .PHONY : src/hpc/Pit8254.cpp.s
 
+src/hpc/SgiNvram.o: src/hpc/SgiNvram.cpp.o
+.PHONY : src/hpc/SgiNvram.o
+
+# target to build an object file
+src/hpc/SgiNvram.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/hpc/SgiNvram.cpp.o
+.PHONY : src/hpc/SgiNvram.cpp.o
+
+src/hpc/SgiNvram.i: src/hpc/SgiNvram.cpp.i
+.PHONY : src/hpc/SgiNvram.i
+
+# target to preprocess a source file
+src/hpc/SgiNvram.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/hpc/SgiNvram.cpp.i
+.PHONY : src/hpc/SgiNvram.cpp.i
+
+src/hpc/SgiNvram.s: src/hpc/SgiNvram.cpp.s
+.PHONY : src/hpc/SgiNvram.s
+
+# target to generate assembly for a file
+src/hpc/SgiNvram.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/hpc/SgiNvram.cpp.s
+.PHONY : src/hpc/SgiNvram.cpp.s
+
 src/input/Kbc8042.o: src/input/Kbc8042.cpp.o
 .PHONY : src/input/Kbc8042.o
 
@@ -572,6 +620,30 @@ src/input/Kbc8042.s: src/input/Kbc8042.cpp.s
 src/input/Kbc8042.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/input/Kbc8042.cpp.s
 .PHONY : src/input/Kbc8042.cpp.s
+
+src/input/TextKeys.o: src/input/TextKeys.cpp.o
+.PHONY : src/input/TextKeys.o
+
+# target to build an object file
+src/input/TextKeys.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/input/TextKeys.cpp.o
+.PHONY : src/input/TextKeys.cpp.o
+
+src/input/TextKeys.i: src/input/TextKeys.cpp.i
+.PHONY : src/input/TextKeys.i
+
+# target to preprocess a source file
+src/input/TextKeys.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/input/TextKeys.cpp.i
+.PHONY : src/input/TextKeys.cpp.i
+
+src/input/TextKeys.s: src/input/TextKeys.cpp.s
+.PHONY : src/input/TextKeys.s
+
+# target to generate assembly for a file
+src/input/TextKeys.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/input/TextKeys.cpp.s
+.PHONY : src/input/TextKeys.cpp.s
 
 src/memory/MemoryBus.o: src/memory/MemoryBus.cpp.o
 .PHONY : src/memory/MemoryBus.o
@@ -693,6 +765,30 @@ src/scsi/ScsiController.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/scsi/ScsiController.cpp.s
 .PHONY : src/scsi/ScsiController.cpp.s
 
+src/scsi/ScsiDisk.o: src/scsi/ScsiDisk.cpp.o
+.PHONY : src/scsi/ScsiDisk.o
+
+# target to build an object file
+src/scsi/ScsiDisk.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/scsi/ScsiDisk.cpp.o
+.PHONY : src/scsi/ScsiDisk.cpp.o
+
+src/scsi/ScsiDisk.i: src/scsi/ScsiDisk.cpp.i
+.PHONY : src/scsi/ScsiDisk.i
+
+# target to preprocess a source file
+src/scsi/ScsiDisk.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/scsi/ScsiDisk.cpp.i
+.PHONY : src/scsi/ScsiDisk.cpp.i
+
+src/scsi/ScsiDisk.s: src/scsi/ScsiDisk.cpp.s
+.PHONY : src/scsi/ScsiDisk.s
+
+# target to generate assembly for a file
+src/scsi/ScsiDisk.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/scsi/ScsiDisk.cpp.s
+.PHONY : src/scsi/ScsiDisk.cpp.s
+
 src/scsi/Wd33c93.o: src/scsi/Wd33c93.cpp.o
 .PHONY : src/scsi/Wd33c93.o
 
@@ -786,6 +882,9 @@ help:
 	@echo "... src/core/System.o"
 	@echo "... src/core/System.i"
 	@echo "... src/core/System.s"
+	@echo "... src/cpu/Fpu.o"
+	@echo "... src/cpu/Fpu.i"
+	@echo "... src/cpu/Fpu.s"
 	@echo "... src/cpu/R4600.o"
 	@echo "... src/cpu/R4600.i"
 	@echo "... src/cpu/R4600.s"
@@ -825,9 +924,15 @@ help:
 	@echo "... src/hpc/Pit8254.o"
 	@echo "... src/hpc/Pit8254.i"
 	@echo "... src/hpc/Pit8254.s"
+	@echo "... src/hpc/SgiNvram.o"
+	@echo "... src/hpc/SgiNvram.i"
+	@echo "... src/hpc/SgiNvram.s"
 	@echo "... src/input/Kbc8042.o"
 	@echo "... src/input/Kbc8042.i"
 	@echo "... src/input/Kbc8042.s"
+	@echo "... src/input/TextKeys.o"
+	@echo "... src/input/TextKeys.i"
+	@echo "... src/input/TextKeys.s"
 	@echo "... src/memory/MemoryBus.o"
 	@echo "... src/memory/MemoryBus.i"
 	@echo "... src/memory/MemoryBus.s"
@@ -843,6 +948,9 @@ help:
 	@echo "... src/scsi/ScsiController.o"
 	@echo "... src/scsi/ScsiController.i"
 	@echo "... src/scsi/ScsiController.s"
+	@echo "... src/scsi/ScsiDisk.o"
+	@echo "... src/scsi/ScsiDisk.i"
+	@echo "... src/scsi/ScsiDisk.s"
 	@echo "... src/scsi/Wd33c93.o"
 	@echo "... src/scsi/Wd33c93.i"
 	@echo "... src/scsi/Wd33c93.s"

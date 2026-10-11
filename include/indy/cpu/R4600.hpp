@@ -19,7 +19,7 @@ namespace indy {
 // Implemented: MIPS III integer ISA, exact branch delay slots, COP0 (TLB,
 // exceptions, interrupts, Count/Compare timer), 32-bit compatibility address
 // space with full segment/mode checks, COP1 register file / moves / branches.
-// Not yet: FPU arithmetic, caches, 64-bit address segments (KX/SX/UX).
+// Not yet: caches, 64-bit address segments (KX/SX/UX).
 //
 // Fault policy:
 //   * architectural faults raise real MIPS exceptions (vectored via COP0)
@@ -65,9 +65,10 @@ public:
         VirtAddr pc;
         uint32_t insn;
     };
-    static constexpr size_t kHistorySize = 32;
+    static constexpr size_t kHistorySize = 64;
     [[nodiscard]] std::vector<HistoryEntry> history() const;
     void logHistory() const;
+    void logRegisters() const;
     [[nodiscard]] uint64_t instructionsExecuted() const noexcept { return executed_; }
 
     static constexpr unsigned kHardwareInterruptLines = 6;
@@ -140,6 +141,8 @@ private:
     void executeRegImm(mips::Instruction insn);
     void executeCop0(mips::Instruction insn);
     void executeCop1(mips::Instruction insn);
+    void executeFpuOperation(mips::Instruction insn);  // .S/.D/.W/.L arithmetic, conversions, compares
+    bool completeFpuOperation(uint32_t cause);         // FCR31 cause/flags; false = trapped
 
     // ---- COP1 register file ----------------------------------------------------
     // Status.FR = 1: 32 independent 64-bit registers. FR = 0 (MIPS II
@@ -227,6 +230,10 @@ private:
     WarnOnce unimplementedWarnings_;
     WarnOnce unmappedWarnings_;
     WarnOnce exceptionLog_{64};
+    bool traceNull_ = false; // INDY_TRACE_NULL: dump state on the first NULL-page access
+    bool traceExceptions_ = false; // INDY_TRACE_EXCEPTIONS: also log routine exceptions (TLB refills, ...)
+    std::optional<VirtAddr> tracePc_; // INDY_TRACE_PC=<hex>: log arguments each time this PC executes
+    void logTracePc();
 };
 
 } // namespace indy

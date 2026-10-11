@@ -4,8 +4,10 @@
 #include "indy/cpu/R4600.hpp"
 #include "indy/graphics/Newport.hpp"
 #include "indy/graphics/TestPatternDisplay.hpp"
+#include "indy/hpc/SgiNvram.hpp"
 #include "indy/memory/PhysicalMap.hpp"
 #include "indy/scsi/CdRomDrive.hpp"
+#include "indy/scsi/ScsiDisk.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -105,6 +107,11 @@ System::System(SystemConfig config, FrameBuffer& display)
         Ds1386::Config{.cpuClockHz = config_.cpuClockHz, .backingFile = config_.nvramFile},
         [this] { return currentCycle(); });
     hpc3_.attachBbram(*rtc_);
+    {
+        const auto mac = sgi_nvram::provideEthernetAddress(*rtc_, config_.macAddress);
+        log::info("NVRAM: Ethernet address {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}", mac[0], mac[1], mac[2],
+                  mac[3], mac[4], mac[5]);
+    }
     bus_.mapDevice(physmap::kHpc3Base, physmap::kHpc3Size, hpc3_);
 
     // Graphics: the Newport answers in the GIO graphics slot; without it the
@@ -119,6 +126,15 @@ System::System(SystemConfig config, FrameBuffer& display)
     scsi_.attach(config_.cdromScsiId, std::move(cdrom));
     if (!config_.cdromImage.empty()) {
         insertMedia(config_.cdromImage);
+    }
+    if (!config_.diskImage.empty()) {
+        auto disk = ScsiDisk::open(config_.diskImage, config_.diskCreateBytes);
+        if (!disk) {
+            throw std::runtime_error(disk.error());
+        }
+        log::info("Disk: '{}' ({} MiB) at SCSI ID {}", config_.diskImage.string(),
+                  (*disk)->blockCount() * ScsiDisk::kBlockSize / MiB, config_.diskScsiId);
+        scsi_.attach(config_.diskScsiId, std::move(*disk));
     }
 
     log::info("System: R4600 @ {} MHz, {} MiB RAM (bank A {} MiB, bank B {} MiB), CD-ROM at SCSI ID {}",

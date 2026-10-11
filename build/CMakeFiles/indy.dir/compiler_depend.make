@@ -1596,6 +1596,7 @@ CMakeFiles/indy.dir/src/frontend/SdlFrontend.cpp.o: /Users/gv/dev/projects/irix-
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/ctype.h \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/cwchar \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/cwctype \
+  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/deque \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/errno.h \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/filesystem \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/format \
@@ -1782,6 +1783,7 @@ CMakeFiles/indy.dir/src/frontend/SdlFrontend.cpp.o: /Users/gv/dev/projects/irix-
   /Users/gv/dev/projects/irix-emu/include/indy/core/Commands.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/core/FrameBuffer.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/core/Log.hpp \
+  /Users/gv/dev/projects/irix-emu/include/indy/input/TextKeys.hpp \
   /Users/gv/dev/projects/irix-emu/src/frontend/SdlFrontend.hpp \
   /opt/homebrew/include/SDL3/SDL.h \
   /opt/homebrew/include/SDL3/SDL_assert.h \
@@ -2758,7 +2760,9 @@ CMakeFiles/indy.dir/src/frontend/main.cpp.o: /Users/gv/dev/projects/irix-emu/src
   /Users/gv/dev/projects/irix-emu/include/indy/hpc/Int3.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/hpc/Ioc2.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/hpc/Pit8254.hpp \
+  /Users/gv/dev/projects/irix-emu/include/indy/hpc/SgiNvram.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/input/Kbc8042.hpp \
+  /Users/gv/dev/projects/irix-emu/include/indy/input/TextKeys.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/memory/MemoryBus.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/memory/MemoryController.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/memory/PromImage.hpp \
@@ -2851,6 +2855,8 @@ CMakeFiles/indy.dir/src/frontend/main.cpp.o: /Users/gv/dev/projects/irix-emu/src
 
 /Users/gv/dev/projects/irix-emu/include/indy/input/Kbc8042.hpp:
 
+/Users/gv/dev/projects/irix-emu/include/indy/hpc/SgiNvram.hpp:
+
 /Users/gv/dev/projects/irix-emu/include/indy/hpc/Int3.hpp:
 
 /Users/gv/dev/projects/irix-emu/include/indy/hpc/Hpc3.hpp:
@@ -2868,8 +2874,6 @@ CMakeFiles/indy.dir/src/frontend/main.cpp.o: /Users/gv/dev/projects/irix-emu/src
 /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/queue:
 
 /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/expected:
-
-/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/deque:
 
 /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/chrono:
 
@@ -3001,9 +3005,13 @@ CMakeFiles/indy.dir/src/frontend/main.cpp.o: /Users/gv/dev/projects/irix-emu/src
 
 /opt/homebrew/include/SDL3/SDL.h:
 
+/Users/gv/dev/projects/irix-emu/include/indy/input/TextKeys.hpp:
+
 /Users/gv/dev/projects/irix-emu/include/indy/core/FrameBuffer.hpp:
 
 /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/span:
+
+/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/deque:
 
 /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/algorithm:
 

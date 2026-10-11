@@ -12,6 +12,8 @@
 #include "indy/core/EmulationThread.hpp"
 #include "indy/core/Log.hpp"
 #include "indy/core/System.hpp"
+#include "indy/hpc/SgiNvram.hpp"
+#include "indy/input/TextKeys.hpp"
 
 #include <SDL3/SDL_main.h>
 
@@ -41,22 +43,6 @@ struct Options {
     std::vector<std::pair<double, cmd::MouseEvent>> mouseEvents;
 };
 
-// ASCII -> USB HID usage for scripted typing (lower case, digits, a few keys).
-uint16_t hidUsageFor(char c) {
-    if (c >= 'a' && c <= 'z') return static_cast<uint16_t>(0x04 + (c - 'a'));
-    if (c >= '1' && c <= '9') return static_cast<uint16_t>(0x1E + (c - '1'));
-    switch (c) {
-    case '0':  return 0x27;
-    case '\r':
-    case '\n': return 0x28; // Enter
-    case ' ':  return 0x2C;
-    case '.':  return 0x37;
-    case '-':  return 0x2D;
-    case '/':  return 0x38;
-    default:   return 0;
-    }
-}
-
 // Save the newest frame as a binary PPM (handy for headless checks).
 void writeScreenshot(FrameBuffer& frame, const std::string& path) {
     (void)frame.acquire();
@@ -76,7 +62,8 @@ void writeScreenshot(FrameBuffer& frame, const std::string& path) {
 }
 
 constexpr std::string_view kUsage =
-    "usage: indy <prom.bin> [--cdrom <file.iso>] [--nvram <file>] [--ram <MiB>] [--trace <N>]\n"
+    "usage: indy <prom.bin> [--cdrom <file.iso>] [--disk <file.img> [--disk-size <MiB>]] [--nvram <file>]\n"
+    "            [--mac <xx:xx:xx:xx:xx:xx>] [--ram <MiB>] [--trace <N>]\n"
     "            [--no-gfx] [--screenshot <file.ppm>] [--type <sec>:<text>] [--mouse <sec>:<dx>,<dy>[,<btn>]]\n"
     "            [--unthrottled] [--no-vsync]\n"
     "       Type into this terminal to reach the serial console; the window feeds the PS/2 keyboard.\n"
@@ -102,12 +89,25 @@ std::expected<Options, std::string> parseArgs(int argc, char* argv[]) {
             return std::string_view(argv[++i]);
         };
 
-        if (arg == "--prom" || arg == "--cdrom" || arg == "--nvram") {
+        if (arg == "--prom" || arg == "--cdrom" || arg == "--nvram" || arg == "--disk") {
             auto v = value();
             if (!v) return std::unexpected(v.error());
-            (arg == "--prom" ? options.system.promImage
+            (arg == "--prom"    ? options.system.promImage
              : arg == "--cdrom" ? options.system.cdromImage
+             : arg == "--disk"  ? options.system.diskImage
                                 : options.system.nvramFile) = *v;
+        } else if (arg == "--disk-size") {
+            auto v = value();
+            if (!v) return std::unexpected(v.error());
+            auto mib = parseUnsigned(arg, *v);
+            if (!mib || *mib == 0) return std::unexpected(std::format("invalid --disk-size value '{}'", *v));
+            options.system.diskCreateBytes = *mib * MiB;
+        } else if (arg == "--mac") {
+            auto v = value();
+            if (!v) return std::unexpected(v.error());
+            auto mac = sgi_nvram::parseMac(*v);
+            if (!mac) return std::unexpected(std::format("invalid --mac value '{}' (expected xx:xx:xx:xx:xx:xx)", *v));
+            options.system.macAddress = *mac;
         } else if (arg == "--ram") {
             auto v = value();
             if (!v) return std::unexpected(v.error());
@@ -219,11 +219,8 @@ int run(const Options& options) {
         }
         if (!typed && std::chrono::duration<double>(Clock::now() - start).count() >= options.typeDelay) {
             typed = true;
-            for (char c : options.typeText) {
-                if (const uint16_t usage = hidUsageFor(c); usage != 0) {
-                    commands.push(cmd::KeyEvent{usage, true});
-                    commands.push(cmd::KeyEvent{usage, false});
-                }
+            for (const cmd::KeyEvent& key : keyEventsForText(options.typeText).events) {
+                commands.push(key);
             }
         }
 

@@ -72,12 +72,14 @@ add_library(indy_core STATIC
     src/core/EmulationThread.cpp
     src/cpu/R4600.cpp
     src/cpu/R4600Execute.cpp
+    src/cpu/Fpu.cpp
     src/cpu/Tlb.cpp
     src/memory/MemoryBus.cpp
     src/memory/MemoryController.cpp
     src/memory/PromImage.cpp
     src/scsi/ScsiController.cpp
     src/scsi/CdRomDrive.cpp
+    src/scsi/ScsiDisk.cpp
     src/scsi/Wd33c93.cpp
     src/graphics/Newport.cpp
     src/graphics/TestPatternDisplay.cpp
@@ -85,11 +87,22 @@ add_library(indy_core STATIC
     src/hpc/Hpc3.cpp
     src/hpc/Int3.cpp
     src/hpc/Pit8254.cpp
+    src/hpc/SgiNvram.cpp
     src/hpc/Ioc2.cpp
     src/input/Kbc8042.cpp
+    src/input/TextKeys.cpp
     src/serial/Z8530.cpp
 )
 add_library(indy::core ALIAS indy_core)
+# The guest FPU runs on host IEEE arithmetic under the guest's rounding mode:
+# keep the compiler from folding or reordering it across fenv calls.
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    set_source_files_properties(src/cpu/Fpu.cpp PROPERTIES COMPILE_OPTIONS "-ffp-model=strict")
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set_source_files_properties(src/cpu/Fpu.cpp PROPERTIES COMPILE_OPTIONS "-frounding-math;-fsignaling-nans")
+elseif(MSVC)
+    set_source_files_properties(src/cpu/Fpu.cpp PROPERTIES COMPILE_OPTIONS "/fp:strict")
+endif()
 target_include_directories(indy_core PUBLIC ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(indy_core
     PUBLIC  Threads::Threads

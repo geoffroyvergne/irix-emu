@@ -5,6 +5,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <deque>
 #include <memory>
 #include <string>
 
@@ -55,6 +56,8 @@ private:
     void handleDropFile(const SDL_DropEvent& drop, CommandQueue& commands);
     void toggleFullscreen();
     void setMouseCapture(bool captured);
+    void startPaste();
+    void feedPaste(CommandQueue& commands);
     void flushMouse(CommandQueue& commands, bool force);
 
     SdlContext context_;
@@ -66,6 +69,7 @@ private:
     bool mouseCaptured_ = false;
     float mouseDx_ = 0, mouseDy_ = 0; // accumulated motion in guest pixels (PS/2: +y = up)
     uint8_t mouseButtons_ = 0;
+    std::deque<cmd::KeyEvent> pasteQueue_; // clipboard text being typed into the PS/2 keyboard
 };
 
 } // namespace indy::frontend

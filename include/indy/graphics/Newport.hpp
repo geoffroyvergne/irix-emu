@@ -125,6 +125,8 @@ private:
 
     void compose();
     [[nodiscard]] uint8_t cursorPixel(int32_t x, int32_t y, bool large) const;
+    // Colour of framebuffer value `v` under XMAP9 mode-table entry `mode`.
+    [[nodiscard]] uint32_t displayColor(uint32_t mode, uint32_t v) const;
 
     std::vector<uint32_t> vram_;    // RGB/CI planes, one word per pixel
     std::vector<uint8_t> auxPlanes_; // overlay/popup/CID planes (stored, not displayed yet)

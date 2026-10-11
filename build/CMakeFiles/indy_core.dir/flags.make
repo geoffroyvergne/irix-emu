@@ -10,3 +10,5 @@ CXX_FLAGSarm64 = -O2 -g -DNDEBUG -std=c++23 -flto=thin -arch arm64 -Wall -Wextra
 
 CXX_FLAGS = -O2 -g -DNDEBUG -std=c++23 -flto=thin -arch arm64 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wnon-virtual-dtor -Woverloaded-virtual -Wnull-dereference -Wimplicit-fallthrough -O3
 
+# Custom options: CMakeFiles/indy_core.dir/src/cpu/Fpu.cpp.o_OPTIONS = -ffp-model=strict
+

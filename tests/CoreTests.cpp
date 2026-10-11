@@ -1,6 +1,7 @@
 // Core unit tests. Dependency-free on purpose: run with `ctest --test-dir build`.
 
 #include "indy/cpu/AddressSpace.hpp"
+#include "indy/cpu/Fpu.hpp"
 #include "indy/cpu/R4600.hpp"
 #include "indy/cpu/Tlb.hpp"
 #include "indy/graphics/Newport.hpp"
@@ -9,18 +10,25 @@
 #include "indy/hpc/Int3.hpp"
 #include "indy/hpc/Ioc2.hpp"
 #include "indy/hpc/Pit8254.hpp"
+#include "indy/hpc/SgiNvram.hpp"
 #include "indy/input/Kbc8042.hpp"
+#include "indy/input/TextKeys.hpp"
 #include "indy/scsi/CdRomDrive.hpp"
+#include "indy/scsi/ScsiDisk.hpp"
 #include "indy/scsi/Wd33c93.hpp"
 #include "indy/serial/Z8530.hpp"
 #include "indy/memory/MemoryBus.hpp"
 #include "indy/memory/MemoryController.hpp"
 #include "indy/memory/PhysicalMap.hpp"
 
+#include <array>
+#include <bit>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <algorithm>
 #include <chrono>
 #include <memory>
 #include <string>
@@ -756,6 +764,98 @@ void fpuBranchAndFpe() {
     CHECK(excCode(fpe.cpu) == 15);
 }
 
+void fpuArithmeticAndCompare() {
+    Harness h({
+        0x3C01'2040, // lui    $1, 0x2040     CU1 | BEV, FR = 0
+        0x4081'6000, // mtc0   $1, $12
+        0x2402'FFFD, // addiu  $2, $zero, -3
+        0x4482'1000, // mtc1   $2, $f2
+        0x4680'1121, // cvt.d.w $f4, $f2      -3.0
+        0x4624'2180, // add.d  $f6, $f4, $f4  -6.0
+        0x4624'303C, // c.lt.d $f6, $f4       -6 < -3
+        0x4425'3000, // dmfc1  $5, $f6
+        0x2403'0400, // addiu  $3, $zero, 0x400  enable Z
+        0x44C3'F800, // ctc1   $3, $31
+        0x4620'3203, // div.d  $f8, $f6, $f0  -6 / 0 -> trap
+    });
+    h.step(8);
+    CHECK(h.cpu.gpr(5) == 0xC018'0000'0000'0000u);
+    CHECK((h.cpu.fcr31() & 0x0080'0000) != 0); // C set
+    CHECK(excCode(h.cpu) == 0);
+    h.step(3);
+    CHECK(excCode(h.cpu) == 15);               // FPE
+    CHECK((h.cpu.fcr31() & 0x0000'8000) != 0); // cause Z
+    CHECK((h.cpu.fcr31() & 0x0000'0020) == 0); // flag Z not set when trapping
+    CHECK(h.cpu.fpr(8) == 0u);                 // destination untouched
+}
+
+void fpuOperationsIeee() {
+    using namespace fpu;
+    auto d = [](double v) { return std::bit_cast<uint64_t>(v); };
+    auto f = [](float v) { return uint64_t{std::bit_cast<uint32_t>(v)}; };
+    auto asD = [](uint64_t v) { return std::bit_cast<double>(v); };
+
+    Result r = operate(0x00, kDouble, d(1.5), d(2.25), 0);                // add.d
+    CHECK(asD(r.value) == 3.75 && r.cause == 0 && r.wide);
+    r = operate(0x03, kDouble, d(1.0), d(0.0), 0);                        // div.d by zero
+    CHECK(std::isinf(asD(r.value)) && r.cause == kDivideByZero);
+    r = operate(0x04, kDouble, d(-1.0), 0, 0);                            // sqrt(-1)
+    CHECK(r.value == kDefaultNanD && r.cause == kInvalid);
+    r = operate(0x02, kSingle, f(1e38f), f(10.0f), 0);                    // mul.s overflow
+    CHECK(r.value == 0x7F80'0000u && r.cause == (kOverflow | kInexact) && !r.wide);
+    r = operate(0x00, kSingle, 0x7FC0'0000, f(1.0f), 0);                  // MIPS sNaN operand
+    CHECK(r.value == kDefaultNanS && r.cause == kInvalid);
+    r = operate(0x00, kSingle, 0x7F80'0001, f(1.0f), 0);                  // MIPS qNaN propagates
+    CHECK(r.value == 0x7F80'0001u && r.cause == 0);
+    r = operate(0x05, kDouble, d(-2.0), 0, 0);                            // abs.d
+    CHECK(asD(r.value) == 2.0);
+    r = operate(0x07, kSingle, f(2.0f), 0, 0);                            // neg.s
+    CHECK(r.value == f(-2.0f));
+
+    // Rounding modes: 1/3 rounded towards zero vs upward differ by one ulp.
+    const uint64_t rz = operate(0x03, kDouble, d(1.0), d(3.0), 1).value;
+    const uint64_t rp = operate(0x03, kDouble, d(1.0), d(3.0), 2).value;
+    CHECK(rp == rz + 1);
+
+    // Conversions.
+    r = operate(0x21, kWord, 0xFFFF'FFFB, 0, 0);                          // cvt.d.w -5
+    CHECK(asD(r.value) == -5.0 && r.wide);
+    r = operate(0x20, kDouble, d(0.1), 0, 0);                             // cvt.s.d inexact
+    CHECK(r.value == f(0.1f) && r.cause == kInexact);
+    r = operate(0x24, kDouble, d(2.5), 0, 0);                             // cvt.w.d, RN: ties to even
+    CHECK(r.value == 2u && r.cause == kInexact && !r.wide);
+    r = operate(0x24, kDouble, d(2.5), 0, 3);                             // cvt.w.d, RM
+    CHECK(r.value == 2u);
+    r = operate(0x0D, kDouble, d(-2.7), 0, 0);                            // trunc.w.d
+    CHECK(r.value == 0xFFFF'FFFEu);
+    r = operate(0x0E, kSingle, f(1.2f), 0, 0);                            // ceil.w.s
+    CHECK(r.value == 2u);
+    r = operate(0x0B, kDouble, d(-1.5), 0, 0);                            // floor.l.d
+    CHECK(r.value == 0xFFFF'FFFF'FFFF'FFFEu && r.wide);
+    r = operate(0x24, kDouble, d(3e9), 0, 0);                             // out of range
+    CHECK(r.value == 0x7FFF'FFFFu && r.cause == kInvalid);
+    r = operate(0x25, kDouble, d(-3e9), 0, 0);                            // cvt.l.d
+    CHECK(r.value == static_cast<uint64_t>(int64_t{-3'000'000'000}));
+    r = operate(0x20, kSingle, f(1.0f), 0, 0);                            // cvt.s.s reserved
+    CHECK(r.cause == kUnimplemented);
+    r = operate(0x00, kWord, 1, 2, 0);                                    // add.w reserved
+    CHECK(r.cause == kUnimplemented);
+
+    // FS: a denormal result flushes to zero.
+    r = operate(0x02, kSingle, f(1e-30f), f(1e-10f), kFcr31FlushToZero);
+    CHECK(r.value == 0u && (r.cause & kUnderflow) != 0);
+
+    // Compares: lt, ueq with a NaN, signalling compare.
+    CHECK(compare(0xC, kDouble, d(1.0), d(2.0)).condition);              // c.lt
+    CHECK(!compare(0xC, kDouble, d(2.0), d(2.0)).condition);
+    CHECK(compare(0xE, kDouble, d(2.0), d(2.0)).condition);              // c.le
+    Comparison c = compare(0x3, kDouble, kDefaultNanD, d(1.0));           // c.ueq: unordered
+    CHECK(c.condition && c.cause == 0);
+    c = compare(0xA, kDouble, kDefaultNanD, d(1.0));                      // c.seq: signals
+    CHECK(!c.condition && c.cause == kInvalid);
+    CHECK(compare(0x2, kSingle, f(-0.0f), f(0.0f)).condition);            // -0 == +0
+}
+
 // The PROM's own sequence (bfc01b50 / bfc01a0c): park a value in $f2 with no
 // RAM available, read it back as the TLB-init loop bound.
 void fpuPromScratchRegisterPattern() {
@@ -968,6 +1068,36 @@ void rtcThroughHpc3AtPhysicalAddress() {
     CHECK(h.readByte(0x1FBE'00F8) == 0);                         // other lanes float
 }
 
+void sgiNvramEthernetAddress() {
+    namespace nv = sgi_nvram;
+    Ds1386 rtc(Ds1386::Config{.cpuClockHz = 100'000'000, .powerOnTime = kRtcEpoch}, [] { return Cycles{0}; });
+    // Blank chip: invalid checksum; the default address is stored and the
+    // checksum left for the PROM to initialise.
+    CHECK(!nv::valid(rtc));
+    CHECK(nv::provideEthernetAddress(rtc, std::nullopt) == nv::kDefaultMac);
+    CHECK(rtc.peek(0x13A) == 0x08 && rtc.peek(0x13B) == 0x00 && rtc.peek(0x13C) == 0x69);
+    CHECK(!nv::valid(rtc));
+
+    // A PROM-initialised area (revision 8, valid checksum) stays valid.
+    rtc.poke(nv::kBase + nv::kRevision, nv::kRevisionValue);
+    rtc.poke(nv::kBase + 0x74, '9');
+    CHECK(nv::checksum(rtc) == 0x06); // reference: the PROM's algorithm in Python
+    rtc.poke(nv::kBase + nv::kChecksum, nv::checksum(rtc));
+    CHECK(nv::valid(rtc));
+    const nv::MacAddress mine = {0x08, 0x00, 0x69, 0x12, 0x34, 0x56};
+    CHECK(nv::provideEthernetAddress(rtc, mine) == mine);
+    CHECK(nv::ethernetAddress(rtc) == mine);
+    CHECK(nv::valid(rtc));
+    CHECK(rtc.peek(nv::kBase + nv::kChecksum) == 0x8A);
+    CHECK(nv::provideEthernetAddress(rtc, std::nullopt) == mine); // an existing address is kept
+
+    CHECK(nv::parseMac("08:00:69:0e:1D:01") == nv::kDefaultMac);
+    CHECK(nv::parseMac("08-00-69-0e-1d-01") == nv::kDefaultMac);
+    CHECK(!nv::parseMac("08:00:69:0e:1d"));
+    CHECK(!nv::parseMac("08:00:69:0e:1d:01:02"));
+    CHECK(!nv::parseMac("0g:00:69:0e:1d:01"));
+}
+
 // ---- 8042 keyboard controller --------------------------------------------------------------
 
 std::vector<uint8_t> drain(Kbc8042& kbc) {
@@ -1167,6 +1297,7 @@ void wd33c93SelectAndTransferWithDma() {
         setReg(Wd33c93::kCountMsb, static_cast<uint8_t>(count >> 16));
         setReg(Wd33c93::kCount, static_cast<uint8_t>(count >> 8));
         setReg(Wd33c93::kCountLsb, static_cast<uint8_t>(count));
+        setReg(Wd33c93::kTargetLun, 0);                           // drivers set the LUN every time
         setReg(Wd33c93::kCommand, Wd33c93::kCmdSelectAtnXfer);
         return getReg(Wd33c93::kScsiStatus);
     };
@@ -1191,7 +1322,28 @@ void wd33c93SelectAndTransferWithDma() {
     CHECK(bus.read<uint8_t>(physmap::kRamBase + 0x4000, first) && first == 3);
     CHECK(bus.read<uint8_t>(physmap::kRamBase + 0x4200, second) && second == 4);
 
+    // Another logical unit: the CD-ROM has only LUN 0.
+    auto reloadDma = [&] {
+        CHECK(bus.write32(0x1FB9'0004, physmap::kRamBase + 0x100));
+        CHECK(bus.write32(0x1FB9'1004, Hpc3::kSctrlActive));
+    };
+    reloadDma();
+    setReg(Wd33c93::kTargetLun, 1);
+    constexpr std::array<uint8_t, 6> kInquiry = {0x12, 0, 0, 0, 36, 0};
+    for (uint8_t i = 0; i < kInquiry.size(); ++i) setReg(static_cast<uint8_t>(Wd33c93::kCdb1 + i), kInquiry[i]);
+    setReg(Wd33c93::kCountMsb, 0); setReg(Wd33c93::kCount, 0); setReg(Wd33c93::kCountLsb, 36);
+    setReg(Wd33c93::kCommand, Wd33c93::kCmdSelectAtnXfer);
+    CHECK(getReg(Wd33c93::kScsiStatus) == Wd33c93::kStatusSatComplete);
+    CHECK(getReg(Wd33c93::kTargetLun) == kScsiGood);
+    uint8_t qualifier = 0;
+    CHECK(bus.read<uint8_t>(physmap::kRamBase + 0x4000, qualifier) && qualifier == 0x7F); // LUN not supported
+    reloadDma();
+    setReg(Wd33c93::kTargetLun, 1);
+    CHECK(run({0x28, 0, 0, 0, 0, 3, 0, 0, 1, 0}, 512) == Wd33c93::kStatusSatComplete); // run() resets the LUN
+    CHECK(getReg(Wd33c93::kTargetLun) == kScsiGood);
+
     // Polled mode: INQUIRY bytes come through the DATA register, completion after the last.
+    setReg(Wd33c93::kTargetLun, 0);
     setReg(Wd33c93::kControl, 0x00);
     setReg(Wd33c93::kCdb1, 0x12); setReg(Wd33c93::kCdb1 + 1, 0); setReg(Wd33c93::kCdb1 + 2, 0);
     setReg(Wd33c93::kCdb1 + 3, 0); setReg(Wd33c93::kCdb1 + 4, 36); setReg(Wd33c93::kCdb1 + 5, 0);
@@ -1517,6 +1669,59 @@ void newportBlockFillPatternAndScanout() {
     CHECK(h.fb.frontBuffer()[20 * Newport::kVisibleWidth + 10] == 0xFF8000u); // VRAM 7 -> CMAP -> RGB
 }
 
+// X streams images and tiled backgrounds as packed host data: each GO
+// (without STOPONX) draws all 8 pixels of a RWDOUBLE host word.
+void newportPackedHostDataPerGo() {
+    NewportHarness h;
+    h.w(Newport::kDrawMode1, 0x3000'0589);                        // CI, 8-bit, RWPACKED | RWDOUBLE
+    h.w(Newport::kWrMask, 0xFF);
+    h.w(Newport::kDrawMode0, 0x0046);                             // draw, block, CHOST (no STOPONX)
+    h.w(Newport::kXYStartI, (0u << 16) | 0u);
+    h.w(Newport::kXYEndI, (15u << 16) | 1u);
+    for (uint32_t go = 0; go < 3; ++go) {
+        const uint32_t base = go * 8;
+        h.w(Newport::kHostRw0, (base + 1) << 24 | (base + 2) << 16 | (base + 3) << 8 | (base + 4));
+        h.w(Newport::kHostRw1 | Newport::kGo, (base + 5) << 24 | (base + 6) << 16 | (base + 7) << 8 | (base + 8));
+    }
+    CHECK(h.np.vramAt(0, 0) == 1u && h.np.vramAt(7, 0) == 8u);     // first GO: 8 pixels
+    CHECK(h.np.vramAt(8, 0) == 9u && h.np.vramAt(15, 0) == 16u);   // second GO ends the row
+    CHECK(h.np.vramAt(0, 1) == 17u && h.np.vramAt(7, 1) == 24u);   // third GO: next row
+}
+
+// Scan-out follows the VC2 display-ID tables: each run of pixels uses the
+// XMAP9 mode entry of its DID (here, a different colour-map base).
+void newportDisplayIdRuns() {
+    NewportHarness h;
+    auto vc2Reg = [&](uint32_t index, uint32_t value) { h.dcb((0u << 7) | 3u, (index << 24) | (value << 8)); };
+    auto vc2Ram = [&](uint32_t address, std::initializer_list<uint32_t> words) {
+        vc2Reg(0x07, address);                                    // RAM address
+        for (uint32_t word : words) h.dcb((0u << 7) | (3u << 4) | 2u, word);
+    };
+    auto palette = [&](uint32_t index, uint32_t rgb) {
+        h.dcb((1u << 7) | 2u, index);
+        h.dcb((1u << 7) | (2u << 4) | 3u, rgb << 8);
+    };
+    vc2Reg(0x10, 0x0002);                                         // display enable
+    vc2Reg(0x05, 0x0100);                                         // DID frame table at 0x100
+    vc2Ram(0x0100, {0x0200});                                     // line 0 -> line table 0x200
+    vc2Ram(0x0200, {0x0000, (4u << 5) | 1u, 0xFFFF});             // DID 0 from x=0, DID 1 from x=4
+    h.dcb((4u << 7) | (5u << 4), (0u << 24) | 0x000400);          // mode 0: CI 8 bpp, map base 0
+    h.dcb((4u << 7) | (5u << 4), (1u << 24) | 0x000490);          // mode 1: CI 8 bpp, map base 0x1200
+    palette(0x0007, 0xFF8000);
+    palette(0x1207, 0x0000FF);
+
+    h.w(Newport::kDrawMode1, 0x3000'0001);
+    h.w(Newport::kWrMask, 0xFF);
+    h.w(Newport::kColorI, 7);
+    h.w(Newport::kDrawMode0, 0x0326);
+    h.w(Newport::kXYStartI, (0u << 16) | 0u);
+    h.w(Newport::kXYEndI | Newport::kGo, (7u << 16) | 0u);
+    h.np.onVBlank(0);
+    (void)h.fb.acquire();
+    CHECK(h.fb.frontBuffer()[3] == 0xFF8000u);                    // DID 0
+    CHECK(h.fb.frontBuffer()[4] == 0x0000FFu);                    // DID 1 from x = 4
+}
+
 // ---- Phase 17: PS/2 mouse streaming, VC2 hardware cursor -------------------------------------
 
 void kbcMouseStreamPackets() {
@@ -1588,6 +1793,174 @@ void unalignedLoadStorePairs() {
     CHECK((h.cpu.gpr(13) & 0x00FF'FFFF) == 0x0011'2233u);
 }
 
+// ---- SCSI hard disk -------------------------------------------------------------------------------
+
+// IRIX splits a transfer bigger than one DMA map: the transfer count covers
+// the first part, the chip pauses with "unexpected phase", and the driver
+// reloads DMA and re-issues SELECT-AND-TRANSFER to continue (mkfs's 256 KiB
+// log writes were cut short without this).
+void wd33c93SatPausesAndResumesDataPhase() {
+    const fs::path image = fs::temp_directory_path() / "indy_test_sat_disk.img";
+    std::error_code ec;
+    fs::remove(image, ec);
+    auto opened = ScsiDisk::open(image, 1 * MiB);
+    CHECK(opened.has_value());
+    if (!opened) return;
+
+    MemoryBus bus;
+    bus.installRam(physmap::kRamBase, 1 * MiB);
+    Hpc3 hpc3(bus);
+    bus.mapDevice(physmap::kHpc3Base, physmap::kHpc3Size, hpc3);
+    Wd33c93 wd;
+    wd.attach(1, std::move(*opened));
+    wd.attachDma(hpc3.scsiDma(0));
+
+    auto setReg = [&](uint8_t reg, uint8_t v) { wd.writeAddress(reg); wd.writeDataPort(v); };
+    auto getReg = [&](uint8_t reg) { wd.writeAddress(reg); return wd.readDataPort(); };
+    auto setCount = [&](uint32_t count) {
+        setReg(Wd33c93::kCountMsb, static_cast<uint8_t>(count >> 16));
+        setReg(Wd33c93::kCount, static_cast<uint8_t>(count >> 8));
+        setReg(Wd33c93::kCountLsb, static_cast<uint8_t>(count));
+    };
+    auto dmaFrom = [&](uint32_t buffer, uint32_t bytes) { // one-descriptor chain
+        CHECK(bus.write32(physmap::kRamBase + 0x100, physmap::kRamBase + buffer));
+        CHECK(bus.write32(physmap::kRamBase + 0x104, Hpc3::kDescEox | bytes));
+        CHECK(bus.write32(0x1FB9'0004, physmap::kRamBase + 0x100));
+        CHECK(bus.write32(0x1FB9'1004, Hpc3::kSctrlActive));
+    };
+    auto sat = [&] {
+        setReg(Wd33c93::kCommand, Wd33c93::kCmdSelectAtnXfer);
+        return getReg(Wd33c93::kScsiStatus);
+    };
+    auto command = [&](std::initializer_list<uint8_t> cdb) {
+        uint8_t i = Wd33c93::kCdb1;
+        for (uint8_t b : cdb) setReg(i++, b);
+        setReg(Wd33c93::kCommandPhase, 0);
+        setReg(Wd33c93::kTargetLun, 0);
+    };
+    (void)getReg(Wd33c93::kScsiStatus);
+    setReg(Wd33c93::kControl, 0x80);
+    setReg(Wd33c93::kDestId, 1);
+    command({0x00, 0, 0, 0, 0, 0});                                // clear UNIT ATTENTION
+    setCount(0);
+    CHECK(sat() == Wd33c93::kStatusSatComplete);
+
+    for (uint32_t i = 0; i < 1024; ++i) CHECK(bus.write<uint8_t>(physmap::kRamBase + 0x1000 + i, uint8_t(i / 4)));
+    // WRITE(10) LBA 8, 2 blocks: the first DMA load covers one block.
+    command({0x2A, 0, 0, 0, 0, 8, 0, 0, 2, 0});
+    dmaFrom(0x1000, 512);
+    setCount(512);
+    CHECK(sat() == (Wd33c93::kStatusUnexpectedPhase | 0x00));     // paused in DATA OUT
+    CHECK(getReg(Wd33c93::kCommandPhase) == Wd33c93::kPhaseUnexpected);
+    dmaFrom(0x1200, 512);
+    setCount(512);
+    CHECK(sat() == Wd33c93::kStatusSatComplete);                  // resumed, written
+    CHECK(getReg(Wd33c93::kTargetLun) == kScsiGood);
+
+    // READ(10) the same 2 blocks back, again in two DMA loads.
+    command({0x28, 0, 0, 0, 0, 8, 0, 0, 2, 0});
+    dmaFrom(0x8000, 512);
+    setCount(512);
+    CHECK(sat() == (Wd33c93::kStatusUnexpectedPhase | 0x01));     // paused in DATA IN
+    dmaFrom(0x8200, 512);
+    setCount(512);
+    CHECK(sat() == Wd33c93::kStatusSatComplete);
+    CHECK(getReg(Wd33c93::kTargetLun) == kScsiGood);
+    for (uint32_t i = 0; i < 1024; i += 97) {
+        uint8_t b = 0;
+        CHECK(bus.read<uint8_t>(physmap::kRamBase + 0x8000 + i, b) && b == uint8_t(i / 4));
+    }
+    fs::remove(image, ec);
+}
+
+void scsiDiskCommandsAndPersistence() {
+    const fs::path image = fs::temp_directory_path() / "indy_test_disk.img";
+    std::error_code ec;
+    fs::remove(image, ec);
+    CHECK(!ScsiDisk::open(image).has_value());                   // missing, no size: refused
+    {
+        auto opened = ScsiDisk::open(image, 8 * MiB);            // created sparse
+        CHECK(opened.has_value());
+        if (!opened) return;
+        ScsiDisk& disk = **opened;
+        CHECK(disk.blockCount() == 8 * MiB / 512);
+
+        const uint8_t tur[6] = {0x00};
+        CHECK(disk.execute(tur, {}).status == kScsiCheckCondition); // power-on UNIT ATTENTION
+        const uint8_t sense[6] = {0x03, 0, 0, 0, 18, 0};
+        CHECK(disk.execute(sense, {}).dataIn[12] == 0x29);
+        CHECK(disk.execute(tur, {}).status == kScsiGood);
+
+        const uint8_t inquiry[6] = {0x12, 0, 0, 0, 36, 0};
+        const auto inq = disk.execute(inquiry, {}).dataIn;
+        CHECK(inq[0] == 0x00 && (inq[1] & 0x80) == 0);           // direct access, fixed
+        CHECK(std::string(inq.begin() + 8, inq.begin() + 16) == "SEAGATE ");
+
+        const uint8_t capacity[10] = {0x25};
+        CHECK(disk.execute(capacity, {}).dataIn ==
+              (std::vector<uint8_t>{0x00, 0x00, 0x3F, 0xFF, 0x00, 0x00, 0x02, 0x00}));
+
+        // WRITE(10) two blocks at LBA 5, read them back with READ(6).
+        const uint8_t write10[10] = {0x2A, 0, 0, 0, 0, 5, 0, 0, 2, 0};
+        CHECK(disk.dataOutLength(write10) == 1024);
+        std::vector<uint8_t> payload(1024);
+        for (size_t i = 0; i < payload.size(); ++i) payload[i] = static_cast<uint8_t>(i * 7);
+        CHECK(disk.execute(write10, payload).status == kScsiGood);
+        const uint8_t read6[6] = {0x08, 0, 0, 5, 2, 0};
+        CHECK(disk.execute(read6, {}).dataIn == payload);
+        const uint8_t pastEnd[10] = {0x28, 0, 0, 0, 0x40, 0x00, 0, 0, 1, 0};
+        CHECK(disk.execute(pastEnd, {}).status == kScsiCheckCondition);
+
+        // MODE SENSE(6), all pages: header + block descriptor + pages 1,2,3,4,8.
+        const uint8_t modeSense[6] = {0x1A, 0, 0x3F, 0, 255, 0};
+        const auto ms = disk.execute(modeSense, {}).dataIn;
+        CHECK(ms.size() == static_cast<size_t>(ms[0]) + 1 && ms[3] == 8);
+        CHECK(ms[4 + 8] == 0x01);                                // first page: error recovery
+        const uint8_t page4[6] = {0x1A, 0, 0x04, 0, 255, 0};
+        const auto geometry = disk.execute(page4, {}).dataIn;
+        CHECK(geometry[12] == 0x04 && geometry[12 + 5] == ScsiDisk::kHeads);
+        const uint8_t badPage[6] = {0x1A, 0, 0x2A, 0, 255, 0};
+        CHECK(disk.execute(badPage, {}).status == kScsiCheckCondition);
+    }
+    {
+        auto reopened = ScsiDisk::open(image);                    // data survived
+        CHECK(reopened.has_value());
+        if (reopened) {
+            const uint8_t tur[6] = {0x00};
+            (void)(*reopened)->execute(tur, {});                  // consume UNIT ATTENTION
+            const uint8_t read10[10] = {0x28, 0, 0, 0, 0, 5, 0, 0, 1, 0};
+            const auto block = (*reopened)->execute(read10, {}).dataIn;
+            CHECK(block.size() == 512 && block[1] == 7 && block[2] == 14);
+        }
+    }
+    fs::remove(image, ec);
+}
+
+// ---- Text -> key presses (clipboard paste / --type) ----------------------------------------
+
+void textToKeyPresses() {
+    using KE = cmd::KeyEvent;
+    auto same = [](const std::vector<KE>& a, const std::vector<KE>& b) {
+        return a.size() == b.size() &&
+               std::equal(a.begin(), a.end(), b.begin(), [](const KE& x, const KE& y) {
+                   return x.hidUsage == y.hidUsage && x.pressed == y.pressed;
+               });
+    };
+    CHECK(same(keyEventsForText("a").events, {{0x04, true}, {0x04, false}}));
+    CHECK(same(keyEventsForText("A").events, {{0xE1, true}, {0x04, true}, {0x04, false}, {0xE1, false}}));
+    CHECK(same(keyEventsForText("!").events, {{0xE1, true}, {0x1E, true}, {0x1E, false}, {0xE1, false}}));
+    CHECK(same(keyEventsForText("_").events, {{0xE1, true}, {0x2D, true}, {0x2D, false}, {0xE1, false}}));
+    CHECK(same(keyEventsForText("\r\n\t").events, {{0x28, true}, {0x28, false}, {0x2B, true}, {0x2B, false}}));
+
+    const TypedText mixed = keyEventsForText("x\xC3\xA9y"); // "x é y": é has no US key
+    CHECK(mixed.skipped == 1 && mixed.events.size() == 4);
+
+    // Every printable ASCII character is typeable.
+    std::string printable;
+    for (char c = 0x20; c < 0x7F; ++c) printable.push_back(c);
+    CHECK(keyEventsForText(printable).skipped == 0);
+}
+
 } // namespace
 
 int main() {
@@ -1627,6 +2000,8 @@ int main() {
         {"fpuMovesWithFr1", fpuMovesWithFr1},
         {"fpuLoadStore", fpuLoadStore},
         {"fpuBranchAndFpe", fpuBranchAndFpe},
+        {"fpuArithmeticAndCompare", fpuArithmeticAndCompare},
+        {"fpuOperationsIeee", fpuOperationsIeee},
         {"fpuPromScratchRegisterPattern", fpuPromScratchRegisterPattern},
         {"mcDmaFillLikePromAndStatusLatency", mcDmaFillLikePromAndStatusLatency},
         {"mcDmaTlbTranslationAndStride", mcDmaTlbTranslationAndStride},
@@ -1636,6 +2011,7 @@ int main() {
         {"rtcEncodesBcdAndTicks", rtcEncodesBcdAndTicks},
         {"rtcTransferEnableFreezesAndSetsTime", rtcTransferEnableFreezesAndSetsTime},
         {"rtcNvramPersistsAcrossPowerCycles", rtcNvramPersistsAcrossPowerCycles},
+        {"sgiNvramEthernetAddress", sgiNvramEthernetAddress},
         {"rtcThroughHpc3AtPhysicalAddress", rtcThroughHpc3AtPhysicalAddress},
         {"kbcControllerAndKeyboardProtocol", kbcControllerAndKeyboardProtocol},
         {"kbcHostKeysInSet2AndSet3", kbcHostKeysInSet2AndSet3},
@@ -1659,7 +2035,12 @@ int main() {
         {"newportBlockFillPatternAndScanout", newportBlockFillPatternAndScanout},
         {"kbcMouseStreamPackets", kbcMouseStreamPackets},
         {"newportHardwareCursor", newportHardwareCursor},
+        {"newportPackedHostDataPerGo", newportPackedHostDataPerGo},
+        {"newportDisplayIdRuns", newportDisplayIdRuns},
         {"unalignedLoadStorePairs", unalignedLoadStorePairs},
+        {"scsiDiskCommandsAndPersistence", scsiDiskCommandsAndPersistence},
+        {"wd33c93SatPausesAndResumesDataPhase", wd33c93SatPausesAndResumesDataPhase},
+        {"textToKeyPresses", textToKeyPresses},
     };
     for (const auto& [name, test] : tests) {
         const int before = g_failures;

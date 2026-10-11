@@ -42,6 +42,7 @@ constexpr uint16_t kVc2CtlCursorDisp = 0x0080; // ECDISP
 constexpr uint16_t kVc2CtlCrosshair  = 0x0100; // ECCURS
 constexpr uint16_t kVc2CtlCursor64   = 0x0200; // ECG64: 64x64 single-plane glyph
 constexpr int32_t kCursorHotspot     = 31;     // glyph drawn from (x - 31, y - 31)
+constexpr unsigned kVc2DidEntry   = 0x05; // DID frame table: one line-table address per scanline
 constexpr unsigned kVc2RamAddress = 0x07;
 constexpr unsigned kVc2Control    = 0x10;
 constexpr uint16_t kVc2CtlEvirq   = 0x0001; // vertical retrace interrupt enable
@@ -533,7 +534,10 @@ void Newport::drawBlock(bool screenToScreen) {
             ++n;
             --guard;
             rowDone = x == endX;
-        } while (!rowDone && stopX && guard != 0 && !(limit32 && n >= 32) && !(packed && n >= packedMax));
+            // Without STOPONX a GO draws one pixel, or every pixel one packed
+            // host word carries (how X streams images and tiled backgrounds).
+        } while (!rowDone && (stopX || packed) && guard != 0 && !(limit32 && n >= 32) &&
+                 !(packed && n >= packedMax));
 
         if (!rowDone) {
             break; // row continues on the next GO (no STOPONX, 32-pixel limit, packed host data)
@@ -817,16 +821,27 @@ void Newport::compose() {
     if ((vc2Regs_[kVc2Control] & kVc2CtlEdisp) == 0) {
         std::ranges::fill(out, 0u); // display disabled
     } else {
-        // Per-line display IDs are not modelled: mode entry 0 drives the screen.
-        const uint32_t mode = xmap_[0].modes[0];
-        const bool colorIndex = ((mode >> 8) & 3) == 0;
-        const uint32_t ciBase = (mode & 0xF8) << 5;
+        // Display IDs, as MAME's Newport models them: VC2 register 0x05 points
+        // at a frame table holding one line-table address per scanline. A
+        // line table is a list of (x << 5) | DID entries ending in 0xFFFF;
+        // each run of pixels is shown through the XMAP9 mode entry of its DID.
+        // X gives every window its own DID (colour map base, CI or RGB).
+        constexpr uint32_t kRamMask = kVc2RamWords - 1;
+        const auto& modes = xmap_[0].modes;
         for (uint32_t y = 0; y < height; ++y) {
+            uint32_t ptr = vc2Ram_[(vc2Regs_[kVc2DidEntry] + y) & kRamMask];
+            uint32_t mode = modes[vc2Ram_[ptr & kRamMask] & 0x1F];
+            uint16_t next = vc2Ram_[++ptr & kRamMask];
             const uint32_t* src = &vram_[size_t{y} * kVramWidth];
             uint32_t* dst = &out[size_t{y} * output_.width()];
             for (uint32_t x = 0; x < width; ++x) {
-                const uint32_t v = src[x] & kGlobalMask;
-                dst[x] = colorIndex ? cmap_[(ciBase | v) & (kCmapEntries - 1)] : (v << 16 | v << 8 | v);
+                // Several entries may share an x; a blank table (all zeros) must
+                // not spin, so take at most a handful per pixel.
+                for (int k = 0; k < 4 && x == static_cast<uint32_t>(next >> 5); ++k) {
+                    mode = modes[next & 0x1F];
+                    next = vc2Ram_[++ptr & kRamMask];
+                }
+                dst[x] = displayColor(mode, src[x] & kGlobalMask);
             }
         }
 
@@ -853,6 +868,21 @@ void Newport::compose() {
         }
     }
     output_.publish();
+}
+
+uint32_t Newport::displayColor(uint32_t mode, uint32_t v) const {
+    // Mode entry: [2] buffer select (4 bpp), [7:3] colour-map MSBs for CI,
+    // [9:8] pixel mode (0 CI, 1-3 RGB through the fixed maps at 0x1D00,
+    // 0x1E00, 0x1F00), [11:10] pixel size (0 = 4 bpp, 1 = 8 bpp; the XL8's
+    // 8 planes hold nothing deeper). Every pixel goes through the CMAP.
+    static constexpr uint32_t kRgbMapBase[4] = {0, 0x1D00, 0x1E00, 0x1F00};
+    const uint32_t pixelMode = (mode >> 8) & 3;
+    const uint32_t base = pixelMode == 0 ? (mode & 0xF8) << 5 : kRgbMapBase[pixelMode];
+    const bool fourBit = ((mode >> 10) & 3) == 0;
+    // ASSUMPTION: in 4 bpp (double-buffered) modes the buffer-select bit picks
+    // the high nibble.
+    const uint32_t index = fourBit ? ((mode & 0x4) != 0 ? v >> 4 : v & 0xF) : v;
+    return cmap_[(base | index) & (kCmapEntries - 1)];
 }
 
 uint8_t Newport::cursorPixel(int32_t x, int32_t y, bool large) const {

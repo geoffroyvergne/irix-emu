@@ -75,6 +75,8 @@ public:
 
     // Chip byte by address (inspection/tests; refreshes the clock first).
     [[nodiscard]] uint8_t peek(uint16_t address);
+    // Store a chip byte as software would (setup, e.g. factory NVRAM data).
+    void poke(uint16_t address, uint8_t value);
     // Current time-of-day as the chip counts it.
     [[nodiscard]] TimePoint now() const;
 

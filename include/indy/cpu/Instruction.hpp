@@ -90,7 +90,7 @@ enum : uint32_t {
     Co = 0x10, // rs bit 4: "coprocessor operation", function in funct
 };
 namespace co {
-enum : uint32_t { Tlbr = 0x01, Tlbwi = 0x02, Tlbwr = 0x06, Tlbp = 0x08, Eret = 0x18 };
+enum : uint32_t { Tlbr = 0x01, Tlbwi = 0x02, Tlbwr = 0x06, Tlbp = 0x08, Eret = 0x18, Wait = 0x20 };
 } // namespace co
 } // namespace cop0
 

@@ -9,6 +9,7 @@
 
 #include "indy/core/Log.hpp"
 #include "indy/cpu/AddressSpace.hpp"
+#include "indy/cpu/Fpu.hpp"
 
 #include <format>
 #include <limits>
@@ -576,6 +577,9 @@ void R4600::executeCop0(Instruction insn) {
         case mips::cop0::co::Tlbwr: tlbWrite(static_cast<unsigned>(cop0_[kRandom])); return;
         case mips::cop0::co::Tlbp:  tlbProbe(); return;
         case mips::cop0::co::Eret:  eret(); return;
+        // R4600 low-power standby until an interrupt. The kernel only issues it
+        // from its idle loop, which re-checks for work, so running on is safe.
+        case mips::cop0::co::Wait:  return;
         default: break;
         }
     }
@@ -583,8 +587,8 @@ void R4600::executeCop0(Instruction insn) {
 }
 
 // ---------------------------------------------------------------------------
-// COP1 (FPU): register file, moves, loads/stores, branches.
-// Arithmetic (.S/.D/.W/.L formats) arrives in a later phase.
+// COP1 (FPU): register file, moves, loads/stores, branches, and the
+// arithmetic/conversion/compare formats (computed by indy::fpu).
 // ---------------------------------------------------------------------------
 
 namespace {
@@ -592,6 +596,7 @@ constexpr uint64_t kStatusFR   = uint64_t{1} << 26;
 constexpr uint32_t kFcr31C     = 0x0080'0000; // condition bit (compares, BC1x)
 constexpr uint32_t kFcr31CE    = 0x0002'0000; // cause: unimplemented operation
 constexpr uint32_t kFcr31Cause = 0x0001'F000; // cause V Z O U I
+constexpr uint32_t kFcr31CauseAll = 0x0003'F000; // cause E V Z O U I
 constexpr uint32_t kFcr31Enable = 0x0000'0F80; // enable V Z O U I
 // Writable: FS, C, cause (incl. E), enables, flags, rounding mode. Bits 22:18 read 0.
 constexpr uint32_t kFcr31WritableMask = 0x0183'FFFF;
@@ -689,9 +694,60 @@ void R4600::executeCop1(Instruction insn) {
         else branch(taken, insn.simm());
         return;
     }
-    default:
-        unimplemented(insn); // FPU arithmetic and conversions
+    case mips::cop1::S:
+    case mips::cop1::D:
+    case mips::cop1::W:
+    case mips::cop1::L:
+        executeFpuOperation(insn);
         return;
+    default:
+        // Reserved rs encodings trap as unimplemented operations.
+        completeFpuOperation(fpu::kUnimplemented);
+        return;
+    }
+}
+
+bool R4600::completeFpuOperation(uint32_t cause) {
+    // Every arithmetic instruction rewrites the cause field. An enabled
+    // exception (or E, which has no enable) traps before anything is written
+    // and leaves the sticky flags alone; otherwise the flags accumulate.
+    fcr31_ = (fcr31_ & ~kFcr31CauseAll) | (cause << 12);
+    const uint32_t enables = (fcr31_ & kFcr31Enable) >> 7;
+    if ((cause & fpu::kUnimplemented) != 0 || (cause & enables) != 0) {
+        raiseException(ExcCode::FPE);
+        return false;
+    }
+    fcr31_ |= (cause & 0x1F) << 2;
+    return true;
+}
+
+void R4600::executeFpuOperation(Instruction insn) {
+    const uint32_t fmt   = insn.rs();
+    const uint32_t funct = insn.funct();
+    const unsigned ft = insn.rt();
+    const unsigned fs = insn.rd();
+    const unsigned fd = insn.shamt(); // fd occupies the shamt field
+    const bool wideOperands = fmt == mips::cop1::D || fmt == mips::cop1::L;
+    auto operand = [&](unsigned reg) -> uint64_t { return wideOperands ? readFpr64(reg) : readFpr32(reg); };
+
+    if (funct >= 0x30) { // C.cond.fmt
+        const fpu::Comparison c = fpu::compare(funct & 0xF, fmt, operand(fs), operand(ft));
+        if (completeFpuOperation(c.cause)) {
+            fcr31_ = c.condition ? (fcr31_ | kFcr31C) : (fcr31_ & ~kFcr31C);
+        }
+        return;
+    }
+
+    const fpu::Result r = fpu::operate(funct, fmt, operand(fs), operand(ft), fcr31_);
+    // MOV.fmt is a plain copy and leaves the cause field untouched.
+    const bool isMove = funct == 0x06 && r.cause == 0;
+    if (!isMove && !completeFpuOperation(r.cause)) {
+        return;
+    }
+    if (r.wide) {
+        writeFpr64(fd, r.value);
+    } else {
+        writeFpr32(fd, static_cast<uint32_t>(r.value));
     }
 }
 

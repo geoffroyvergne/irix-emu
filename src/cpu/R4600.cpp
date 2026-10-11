@@ -9,6 +9,7 @@
 #include "indy/memory/PhysicalMap.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cassert>
 #include <format>
 
@@ -125,6 +126,35 @@ void R4600::reset() {
     unimplementedWarnings_.clear();
     unmappedWarnings_.clear();
     exceptionLog_.clear();
+    traceNull_ = std::getenv("INDY_TRACE_NULL") != nullptr;
+    traceExceptions_ = std::getenv("INDY_TRACE_EXCEPTIONS") != nullptr;
+    tracePc_.reset();
+    if (const char* env = std::getenv("INDY_TRACE_PC"); env != nullptr && *env != '\0') {
+        tracePc_ = static_cast<VirtAddr>(static_cast<int64_t>(static_cast<int32_t>(std::strtoul(env, nullptr, 16))));
+    }
+}
+
+void R4600::logTracePc() {
+    // Arguments a0..a3, each shown as a string when it points into KSEG0/KSEG1
+    // (read straight from physical memory, so no TLB state is disturbed).
+    auto text = [this](uint64_t addr) -> std::string {
+        const auto a = static_cast<uint32_t>(addr);
+        if ((a & 0xC000'0000u) != 0x8000'0000u) return {};
+        std::string out;
+        for (uint32_t i = 0; i < 64; ++i) {
+            const PhysAddr phys = (a + i) & 0x1FFF'FFFFu;
+            const auto w = bus_.read32(phys & ~PhysAddr{3});
+            if (!w) break;
+            const auto c = static_cast<char>(*w >> (8 * (3 - (phys & 3))));
+            if (c == '\0') break;
+            out += (c >= 0x20 && c < 0x7F) ? c : '.';
+        }
+        return out;
+    };
+    log::tagged("CPU TRACE PC", "{} ra={:#010x} a0={:#010x} \"{}\" a1={:#010x} \"{}\" a2={:#010x} a3={:#010x}",
+                mips::formatAddress(currentPc_), static_cast<uint32_t>(gpr_[31]),
+                static_cast<uint32_t>(gpr_[4]), text(gpr_[4]), static_cast<uint32_t>(gpr_[5]), text(gpr_[5]),
+                static_cast<uint32_t>(gpr_[6]), static_cast<uint32_t>(gpr_[7]));
 }
 
 Cycles R4600::run(Cycles budget) {
@@ -186,6 +216,9 @@ bool R4600::tick() {
     if (traceRemaining_ != 0) [[unlikely]] {
         --traceRemaining_;
         log::tagged("CPU TRACE", "PC: {} -> Opcode: {:#010x}", mips::formatAddress(pc), *word);
+    }
+    if (tracePc_ && pc == *tracePc_) [[unlikely]] {
+        logTracePc();
     }
     history_[historyNext_] = {pc, *word};
     historyNext_ = (historyNext_ + 1) % kHistorySize;
@@ -300,8 +333,26 @@ void R4600::raiseException(ExcCode code, unsigned coprocessor, bool tlbRefill) {
     nextPc_        = pc_ + 4;
     branchPending_ = false;
 
-    // Log the first occurrences of each (exception, PC) pair during bring-up.
-    if (code != ExcCode::Int && exceptionLog_.first(uint64_t{static_cast<uint8_t>(code)} << 56 ^ currentPc_)) {
+    // Debug aid: the first NULL-pointer dereference shows how we got there.
+    const bool addressFault = code == ExcCode::TLBL || code == ExcCode::TLBS || code == ExcCode::AdEL ||
+                              code == ExcCode::AdES;
+    if (traceNull_ && addressFault && cop0_[kBadVAddr] < 0x1000) {
+        traceNull_ = false;
+        log::tagged("CPU NULL", "access to NULL page {} at PC {} after {} instructions",
+                    mips::formatAddress(cop0_[kBadVAddr]), mips::formatAddress(currentPc_), executed_);
+        logRegisters();
+        logHistory();
+    }
+
+    // Log the first occurrences of each (exception, PC) pair. Exceptions an OS
+    // takes all the time (TLB refills, copy-on-write, syscalls, breakpoints,
+    // lazy FPU switching) only with INDY_TRACE_EXCEPTIONS; a TLB fault on the
+    // NULL page is always shown, as it is almost always a bug.
+    const bool routine = code == ExcCode::Int || code == ExcCode::Sys || code == ExcCode::Bp ||
+                         code == ExcCode::CpU || code == ExcCode::Mod ||
+                         ((code == ExcCode::TLBL || code == ExcCode::TLBS) && cop0_[kBadVAddr] >= 0x1000);
+    if ((traceExceptions_ ? code != ExcCode::Int : !routine) &&
+        exceptionLog_.first(uint64_t{static_cast<uint8_t>(code)} << 56 ^ currentPc_)) {
         log::tagged("CPU EXCEPTION", "{} at PC {} (BadVAddr {}) -> vector {}",
                     excName(code), mips::formatAddress(currentPc_),
                     mips::formatAddress(cop0_[kBadVAddr]), mips::formatAddress(pc_));
@@ -464,6 +515,17 @@ void R4600::halt(std::string_view reason) {
     halted_ = true;
     log::error("CPU halted after {} instructions: {}", executed_, reason);
     logHistory();
+}
+
+void R4600::logRegisters() const {
+    static constexpr const char* kNames[32] = {
+        "zero", "at", "v0", "v1", "a0", "a1", "a2", "a3", "t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7",
+        "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "t8", "t9", "k0", "k1", "gp", "sp", "s8", "ra"};
+    for (unsigned i = 0; i < 32; i += 4) {
+        log::tagged("CPU REGS", "{:>4}={:<12} {:>4}={:<12} {:>4}={:<12} {:>4}={}",
+                    kNames[i], mips::formatAddress(gpr_[i]), kNames[i + 1], mips::formatAddress(gpr_[i + 1]),
+                    kNames[i + 2], mips::formatAddress(gpr_[i + 2]), kNames[i + 3], mips::formatAddress(gpr_[i + 3]));
+    }
 }
 
 std::vector<R4600::HistoryEntry> R4600::history() const {

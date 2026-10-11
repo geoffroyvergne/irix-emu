@@ -13,7 +13,9 @@
 #include "indy/memory/MemoryController.hpp"
 #include "indy/scsi/Wd33c93.hpp"
 
+#include <array>
 #include <filesystem>
+#include <optional>
 #include <memory>
 
 namespace indy {
@@ -28,10 +30,14 @@ struct SystemConfig {
     uint32_t displayHeight = 1024;
     bool     graphics = true;           // Newport XL8 in the GIO graphics slot (false: serial console)
     uint8_t  cdromScsiId = 4;           // conventional Indy CD-ROM ID; configurable
+    uint8_t  diskScsiId  = 1;           // conventional Indy system disk ID
+    std::filesystem::path diskImage;    // optional SCSI hard disk image
+    uint64_t diskCreateBytes = 0;       // create a blank image of this size if missing
     uint64_t traceInstructions = 0;     // log the first N executed instructions
     std::filesystem::path promImage;    // raw PROM dump; without it the CPU halts at reset
     std::filesystem::path cdromImage;   // optional initial disc
     std::filesystem::path nvramFile = "indy_nvram.bin"; // DS1386 SRAM backing store
+    std::optional<std::array<uint8_t, 6>> macAddress; // Ethernet address; default: keep NVRAM's, else SGI default
 };
 
 // The machine. Owns every component and the master clock, wires them to the

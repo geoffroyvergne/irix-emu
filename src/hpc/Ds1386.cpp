@@ -103,6 +103,10 @@ uint8_t Ds1386::peek(uint16_t address) {
     return readByte(address);
 }
 
+void Ds1386::poke(uint16_t address, uint8_t value) {
+    writeByte(address, value);
+}
+
 // ---------------------------------------------------------------------------
 // Registers
 // ---------------------------------------------------------------------------

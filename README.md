@@ -2,7 +2,7 @@
 
 A clean-room emulator of the **Silicon Graphics Indy** (IP24 board, "Guinness" architecture), written in modern C++23 with SDL3.
 
-**Current status:** the real Indy boot PROM (5.3 Rev B10) runs every power-on diagnostic and passes. It shows its graphical boot screen and the *"Welcome to Indy"* System Maintenance Menu on the emulated Newport XL graphics board, and you can drive it with the emulated PS/2 keyboard and mouse. The PROM sees the virtual SCSI CD-ROM (`hinv`) and reads SGI volume headers from disc images. Booting IRIX itself is the next milestone.
+**Current status:** the real Indy boot PROM (5.3 Rev B10) runs every power-on diagnostic and passes. It shows its graphical boot screen and the *"Welcome to Indy"* System Maintenance Menu on the emulated Newport XL graphics board, and you can drive it with the emulated PS/2 keyboard and mouse. The PROM sees the virtual SCSI CD-ROM and hard disk (`hinv`), boots SGI's diagnostics (IDE) and disk tool (`fx`) from real IRIX 6.5.22 media, and `fx` labels and partitions the emulated disk. Next milestone: the IRIX installer and kernel.
 
 ---
 
@@ -14,11 +14,12 @@ A clean-room emulator of the **Silicon Graphics Indy** (IP24 board, "Guinness" a
 4. [Emulated hardware](#emulated-hardware)
 5. [Building](#building)
 6. [Running](#running)
-7. [Controls](#controls)
-8. [Debugging and diagnostics](#debugging-and-diagnostics)
-9. [Testing](#testing)
-10. [Known limitations and roadmap](#known-limitations-and-roadmap)
-11. [Legal](#legal)
+7. [Hard disk images](#hard-disk-images)
+8. [Controls](#controls)
+9. [Debugging and diagnostics](#debugging-and-diagnostics)
+10. [Testing](#testing)
+11. [Known limitations and roadmap](#known-limitations-and-roadmap)
+12. [Legal](#legal)
 
 ---
 
@@ -96,7 +97,7 @@ R4600 CPU ──► MemoryBus (64 KiB page table, big-endian storage)
                ├── PROM (read-only, byte order normalised on load)
                ├── MemoryController   0x1FA00000
                ├── HPC3               0x1FB80000
-               │    ├── SCSI DMA ch0 ◄──► WD33C93 ──► CD-ROM (ID 4)
+               │    ├── SCSI DMA ch0 ◄──► WD33C93 ──► Disk (ID 1), CD-ROM (ID 4)
                │    ├── PBUS ch6: IOC2
                │    │    ├── Z85C30 serial (console)
                │    │    ├── 8042 + PS/2 keyboard & mouse
@@ -144,7 +145,7 @@ The core library `indy_core` has **no SDL dependency**. Only `src/frontend` uses
 
 | Component | Status |
 |---|---|
-| **R4600 CPU** | MIPS III integer interpreter with exact branch delay slots. COP0: 48-entry TLB, exceptions, interrupts IP2–IP7, Count/Compare timer. COP1: register file, data moves, loads/stores and branches (**no FPU arithmetic yet**). |
+| **R4600 CPU** | MIPS III integer interpreter with exact branch delay slots. COP0: 48-entry TLB, exceptions, interrupts IP2–IP7, Count/Compare timer. COP1: register file, moves, loads/stores, branches, and IEEE arithmetic, conversions and compares (`.S/.D/.W/.L`) under the guest rounding mode, with FCR31 cause/flag/enable bits and FPE traps. |
 | **Memory controller (MC)** | SIMM bank decoding from MEMCFG, with mirroring and the low alias. RPSS counter. Virtual DMA engine (fill, copy, stride, zoom, DMA TLB) with completion interrupt. Bus-error latching and IP6. Semaphores. |
 | **HPC3** | SCSI DMA descriptor chains with interrupts, PBUS routing, RTC/NVRAM window, register files. |
 | **IOC2 / INT3** | Interrupt aggregation into CPU IP2–IP5, including the mappable sources. Board ID `0x26` (Indy). Front panel. |
@@ -153,9 +154,10 @@ The core library `indy_core` has **no SDL dependency**. Only `src/frontend` uses
 | **8042 + PS/2** | Full controller command set. Keyboard in scan-code set 2 and set 3 (the Indy uses set 3). Mouse with 3-byte streaming packets. |
 | **DS1386 RTC/NVRAM** | Clock from host UTC that advances with emulated time, SGI 1940 year base, 8 KiB NVRAM saved to a file. |
 | **WD33C93 SCSI** | Select-and-Transfer, plus Select followed by Transfer Info (phase by phase), in polled and DMA modes. |
+| **Hard disk (ID 1)** | Raw image file, 512-byte blocks, read/write in place. INQUIRY (Seagate ST32550N), READ/WRITE(6/10), READ CAPACITY, MODE SENSE/SELECT(6/10) with geometry pages, FORMAT UNIT, VERIFY, SYNCHRONIZE CACHE, READ DEFECT DATA, power-on UNIT ATTENTION. `fx` labels and partitions it. |
 | **CD-ROM (ID 4)** | Presents as a Toshiba XM-3401TA with 512/2048-byte blocks. INQUIRY, READ(6/10), READ CAPACITY, MODE SENSE/SELECT, READ TOC, sense data. Disc swaps raise UNIT ATTENTION. |
-| **Newport XL8** | REX3 drawing engine: spans, blocks, patterns, logic ops, clipping, screen-to-screen copy, host transfers, lines. DCB devices: VC2 (including the hardware cursor), XMAP9, CMAP. 1280×1024 output. |
-| **Not emulated yet** | Ethernet (SEEQ 80C03), audio (HAL2), parallel port, disk targets, FPU arithmetic, caches. |
+| **Newport XL8** | REX3 drawing engine: spans, blocks, patterns, logic ops, clipping, screen-to-screen copy, host transfers, lines. DCB devices: VC2 (including the hardware cursor), XMAP9, CMAP. Scan-out follows the VC2 display-ID tables, so each window gets its own XMAP9 mode (colour map, CI/RGB). Runs IRIX's X server (`Xsgi`) and the xdm login. 1280×1024 output. |
+| **Not emulated yet** | Ethernet (SEEQ 80C03), audio (HAL2), parallel port, CPU caches (IDE's `icache`/`dcache` tests report a CPU-module failure; harmless). |
 
 ## Building
 
@@ -210,12 +212,15 @@ You need an **Indy boot PROM image**, dumped from your own machine (see [Legal](
 |---|---|
 | `<prom.bin>` / `--prom <file>` | Boot PROM image (required) |
 | `--cdrom <file.iso>` | Disc image to insert at start-up (size must be a multiple of 2048 bytes) |
+| `--disk <file.img>` | SCSI hard disk image at ID 1 (`dksc(0,1,…)`), read and written in place |
+| `--disk-size <MiB>` | With `--disk`: create a blank (sparse) image of this size if the file doesn't exist |
 | `--nvram <file>` | NVRAM backing file (default `indy_nvram.bin` in the current directory) |
+| `--mac <xx:xx:xx:xx:xx:xx>` | Ethernet address stored in the NVRAM (PROM variable `eaddr`). Default: keep the NVRAM's own, or `08:00:69:0e:1d:01` if it has none. |
 | `--ram <MiB>` | Installed memory, split into SIMM banks: 16, 32, 64 (default), 96, 128, 192 or 256 |
 | `--no-gfx` | Remove the Newport board. The PROM then uses the serial console in the terminal. |
 | `--trace <N>` | Log the first N executed instructions (PC and opcode) |
 | `--screenshot <file.ppm>` | Save the last displayed frame when the emulator exits |
-| `--type <sec>:<text>` | Type text on the PS/2 keyboard after `sec` seconds (`\r` = Enter) |
+| `--type <sec>:<text>` | Type text on the PS/2 keyboard after `sec` seconds (US layout, capitals and symbols included; `\r` = Enter) |
 | `--mouse <sec>:<dx>,<dy>[,<btn>]` | Send a mouse event after `sec` seconds. Repeatable. Uses PS/2 directions (+dy = up); buttons L=1, R=2, M=4. |
 | `--unthrottled` | Run as fast as possible instead of at real Indy speed |
 | `--no-vsync` | Pace frames with a timer instead of vsync |
@@ -227,6 +232,10 @@ You need an **Indy boot PROM image**, dumped from your own machine (see [Legal](
 |---|---|
 | `INDY_PROM` | PROM image path, used when none is given on the command line |
 | `INDY_TRACE_GFX=<n>` | Log the first `n` Newport register accesses (graphics bring-up) |
+| `INDY_TRACE_EXCEPTIONS=1` | Also log routine CPU exceptions (TLB refills, syscalls, …), which IRIX takes constantly. Without it, only unusual ones are shown (bus/address errors, reserved instructions, faults on the NULL page). |
+| `INDY_TRACE_NULL=1` | On the first access to the NULL page, dump the CPU registers and the last 64 instructions |
+| `INDY_TRACE_SCSI=1` | Log every SCSI command: CDB, transfer count, bytes moved, status, pauses/resumes |
+| `INDY_TRACE_PC=<hex>` | Log a0–a3 (and the strings they point to) each time the CPU executes that address |
 
 ### Output streams
 
@@ -239,11 +248,17 @@ So `indy prom.bin 2>/dev/null` shows just what the Indy prints to its serial por
 
 The DS1386's 8 KiB of battery-backed RAM is saved to the NVRAM file on exit and reloaded at start-up. The first boot with a blank file shows `NVRAM checksum is incorrect: reinitializing`. That's normal: the PROM writes its own environment (`console`, `TimeZone`, boot paths, …), and later boots keep it. Use the Command Monitor's `printenv` and `setenv` to inspect or change it. Delete the file to return to factory defaults.
 
+On a real Indy the NVRAM also holds the factory **Ethernet address**, which the PROM shows as the read-only `eaddr` variable. The IRIX kernel reads it at boot and crashes if it is missing (a TLB miss on address 0 right after the installer copies the miniroot). The emulator stores an address when the NVRAM has none, and updates the NVRAM checksum so the PROM keeps its settings. Give each emulated machine on the same network its own address with `--mac`.
+
 ### Examples
 
 ```sh
 # Normal graphical boot with an install CD inserted
 ./build/bin/indy indy_prom.bin --cdrom IRIX-6.5.22-install.iso
+
+# First time: create a 4 GiB system disk next to the install CD
+# (then label it with fx: see "Hard disk images")
+./build/bin/indy indy_prom.bin --cdrom IRIX-6.5.22-install.iso --disk irix.img --disk-size 4096
 
 # Headless: serial console only, interact from this terminal
 ./build/bin/indy indy_prom.bin --no-gfx
@@ -253,6 +268,98 @@ The DS1386's 8 KiB of battery-backed RAM is saved to the NVRAM file on exit and 
 ./build/bin/indy indy_prom.bin --type '28:\r' --mouse '34:100,0' --screenshot shot.ppm
 ```
 
+## Hard disk images
+
+The Indy's system disk is emulated as a **raw image file** attached at SCSI ID 1 (`dksc(0,1,…)`), the conventional system disk position. Block *n* of the disk is bytes `n*512 … n*512+511` of the file. There's no container format, so images are interchangeable with `dd` dumps of real SGI disks.
+
+### 1. Create the image
+
+The recommended way is to let the emulator create it. `--disk-size` only takes effect when the file doesn't exist yet:
+
+```sh
+./build/bin/indy indy_prom.bin --disk irix.img --disk-size 4096 --cdrom IRIX-install.iso
+```
+
+The file is created **sparse**: it reports 4 GiB but uses almost no space until IRIX writes to it. Alternatively, create it with host tools. Any size that is a multiple of 512 bytes works:
+
+| Host | Command |
+|---|---|
+| macOS | `mkfile -n 4g irix.img` |
+| Linux / macOS | `truncate -s 4G irix.img` |
+| Windows | `fsutil file createnew irix.img 4294967296` |
+
+**Choosing a size.** IRIX 6.5 itself fits in a few gigabytes. 4 GiB (`--disk-size 4096`) is a comfortable default for the base system plus the overlays and Applications CDs. Choose 8–9 GiB or more for large packages such as Maya. The size can't be changed after IRIX is installed, so err on the generous side: sparse files cost nothing until used.
+
+### 2. Label and partition it with `fx`
+
+A blank image has no SGI disk label. The PROM reports `dks0d1s10: volume header not valid`, and the installer stops with `swap partition (0) is not a valid swap area`. Label it with **`fx`**, SGI's disk utility, booted from the install CD exactly as on a real Indy. This works on the graphical console (type in the window) and on the serial console (`--no-gfx`, type in the terminal).
+
+1. From the System Maintenance Menu choose **Enter Command Monitor** (option 5), then boot `fx` through `sash`:
+   ```
+   >> boot -f dksc(0,4,8)sashARCS dksc(0,4,7)stand/fx.ARCS --x
+   ```
+2. Answer the device prompts with **Enter** to accept each default:
+   ```
+   fx: "device-name" = (dksc)
+   fx: ctlr# = (0)
+   fx: drive# = (1)
+   ...opening dksc(0,1,0)
+   ...drive selftest...OK
+   Scsi drive type == SEAGATE ST32550N        0022
+   ...creating default bootinfo
+   ...created default partitions, use /repartition menu to change
+   ```
+3. Make it a root drive: `r` (repartition) → `ro` (rootdrive) → **Enter** to accept `xfs` → `yes` to confirm. For a 4 GiB image:
+   ```
+   part  type        blocks            Megabytes   (base+size)
+     0: xfs      266240 + 8122368      130 + 3966      root filesystem
+     1: raw        4096 + 262144         2 + 128       swap (the installer puts the miniroot here)
+     8: volhdr        0 + 4096           0 + 2         volume header
+    10: volume        0 + 8388608        0 + 4096      whole disk
+   ```
+4. Leave with `..` then `exi`. The label is written to block 0 of the image, and you're back at the menu.
+
+**Check it:** in the Command Monitor, `hinv` lists `SCSI Disk: scsi(0)disk(1)`. You can also inspect the label from the host: the first four bytes of the image are the SGI volume-header magic `0B E5 A9 41`:
+
+```sh
+xxd -l 4 irix.img      # 00000000: 0be5 a941
+```
+
+### 3. Install IRIX
+
+With the disk labelled and the install CD inserted, choose **Install System Software** (option 2), accept **Local CD-ROM** (`scsi(0)cdrom(4)`) and press **Enter** at `Insert the installation CD-ROM`. The installer copies the miniroot (~20 MB) onto the swap partition and boots it. On a new disk the miniroot then offers to make the root filesystem: answer `yes`, `y`, then `4096` for the block size. It mounts it on `/root` and opens the `Inst>` menu. Swap CDs when the installer asks, by **dragging the next ISO onto the window**.
+
+> **"It appears that a miniroot install failed":** the NVRAM remembers an unfinished install. Answer **`r`** to copy the miniroot again. Answer `c` only if the miniroot copy on this disk image's swap partition finished. With a new or re-created disk image, `c` boots a kernel whose root is empty, and it panics with `VFS_mountroot: no root found`.
+
+> **Headless installs:** if you run with `--no-gfx`, first set the PROM to the serial console (`setenv console d` in the Command Monitor). Otherwise `sash` tries to draw graphical dialogs with no graphics board.
+
+### 4. First boot
+
+After the install, reboot (or start the emulator again with only `--disk`). The PROM boots `/unix` from the disk. About a minute later, IRIX offers two consoles at the same time:
+
+- **The window:** the X server starts and shows the graphical **"Welcome to IRIS"** xdm login. Click in the window to capture the mouse, then type there.
+- **The terminal:** `IRIS console login:` on the serial port. Type there (log in as `root`, no password on a fresh system). This works even with `--no-gfx`.
+
+Nothing is hung when the terminal stops at `IRIS console login:`. The system is waiting for a login on the serial console, while the graphical login appears in the window.
+
+### 5. Keep backups
+
+An installed disk is just a file, so snapshot it before risky changes. Use a sparse-aware copy, or the copy expands to its full size:
+
+| Host | Command |
+|---|---|
+| macOS (APFS) | `cp -c irix.img irix-backup.img` (instant clone) |
+| Linux | `cp --sparse=always irix.img irix-backup.img` |
+| any | `tar -cSf irix.tar irix.img` (`-S` keeps holes) |
+
+Don't copy or edit the image while the emulator is running: writes go straight to the file, and it's flushed when the emulator exits.
+
+### Limits
+
+- One hard disk, at SCSI ID 1, chosen at start-up. Disks can't be hot-swapped; CDs can.
+- The emulated drive reports a fixed geometry (16 heads × 63 sectors per track, cylinders derived from the size). IRIX addresses disks by block number, so the geometry only affects what `fx` displays.
+- `FORMAT UNIT` is accepted but doesn't rewrite the image, since there's no physical medium to format. Use `fx`'s label/partition menus as above; there's no need to "format" the disk.
+
 ## Controls
 
 | Input | Effect |
@@ -261,11 +368,22 @@ The DS1386's 8 KiB of battery-backed RAM is saved to the NVRAM file on exit and 
 | Typing in the **window** | Goes to the emulated PS/2 keyboard (all keys, including F-keys) |
 | **Click** in the window | Captures the mouse. The host cursor hides and the SGI cursor follows. |
 | **Ctrl+Alt+G** | Releases the captured mouse (switching away from the window also releases it) |
+| **Ctrl+Alt+V** (or **Cmd+V** on macOS) | Paste the host clipboard: it is typed into the PS/2 keyboard (see below). Press again to cancel a long paste. |
 | **Alt+Enter** | Toggle fullscreen |
 | **Drag & drop** a disc image | Swaps the CD in the virtual drive; the guest sees a media change |
 | **Ctrl-C** in the terminal / closing the window | Clean shutdown (saves NVRAM, restores the terminal) |
 
 The title bar shows emulation speed and whether the mouse is captured.
+
+### Copy and paste
+
+- **Into the graphics window** (PROM console, IRIX): copy text on the host, click the emulator window and press **Ctrl+Alt+V** (or **Cmd+V** on macOS). The text is *typed* through the emulated PS/2 keyboard, the only way it can reach the Indy, as if from a US keyboard. Capitals and symbols use Shift; line breaks (`\n`, `\r` or `\r\n`) become Enter; tabs become Tab.
+  - Typing starts once you release the hotkey's modifiers, so the Indy doesn't see Ctrl/Alt/Cmd held. It runs at about 1,000 characters per second.
+  - Characters with no key on a US keyboard (accented letters, emoji, …) are skipped, and the log says how many.
+  - Pressing the hotkey again during a paste cancels it.
+- **Into the serial console** (`--no-gfx`): paste into the terminal as usual. Bytes go straight to the Z85C30 serial port, unchanged.
+
+The same text-to-keys conversion is used by `--type`, so scripted typing also handles capitals and symbols.
 
 ## Debugging and diagnostics
 
@@ -284,9 +402,9 @@ ctest --test-dir build --output-on-failure   # or: ./build/bin/indy_tests
 ```
 
 `indy_tests` is a dependency-free test runner with tests for every component:
-- the CPU core (delay slots, exceptions, TLB, FPU moves, interrupts);
+- the CPU core (delay slots, exceptions, TLB, FPU moves and IEEE arithmetic, interrupts);
 - the memory bus and MC (bank mapping, RPSS, DMA, bus errors);
-- the SCSI stack (CD-ROM commands, HPC3 DMA chains, WD33C93 select-and-transfer and phase-by-phase sessions);
+- the SCSI stack (CD-ROM and disk commands, HPC3 DMA chains, WD33C93 select-and-transfer and phase-by-phase sessions);
 - serial, the 8042 keyboard/mouse, INT3, the 8254 and the RTC/NVRAM;
 - the Newport (register read-back, DCB devices, rasterizer, hardware cursor).
 
@@ -296,17 +414,15 @@ Many tests replay the exact register sequences the real PROM performs. Run them 
 
 **Next steps**
 
-1. Boot an IRIX 6.5 install CD: *Install System Software* → `sash` → the installer. Expect gaps to show up in SCSI commands and the phase-by-phase SCSI path.
-2. A SCSI disk target backed by an image file, for an installed system.
-3. FPU arithmetic (`.S/.D/.W/.L`), which IRIX needs.
-4. Ethernet (SEEQ 80C03 through HPC3) and audio (HAL2).
-5. Performance: block caching or a JIT for the interpreter, and a micro-TLB.
-6. Graphics: per-line display IDs, RGB pixel modes, the XL24 board, overlay/popup planes, then an HLE path to OpenGL/Vulkan for 3D.
+1. Use the installed system: the 4Dwm desktop after login, applications, and the remaining overlay and application CDs. IRIX 6.5 now installs, boots from disk and reaches the X login.
+2. Ethernet (SEEQ 80C03 through HPC3) and audio (HAL2).
+3. Performance: block caching or a JIT for the interpreter, and a micro-TLB.
+4. Graphics: RGBMODE drawing (colour from the RGB registers), the XL24 board, overlay/popup planes, then an HLE path to OpenGL/Vulkan for 3D.
 
 **Current simplifications**
 
 - CPU timing is one instruction per cycle; caches are not modelled.
-- SCSI targets complete commands instantly and never disconnect or reselect.
+- SCSI targets have a single logical unit (LUN 0) and complete commands instantly, without disconnecting or reselecting. A select-and-transfer whose data phase outlasts the transfer count pauses ("unexpected phase") and resumes when the driver re-issues it, as on the real chip.
 - Some behaviour follows the PROM where the references are silent. These spots are marked `ASSUMPTION` or explained in comments; for example, untranslated MC DMA addresses are treated as physical.
 
 ## Legal
