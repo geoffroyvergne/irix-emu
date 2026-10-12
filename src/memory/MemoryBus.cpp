@@ -23,6 +23,7 @@ MemoryBus::MemoryBus() : pages_(kPageCount) {}
 // ---------------------------------------------------------------------------
 
 void MemoryBus::allocateRam(uint64_t sizeBytes) {
+    ++mapGeneration_; // cached host pointers (CPU fetch) must be refreshed
     if (ram_) {
         throw std::logic_error("MemoryBus: RAM is already installed");
     }
@@ -35,6 +36,7 @@ void MemoryBus::allocateRam(uint64_t sizeBytes) {
 }
 
 void MemoryBus::installRam(PhysAddr base, uint64_t sizeBytes) {
+    ++mapGeneration_; // cached host pointers (CPU fetch) must be refreshed
     allocateRam(sizeBytes);
     const RamWindow flat{base, sizeBytes, 0, sizeBytes};
     if ((sizeBytes & (sizeBytes - 1)) == 0) {
@@ -50,6 +52,7 @@ void MemoryBus::installRam(PhysAddr base, uint64_t sizeBytes) {
 }
 
 void MemoryBus::setRamWindows(std::span<const RamWindow> windows) {
+    ++mapGeneration_; // cached host pointers (CPU fetch) must be refreshed
     if (!ram_) {
         throw std::logic_error("MemoryBus::setRamWindows: no RAM allocated");
     }
@@ -149,6 +152,7 @@ void MemoryBus::requireFree(size_t firstPage, size_t lastPage) const {
 }
 
 void MemoryBus::mapMemory(PhysAddr base, std::span<uint8_t> backing, bool writable) {
+    ++mapGeneration_; // cached host pointers (CPU fetch) must be refreshed
     if ((base & kPageMask) != 0 || (backing.size() & kPageMask) != 0 || backing.empty()) {
         throw std::invalid_argument("MemoryBus::mapMemory: base and size must be non-zero multiples of the page size");
     }
@@ -164,6 +168,7 @@ void MemoryBus::mapMemory(PhysAddr base, std::span<uint8_t> backing, bool writab
 }
 
 void MemoryBus::mapDevice(PhysAddr base, uint64_t size, MmioDevice& device) {
+    ++mapGeneration_; // cached host pointers (CPU fetch) must be refreshed
     if (size == 0) {
         throw std::invalid_argument("MemoryBus::mapDevice: size must be non-zero");
     }
@@ -181,6 +186,7 @@ void MemoryBus::mapDevice(PhysAddr base, uint64_t size, MmioDevice& device) {
 }
 
 void MemoryBus::unmap(PhysAddr base, uint64_t size) {
+    ++mapGeneration_; // cached host pointers (CPU fetch) must be refreshed
     const size_t first = static_cast<size_t>(base >> kPageShift);
     const size_t count = static_cast<size_t>(roundUpToPage(size) >> kPageShift);
     std::fill_n(pages_.begin() + static_cast<std::ptrdiff_t>(first), count, Page{});

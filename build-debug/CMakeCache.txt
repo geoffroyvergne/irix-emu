@@ -228,6 +228,12 @@ INDY_FETCH_SDL:BOOL=ON
 //Tune for the build machine (-march=native)
 INDY_NATIVE_ARCH:BOOL=OFF
 
+//Instrument for profile-guided optimisation
+INDY_PGO_GENERATE:BOOL=OFF
+
+//Merged PGO profile (.profdata) to optimise with
+INDY_PGO_PROFILE:FILEPATH=
+
 //Enable ASan + UBSan (Debug builds)
 INDY_SANITIZE:BOOL=ON
 

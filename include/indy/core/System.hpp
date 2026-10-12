@@ -15,6 +15,7 @@
 
 #include <array>
 #include <filesystem>
+#include <vector>
 #include <optional>
 #include <memory>
 
@@ -30,8 +31,9 @@ struct SystemConfig {
     uint32_t displayHeight = 1024;
     bool     graphics = true;           // Newport XL8 in the GIO graphics slot (false: serial console)
     uint8_t  cdromScsiId = 4;           // conventional Indy CD-ROM ID; configurable
-    uint8_t  diskScsiId  = 1;           // conventional Indy system disk ID
-    std::filesystem::path diskImage;    // optional SCSI hard disk image
+    // Hard disk images, attached at SCSI IDs 1, 2, 3, 5, 6, 7 in order (ID 1 is
+    // the conventional system disk, dks0d1; the CD-ROM's ID is skipped).
+    std::vector<std::filesystem::path> diskImages;
     uint64_t diskCreateBytes = 0;       // create a blank image of this size if missing
     uint64_t traceInstructions = 0;     // log the first N executed instructions
     std::filesystem::path promImage;    // raw PROM dump; without it the CPU halts at reset

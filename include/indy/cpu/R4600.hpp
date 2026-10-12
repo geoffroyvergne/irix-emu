@@ -54,7 +54,7 @@ public:
     [[nodiscard]] uint64_t gpr(unsigned index) const noexcept { return gpr_[index & 31]; }
     [[nodiscard]] uint64_t hi() const noexcept { return hi_; }
     [[nodiscard]] uint64_t lo() const noexcept { return lo_; }
-    [[nodiscard]] uint64_t cop0(unsigned reg) const noexcept { return cop0_[reg & 31]; }
+    [[nodiscard]] uint64_t cop0(unsigned reg) const noexcept { return readCop0(reg & 31); }
     [[nodiscard]] const Tlb& tlb() const noexcept { return tlb_; }
     [[nodiscard]] uint64_t fpr(unsigned index) const noexcept { return fpr_[index & 31]; }
     [[nodiscard]] uint32_t fcr31() const noexcept { return fcr31_; }
@@ -194,7 +194,21 @@ private:
     void tlbWrite(unsigned index);
     void tlbProbe();
     void eret();
-    void advanceTimers() noexcept;
+    // Random and Count advance lazily: every instruction (or exception) is one
+    // tick; their values are derived from the tick counter when read, and the
+    // Count = Compare interrupt is a precomputed tick (timerDeadline_).
+    void advanceTimers() noexcept {
+        if (++ticks_ == timerDeadline_) [[unlikely]] {
+            timerFire();
+        }
+    }
+    void timerFire() noexcept;
+    void scheduleTimer() noexcept;
+    [[nodiscard]] uint64_t readCop0(unsigned reg) const noexcept;
+    [[nodiscard]] uint32_t randomValue() const noexcept;
+    [[nodiscard]] uint32_t countValue() const noexcept {
+        return static_cast<uint32_t>(countValue_ + (ticks_ >> 1) - (countTick_ >> 1));
+    }
 
     // ---- Diagnostics -------------------------------------------------------
     void unimplemented(mips::Instruction insn);
@@ -215,7 +229,11 @@ private:
     bool inDelaySlot_ = false;   // the current instruction is a delay slot
     bool llBit_ = false;         // LL/SC reservation
     std::array<uint64_t, 32> cop0_{};
-    bool countPhase_ = false;    // Count increments every other cycle
+    uint64_t ticks_ = 0;           // instructions (and exceptions) since reset
+    uint64_t randomBase_ = 0;      // tick at which Random was last 47 (reset / Wired write)
+    uint32_t countValue_ = 0;      // Count as last written...
+    uint64_t countTick_ = 0;       // ...at this tick; it increments on every even tick
+    uint64_t timerDeadline_ = 0;   // tick at which Count reaches Compare
     std::array<uint64_t, 32> fpr_{}; // COP1 floating-point registers
     uint32_t fcr31_ = 0;             // COP1 control/status
 
@@ -230,6 +248,49 @@ private:
     WarnOnce unimplementedWarnings_;
     WarnOnce unmappedWarnings_;
     WarnOnce exceptionLog_{64};
+    // Micro-TLB: recent 4 KiB translations of mapped addresses, direct-mapped
+    // by virtual page. The tag holds the page, the ASID and the privilege bits
+    // of Status (KSU/EXL/ERL), so a context or mode switch simply misses; a
+    // TLB write drops the slots of the pages the old entry mapped.
+    struct MicroTlbEntry {
+        uint64_t tag = 0;
+        uint64_t generation = 0; // valid only while equal to microTlbGeneration_
+        PhysAddr page = 0;
+        bool dirty = false;      // stores allowed without consulting the TLB
+    };
+    static constexpr size_t kMicroTlbEntries = 256;
+    std::array<MicroTlbEntry, kMicroTlbEntries> microTlb_{};
+    uint64_t microTlbGeneration_ = 1;
+    void flushMicroTlb() noexcept { ++microTlbGeneration_; dropFetchCache(); }
+    void invalidateMicroTlb(const Tlb::Entry& replaced) noexcept;
+
+    // Fetch cache: host memory of the 4 KiB page the PC is in, so sequential
+    // instructions skip translation and the bus page lookup. Dropped by
+    // anything that can change translation (COP0 writes, exceptions, ERET,
+    // TLB reads/writes) and by physical memory remaps (bus generation).
+    VirtAddr fetchPage_ = 1;           // page-aligned PC the cache covers; 1 = none
+    const uint8_t* fetchHost_ = nullptr;
+    uint64_t fetchMapGeneration_ = 0;
+    void dropFetchCache() noexcept { fetchPage_ = 1; }
+
+    // Data host-page cache: for loads and stores to RAM, the host memory of a
+    // virtual page under a given ASID and mode, so hits skip translation and
+    // the bus lookup. Slots are indexed like the micro-TLB and dropped with
+    // it; `write` is only set once a store passed the TLB (D bit) and the bus
+    // (writable RAM). Devices and unmapped space are never cached.
+    struct HostPageEntry {
+        uint64_t page = ~uint64_t{0};   // vaddr >> 12
+        uint64_t context = 0;           // ASID | mode bits << 8
+        uint64_t generation = 0;        // microTlbGeneration_ when filled
+        uint64_t mapGeneration = 0;     // bus map generation when filled
+        const uint8_t* read = nullptr;
+        uint8_t* write = nullptr;
+    };
+    std::array<HostPageEntry, kMicroTlbEntries> hostPages_{};
+    [[nodiscard]] uint64_t accessContext() const noexcept;
+    template <bool Store> [[nodiscard]] HostPageEntry* hostPageHit(VirtAddr vaddr) noexcept;
+    template <bool Store> void hostPageFill(VirtAddr vaddr, PhysAddr phys) noexcept;
+
     bool traceNull_ = false; // INDY_TRACE_NULL: dump state on the first NULL-page access
     bool traceExceptions_ = false; // INDY_TRACE_EXCEPTIONS: also log routine exceptions (TLB refills, ...)
     std::optional<VirtAddr> tracePc_; // INDY_TRACE_PC=<hex>: log arguments each time this PC executes

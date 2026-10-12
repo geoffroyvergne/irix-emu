@@ -741,6 +741,30 @@ src/scsi/CdRomDrive.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/scsi/CdRomDrive.cpp.s
 .PHONY : src/scsi/CdRomDrive.cpp.s
 
+src/scsi/DiskImage.o: src/scsi/DiskImage.cpp.o
+.PHONY : src/scsi/DiskImage.o
+
+# target to build an object file
+src/scsi/DiskImage.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.o
+.PHONY : src/scsi/DiskImage.cpp.o
+
+src/scsi/DiskImage.i: src/scsi/DiskImage.cpp.i
+.PHONY : src/scsi/DiskImage.i
+
+# target to preprocess a source file
+src/scsi/DiskImage.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.i
+.PHONY : src/scsi/DiskImage.cpp.i
+
+src/scsi/DiskImage.s: src/scsi/DiskImage.cpp.s
+.PHONY : src/scsi/DiskImage.s
+
+# target to generate assembly for a file
+src/scsi/DiskImage.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.s
+.PHONY : src/scsi/DiskImage.cpp.s
+
 src/scsi/ScsiController.o: src/scsi/ScsiController.cpp.o
 .PHONY : src/scsi/ScsiController.o
 
@@ -945,6 +969,9 @@ help:
 	@echo "... src/scsi/CdRomDrive.o"
 	@echo "... src/scsi/CdRomDrive.i"
 	@echo "... src/scsi/CdRomDrive.s"
+	@echo "... src/scsi/DiskImage.o"
+	@echo "... src/scsi/DiskImage.i"
+	@echo "... src/scsi/DiskImage.s"
 	@echo "... src/scsi/ScsiController.o"
 	@echo "... src/scsi/ScsiController.i"
 	@echo "... src/scsi/ScsiController.s"

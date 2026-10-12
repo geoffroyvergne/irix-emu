@@ -29,7 +29,10 @@ constexpr uint32_t kDmaCtrlIntEnable = 0x10;
 constexpr uint32_t kDmaIntrDone      = 0x08;
 constexpr uint32_t kDmaTlbRegionMask = 0xFFC0'0000; // each entry maps a 4 MiB region
 constexpr uint32_t kDmaPteFrameMask  = 0x03FF'FFC0;
-constexpr uint32_t kDmaPtBaseMask    = 0x003F'FFC0;
+// DMA TLB low word: page-table frame number in bits 29:6, like a MIPS
+// EntryLo (bit 1 is set on valid entries). IRIX puts tables anywhere in RAM,
+// e.g. lo 0x005C8042 -> table at 0x17201000 on a 256 MiB machine.
+constexpr uint32_t kDmaPtBaseMask    = 0x3FFF'FFC0;
 // Defaults loaded by kDmaDefsStart.
 constexpr uint32_t kDmaDefaultSize   = 0x0001'000C;
 constexpr uint32_t kDmaDefaultStride = 0x0001'0000;
@@ -427,6 +430,16 @@ void MemoryController::startDma(unsigned startTicks) {
     bool ok = true;
     auto advance = [&](uint32_t n) { addr = increment ? addr + n : addr - n; };
 
+    // ASSUMPTION: a GIO-to-memory transfer starts with one discarded read of
+    // the GIO address. REX3 host reads are pipelined (each GO read returns the
+    // previous fetch); IRIX's X server primes its PIO reads with a dummy GO
+    // write but starts save-under DMA reads with none, so the MC must fetch
+    // one word ahead (without it, restored areas land 8 pixels to the right).
+    if (toHost && !fill) {
+        uint64_t discard = 0;
+        (void)bus_.read<uint64_t>(gio & ~7u, discard);
+    }
+
     for (uint32_t line = 0; ok && line < lines; ++line) {
         for (uint32_t pass = 0; ok && pass < zoom; ++pass) {
             uint32_t remaining = width;
@@ -453,6 +466,9 @@ void MemoryController::startDma(unsigned startTicks) {
                     if (ok) {
                         (void)bus_.write<uint64_t>(gio & ~7u, qword);
                     }
+                }
+                if (!ok) {
+                    break; // `addr` is the start of the chunk that failed
                 }
                 advance(n);
                 remaining -= n;
@@ -517,8 +533,12 @@ void MemoryController::remapRam() {
         }
         const PhysAddr base = PhysAddr{desc & kCfgBaseMask} << kCfgUnitShift;
         uint64_t window = uint64_t{((desc >> kCfgSizeShift) & kCfgSizeMask) + 1} << kCfgUnitShift;
-        if ((desc & kCfgSubbanks) != 0) {
-            window /= 2; // single-rank SIMMs only populate the first half
+        // SBANKS: the window is two sub-banks (double-sided SIMMs, as Linux's
+        // asm/sgi/mc.h names it); each covers half. A bank filling the whole
+        // window has both; one no larger than half has only the first (the
+        // PROM's sizing probe checks for exactly that).
+        if ((desc & kCfgSubbanks) != 0 && installed != 0 && installed <= window / 2) {
+            window /= 2;
         }
         if (installed == 0) {
             // Configured but no SIMMs: the MC still decodes the range, so the

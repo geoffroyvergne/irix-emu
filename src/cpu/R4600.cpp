@@ -9,7 +9,9 @@
 #include "indy/memory/PhysicalMap.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cstdlib>
+#include <cstring>
 #include <cassert>
 #include <format>
 
@@ -94,6 +96,7 @@ constexpr std::string_view excName(R4600::ExcCode code) {
 // ---------------------------------------------------------------------------
 
 void R4600::reset() {
+    dropFetchCache();
     gpr_.fill(0);
     hi_ = 0;
     lo_ = 0;
@@ -104,10 +107,13 @@ void R4600::reset() {
     fcr31_ = 0;
     cop0_.fill(0);
     cop0_[kStatus] = kStatusBEV | kStatusERL;
-    cop0_[kRandom] = Tlb::kEntries - 1;
     cop0_[kPRId]   = kR4600PRId;
     cop0_[kConfig] = kConfigReset;
-    countPhase_ = false;
+    ticks_ = 0;
+    randomBase_ = 0;
+    countValue_ = 0;
+    countTick_ = 0;
+    scheduleTimer();
 
     // PC holds the *virtual* reset vector 0xBFC00000 (sign-extended). KSEG1
     // maps it to physical 0x1FC00000 where the PROM lives.
@@ -127,6 +133,7 @@ void R4600::reset() {
     unmappedWarnings_.clear();
     exceptionLog_.clear();
     traceNull_ = std::getenv("INDY_TRACE_NULL") != nullptr;
+    flushMicroTlb();
     traceExceptions_ = std::getenv("INDY_TRACE_EXCEPTIONS") != nullptr;
     tracePc_.reset();
     if (const char* env = std::getenv("INDY_TRACE_PC"); env != nullptr && *env != '\0') {
@@ -190,37 +197,50 @@ bool R4600::tick() {
         advanceTimers();
         return true;
     }
-    const auto phys = translate(pc, Access::Fetch);
-    if (!phys) [[unlikely]] {
-        advanceTimers();
-        return !halted_;
-    }
-    const auto word = bus_.read32(*phys);
-    if (!word) [[unlikely]] {
-        if ((cop0_[kStatus] & kStatusEXL) != 0) {
-            // The exception handler itself cannot be fetched: nothing can recover.
-            const bool noProm = bus_.prom().empty() && *phys >= physmap::kPromBase &&
-                                *phys < physmap::kPromBase + physmap::kPromMaxSize;
-            halt(std::format("instruction bus error at PC {} (physical {:#010x}) inside an exception handler{}",
-                             mips::formatAddress(pc), *phys,
-                             noProm ? " - no PROM image is loaded, so nothing is mapped at 0x1FC00000" : ""));
-            return false;
+    uint32_t word;
+    if ((pc & ~VirtAddr{0xFFF}) == fetchPage_ && bus_.mapGeneration() == fetchMapGeneration_) [[likely]] {
+        uint32_t raw;
+        std::memcpy(&raw, fetchHost_ + (pc & 0xFFF), sizeof raw);
+        word = std::endian::native == std::endian::little ? std::byteswap(raw) : raw;
+    } else {
+        const auto phys = translate(pc, Access::Fetch);
+        if (!phys) [[unlikely]] {
+            advanceTimers();
+            return !halted_;
         }
-        log::tagged("CPU WARNING", "Instruction fetch from unmapped physical {:#010x} (PC {})",
-                    *phys, mips::formatAddress(pc));
-        raiseException(ExcCode::IBE);
-        advanceTimers();
-        return true;
+        const auto fetched = bus_.read32(*phys);
+        if (!fetched) [[unlikely]] {
+            if ((cop0_[kStatus] & kStatusEXL) != 0) {
+                // The exception handler itself cannot be fetched: nothing can recover.
+                const bool noProm = bus_.prom().empty() && *phys >= physmap::kPromBase &&
+                                    *phys < physmap::kPromBase + physmap::kPromMaxSize;
+                halt(std::format("instruction bus error at PC {} (physical {:#010x}) inside an exception handler{}",
+                                 mips::formatAddress(pc), *phys,
+                                 noProm ? " - no PROM image is loaded, so nothing is mapped at 0x1FC00000" : ""));
+                return false;
+            }
+            log::tagged("CPU WARNING", "Instruction fetch from unmapped physical {:#010x} (PC {})",
+                        *phys, mips::formatAddress(pc));
+            raiseException(ExcCode::IBE);
+            advanceTimers();
+            return true;
+        }
+        word = *fetched;
+        if (const uint8_t* host = bus_.hostPage4k(*phys)) { // RAM or PROM: cache the page
+            fetchPage_ = pc & ~VirtAddr{0xFFF};
+            fetchHost_ = host;
+            fetchMapGeneration_ = bus_.mapGeneration();
+        }
     }
 
     if (traceRemaining_ != 0) [[unlikely]] {
         --traceRemaining_;
-        log::tagged("CPU TRACE", "PC: {} -> Opcode: {:#010x}", mips::formatAddress(pc), *word);
+        log::tagged("CPU TRACE", "PC: {} -> Opcode: {:#010x}", mips::formatAddress(pc), word);
     }
     if (tracePc_ && pc == *tracePc_) [[unlikely]] {
         logTracePc();
     }
-    history_[historyNext_] = {pc, *word};
+    history_[historyNext_] = {pc, word};
     historyNext_ = (historyNext_ + 1) % kHistorySize;
 
     // ---- Advance, then execute ---------------------------------------------
@@ -229,7 +249,7 @@ bool R4600::tick() {
     pc_      = nextPc_;
     nextPc_ += 4;
 
-    execute(mips::Instruction{*word});
+    execute(mips::Instruction{word});
     ++executed_;
     advanceTimers();
 
@@ -297,11 +317,22 @@ std::optional<PhysAddr> R4600::translate(VirtAddr vaddr, Access access) {
     }
 
     const auto asid = static_cast<uint8_t>(cop0_[kEntryHi] & kEntryHiAsid);
-    const Tlb::Result result = tlb_.translate(vaddr, asid, access == Access::Store);
+    const bool isStore = access == Access::Store;
+    // Micro-TLB first. Address errors above depend only on the mode, which is
+    // part of the tag, so a hit is always a legal access.
+    constexpr uint64_t kModeBits = (uint64_t{3} << kStatusKsuShift) | kStatusEXL | kStatusERL;
+    const uint64_t tag = (uint64_t{asid} << 40) | ((status & kModeBits) << 32) | (addr32 >> 12);
+    MicroTlbEntry& cached = microTlb_[(addr32 >> 12) % kMicroTlbEntries];
+    if (cached.tag == tag && cached.generation == microTlbGeneration_ && (!isStore || cached.dirty)) [[likely]] {
+        return cached.page | (addr32 & 0xFFF);
+    }
+
+    const Tlb::Result result = tlb_.translate(vaddr, asid, isStore);
     if (result.outcome != Tlb::Outcome::Hit) {
         raiseTlbException(vaddr, access, result.outcome);
         return std::nullopt;
     }
+    cached = {tag, microTlbGeneration_, result.phys & ~PhysAddr{0xFFF}, result.dirty};
     return result.phys;
 }
 
@@ -310,6 +341,7 @@ std::optional<PhysAddr> R4600::translate(VirtAddr vaddr, Access access) {
 // ---------------------------------------------------------------------------
 
 void R4600::raiseException(ExcCode code, unsigned coprocessor, bool tlbRefill) {
+    dropFetchCache(); // EXL switches to kernel mode
     uint64_t& status = cop0_[kStatus];
     uint64_t& cause  = cop0_[kCause];
 
@@ -397,23 +429,41 @@ bool R4600::coprocessorUsable(unsigned cop) const noexcept {
 // COP0 registers
 // ---------------------------------------------------------------------------
 
-void R4600::advanceTimers() noexcept {
-    // Random cycles from 47 down to Wired on every instruction.
-    uint64_t& random = cop0_[kRandom];
-    random = random <= cop0_[kWired] ? Tlb::kEntries - 1 : random - 1;
-
-    // Count runs at half the pipeline clock; matching Compare raises IP7.
-    countPhase_ = !countPhase_;
-    if (countPhase_) {
-        return;
+uint32_t R4600::randomValue() const noexcept {
+    // Counts down from 47 to Wired, one step per tick, then wraps to 47.
+    const uint64_t wired = cop0_[kWired];
+    if (wired >= Tlb::kEntries - 1) {
+        return Tlb::kEntries - 1;
     }
-    cop0_[kCount] = (cop0_[kCount] + 1) & 0xFFFF'FFFF;
-    if (cop0_[kCount] == cop0_[kCompare]) {
-        cop0_[kCause] |= kCauseTimerIp;
+    const uint64_t period = Tlb::kEntries - wired;
+    return static_cast<uint32_t>(Tlb::kEntries - 1 - (ticks_ - randomBase_) % period);
+}
+
+uint64_t R4600::readCop0(unsigned reg) const noexcept {
+    switch (reg) {
+    case kRandom: return randomValue();
+    case kCount:  return countValue();
+    default:      return cop0_[reg];
     }
 }
 
+void R4600::scheduleTimer() noexcept {
+    // Count = Compare is only checked when Count increments, so equality at
+    // the time of a write fires after a full 2^32 wrap.
+    uint64_t increments = (static_cast<uint32_t>(cop0_[kCompare]) - countValue()) & 0xFFFF'FFFFu;
+    if (increments == 0) {
+        increments = uint64_t{1} << 32;
+    }
+    timerDeadline_ = ((ticks_ >> 1) + increments) << 1;
+}
+
+void R4600::timerFire() noexcept {
+    cop0_[kCause] |= kCauseTimerIp;
+    timerDeadline_ += uint64_t{1} << 33; // the next match is one Count wrap later
+}
+
 void R4600::writeCop0(unsigned reg, uint64_t value) {
+    dropFetchCache(); // Status (mode) or EntryHi (ASID) may change what the PC maps to
     uint64_t& r = cop0_[reg];
     switch (reg) {
     case kRandom:
@@ -428,13 +478,18 @@ void R4600::writeCop0(unsigned reg, uint64_t value) {
     case kPageMask: r = value & Tlb::kPageMaskMask; return;
     case kWired:
         r = value & kIndexMask;
-        cop0_[kRandom] = Tlb::kEntries - 1; // writing Wired resets Random
+        randomBase_ = ticks_; // writing Wired resets Random to 47
         return;
     case kEntryHi:  r = value & Tlb::kEntryHiMask; return;
-    case kCount:    r = value & 0xFFFF'FFFF; return;
+    case kCount:
+        countValue_ = static_cast<uint32_t>(value);
+        countTick_ = ticks_;
+        scheduleTimer();
+        return;
     case kCompare:
         r = value & 0xFFFF'FFFF;
         cop0_[kCause] &= ~kCauseTimerIp; // writing Compare acknowledges the timer
+        scheduleTimer();
         return;
     case kStatus:   r = value & 0xFFFF'FFFF; return;
     case kCause:    r = (r & ~kCauseWritableMask) | (value & kCauseWritableMask); return;
@@ -444,6 +499,7 @@ void R4600::writeCop0(unsigned reg, uint64_t value) {
 }
 
 void R4600::tlbRead() {
+    dropFetchCache(); // loads EntryHi, including the ASID
     const Tlb::Entry& e = tlb_.entry(static_cast<unsigned>(cop0_[kIndex] & kIndexMask));
     cop0_[kPageMask] = e.pageMask;
     cop0_[kEntryHi]  = e.entryHi;
@@ -452,7 +508,23 @@ void R4600::tlbRead() {
 }
 
 void R4600::tlbWrite(unsigned index) {
+    invalidateMicroTlb(tlb_.entry(index)); // its pages may be cached
     tlb_.write(index, cop0_[kPageMask], cop0_[kEntryHi], cop0_[kEntryLo0], cop0_[kEntryLo1]);
+}
+
+void R4600::invalidateMicroTlb(const Tlb::Entry& replaced) noexcept {
+    dropFetchCache();
+    // The entry maps an even/odd pair of pages of (PageMask + 1) * 4 KiB each.
+    const uint64_t pages = ((replaced.pageMask >> 13) + 1) * 2;
+    if (pages >= kMicroTlbEntries) {
+        flushMicroTlb();
+        return;
+    }
+    const auto first = static_cast<uint32_t>(replaced.entryHi) >> 12 & ~static_cast<uint32_t>(pages - 1);
+    for (uint64_t i = 0; i < pages; ++i) {
+        microTlb_[(first + i) % kMicroTlbEntries].generation = 0;
+        hostPages_[(first + i) % kMicroTlbEntries].generation = 0;
+    }
 }
 
 void R4600::tlbProbe() {
@@ -461,6 +533,7 @@ void R4600::tlbProbe() {
 }
 
 void R4600::eret() {
+    dropFetchCache(); // back to the interrupted mode
     // Returns to ErrorEPC if ERL is set, else EPC. ERET has no delay slot and
     // clears the LL reservation.
     if ((cop0_[kStatus] & kStatusERL) != 0) {

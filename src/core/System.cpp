@@ -10,6 +10,7 @@
 #include "indy/scsi/ScsiDisk.hpp"
 
 #include <algorithm>
+#include <format>
 #include <cassert>
 #include <iostream>
 #include <stdexcept>
@@ -127,14 +128,18 @@ System::System(SystemConfig config, FrameBuffer& display)
     if (!config_.cdromImage.empty()) {
         insertMedia(config_.cdromImage);
     }
-    if (!config_.diskImage.empty()) {
-        auto disk = ScsiDisk::open(config_.diskImage, config_.diskCreateBytes);
-        if (!disk) {
-            throw std::runtime_error(disk.error());
+    uint8_t nextId = 1;
+    for (const std::filesystem::path& image : config_.diskImages) {
+        while (nextId == config_.cdromScsiId) ++nextId;
+        if (nextId > 7) {
+            throw std::runtime_error(std::format("too many disks: no free SCSI ID left for '{}'", image.string()));
         }
-        log::info("Disk: '{}' ({} MiB) at SCSI ID {}", config_.diskImage.string(),
-                  (*disk)->blockCount() * ScsiDisk::kBlockSize / MiB, config_.diskScsiId);
-        scsi_.attach(config_.diskScsiId, std::move(*disk));
+        auto disk = ScsiDisk::open(image, config_.diskCreateBytes);
+        if (!disk) throw std::runtime_error(disk.error());
+        log::info("Disk: '{}' ({}, {} MiB) at SCSI ID {} (dks0d{})", image.string(), (*disk)->format(),
+                  (*disk)->blockCount() * ScsiDisk::kBlockSize / MiB, nextId, nextId);
+        scsi_.attach(nextId, std::move(*disk));
+        ++nextId;
     }
 
     log::info("System: R4600 @ {} MHz, {} MiB RAM (bank A {} MiB, bank B {} MiB), CD-ROM at SCSI ID {}",

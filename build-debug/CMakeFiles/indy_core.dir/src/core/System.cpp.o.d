@@ -911,6 +911,7 @@ CMakeFiles/indy_core.dir/src/core/System.cpp.o: \
   /Users/gv/dev/projects/irix-emu/include/indy/scsi/CdRomDrive.hpp \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/fstream \
   /Users/gv/dev/projects/irix-emu/include/indy/scsi/ScsiDisk.hpp \
+  /Users/gv/dev/projects/irix-emu/include/indy/scsi/DiskImage.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/scsi/ScsiUtil.hpp \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/algorithm \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__algorithm/adjacent_find.h \

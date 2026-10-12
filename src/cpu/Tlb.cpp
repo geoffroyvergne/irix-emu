@@ -23,8 +23,8 @@ void Tlb::write(unsigned index, uint64_t pageMask, uint64_t entryHi, uint64_t en
 }
 
 std::optional<unsigned> Tlb::find(VirtAddr vaddr, uint8_t asid) const {
-    // Linear search is fine while the PROM runs from KSEG0/1; a micro-TLB in
-    // front of this is the obvious optimisation once IRIX runs from kuseg.
+    // Linear search; R4600 keeps recent translations in a micro-TLB in front
+    // of this, so it only runs on a miss there.
     for (unsigned i = 0; i < kEntries; ++i) {
         const Entry& e = entries_[i];
         const uint64_t compareMask = kVpn2RegionMask & ~e.pageMask;
@@ -61,7 +61,7 @@ Tlb::Result Tlb::translate(VirtAddr vaddr, uint8_t asid, bool isWrite) const {
         return {Outcome::Modified};
     }
     const uint64_t pageBase = ((lo >> kLoPfnShift) & kLoPfnMask) << 12;
-    return {Outcome::Hit, (pageBase & ~offsetMask) | (vaddr & offsetMask)};
+    return {Outcome::Hit, (pageBase & ~offsetMask) | (vaddr & offsetMask), (lo & kLoDirty) != 0};
 }
 
 } // namespace indy

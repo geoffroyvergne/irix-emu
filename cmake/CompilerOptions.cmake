@@ -23,6 +23,28 @@ else()
         $<$<AND:$<CONFIG:Release,RelWithDebInfo>,$<BOOL:${INDY_NATIVE_ARCH}>>:-march=native>
         $<$<CONFIG:Debug>:-O0 -g3 -fno-omit-frame-pointer>)
 
+    if(INDY_PGO_GENERATE AND INDY_PGO_PROFILE)
+        message(FATAL_ERROR "INDY_PGO_GENERATE and INDY_PGO_PROFILE are mutually exclusive")
+    endif()
+    if(INDY_PGO_GENERATE)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            target_compile_options(indy_options INTERFACE -fprofile-instr-generate)
+            target_link_options(indy_options INTERFACE -fprofile-instr-generate)
+        else()
+            target_compile_options(indy_options INTERFACE -fprofile-generate)
+            target_link_options(indy_options INTERFACE -fprofile-generate)
+        endif()
+    elseif(INDY_PGO_PROFILE)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            # The profile may predate small source changes: use what still matches.
+            target_compile_options(indy_options INTERFACE "-fprofile-instr-use=${INDY_PGO_PROFILE}"
+                                   -Wno-profile-instr-out-of-date -Wno-profile-instr-unprofiled)
+        else()
+            target_compile_options(indy_options INTERFACE "-fprofile-use=${INDY_PGO_PROFILE}"
+                                   -fprofile-partial-training -Wno-missing-profile)
+        endif()
+    endif()
+
     if(INDY_SANITIZE)
         target_compile_options(indy_options INTERFACE
             $<$<CONFIG:Debug>:-fsanitize=address,undefined -fno-sanitize-recover=undefined>)

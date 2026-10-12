@@ -17,6 +17,7 @@
 
 #include <SDL3/SDL_main.h>
 
+#include <algorithm>
 #include <charconv>
 #include <cstdlib>
 #include <chrono>
@@ -37,8 +38,9 @@ struct Options {
     bool throttle = true;
     bool vsync = true;
     std::string screenshot; // write the last frame here (PPM) on exit
-    double typeDelay = -1;  // --type: seconds after start
-    std::string typeText;   // --type: text to send through the PS/2 keyboard
+    std::vector<std::pair<double, std::string>> timedScreenshots; // --screenshot-at <sec>:<file>
+    // --type (repeatable): at <seconds>, text sent through the PS/2 keyboard.
+    std::vector<std::pair<double, std::string>> typing;
     // --mouse (repeatable): at <seconds>, PS/2 deltas (+y up) and buttons.
     std::vector<std::pair<double, cmd::MouseEvent>> mouseEvents;
 };
@@ -62,9 +64,9 @@ void writeScreenshot(FrameBuffer& frame, const std::string& path) {
 }
 
 constexpr std::string_view kUsage =
-    "usage: indy <prom.bin> [--cdrom <file.iso>] [--disk <file.img> [--disk-size <MiB>]] [--nvram <file>]\n"
+    "usage: indy <prom.bin> [--cdrom <file.iso>] [--disk <image> ...] [--disk-size <MiB>] [--nvram <file>]\n"
     "            [--mac <xx:xx:xx:xx:xx:xx>] [--ram <MiB>] [--trace <N>]\n"
-    "            [--no-gfx] [--screenshot <file.ppm>] [--type <sec>:<text>] [--mouse <sec>:<dx>,<dy>[,<btn>]]\n"
+    "            [--no-gfx] [--screenshot <file.ppm>] [--screenshot-at <sec>:<file.ppm>] [--type <sec>:<text>] [--mouse <sec>:<dx>,<dy>[,<btn>]]\n"
     "            [--unthrottled] [--no-vsync]\n"
     "       Type into this terminal to reach the serial console; the window feeds the PS/2 keyboard.\n"
     "       (the PROM may also be given with --prom or the INDY_PROM environment variable)";
@@ -89,12 +91,15 @@ std::expected<Options, std::string> parseArgs(int argc, char* argv[]) {
             return std::string_view(argv[++i]);
         };
 
-        if (arg == "--prom" || arg == "--cdrom" || arg == "--nvram" || arg == "--disk") {
+        if (arg == "--disk") { // repeatable: SCSI IDs 1, 2, 3, 5, 6, 7 in order
+            auto v = value();
+            if (!v) return std::unexpected(v.error());
+            options.system.diskImages.emplace_back(*v);
+        } else if (arg == "--prom" || arg == "--cdrom" || arg == "--nvram") {
             auto v = value();
             if (!v) return std::unexpected(v.error());
             (arg == "--prom"    ? options.system.promImage
              : arg == "--cdrom" ? options.system.cdromImage
-             : arg == "--disk"  ? options.system.diskImage
                                 : options.system.nvramFile) = *v;
         } else if (arg == "--disk-size") {
             auto v = value();
@@ -125,15 +130,17 @@ std::expected<Options, std::string> parseArgs(int argc, char* argv[]) {
             if (!v) return std::unexpected(v.error());
             const auto colon = v->find(':');
             if (colon == std::string_view::npos) return std::unexpected(std::string("--type expects <seconds>:<text>"));
-            options.typeDelay = std::stod(std::string(v->substr(0, colon)));
+            std::string text;
             for (size_t k = colon + 1; k < v->size(); ++k) {
                 if ((*v)[k] == '\\' && k + 1 < v->size() && ((*v)[k + 1] == 'r' || (*v)[k + 1] == 'n')) {
-                    options.typeText.push_back('\r');
+                    text.push_back('\r');
                     ++k;
                 } else {
-                    options.typeText.push_back((*v)[k]);
+                    text.push_back((*v)[k]);
                 }
             }
+            options.typing.emplace_back(std::stod(std::string(v->substr(0, colon))), std::move(text));
+            std::ranges::sort(options.typing);
         } else if (arg == "--mouse") { // "<seconds>:<dx>,<dy>[,<buttons>]" (PS/2: +dy = up)
             auto v = value();
             if (!v) return std::unexpected(v.error());
@@ -150,6 +157,16 @@ std::expected<Options, std::string> parseArgs(int argc, char* argv[]) {
             auto v = value();
             if (!v) return std::unexpected(v.error());
             options.screenshot = std::string(*v);
+        } else if (arg == "--screenshot-at") { // "<seconds>:<file.ppm>", repeatable
+            auto v = value();
+            if (!v) return std::unexpected(v.error());
+            const auto colon = v->find(':');
+            if (colon == std::string_view::npos) {
+                return std::unexpected(std::string("--screenshot-at expects <seconds>:<file.ppm>"));
+            }
+            options.timedScreenshots.emplace_back(std::stod(std::string(v->substr(0, colon))),
+                                                  std::string(v->substr(colon + 1)));
+            std::ranges::sort(options.timedScreenshots);
         } else if (arg == "--unthrottled") {
             options.throttle = false;
         } else if (arg == "--no-vsync") {
@@ -205,21 +222,25 @@ int run(const Options& options) {
     auto nextFrame = Clock::now();
 
     const auto start = Clock::now();
-    bool typed = options.typeDelay < 0;
+    const bool logSpeed = std::getenv("INDY_LOG_SPEED") != nullptr; // speed meter also on stderr
+    size_t nextTyping = 0;
     size_t nextMouse = 0;
     auto lastStats = Clock::now();
     uint64_t lastCycles = 0;
+    size_t nextShot = 0;
 
     while (ui.pumpEvents(commands) && emulator.running()) {
         ui.present(display);
 
         const double elapsed = std::chrono::duration<double>(Clock::now() - start).count();
+        while (nextShot < options.timedScreenshots.size() && elapsed >= options.timedScreenshots[nextShot].first) {
+            writeScreenshot(display, options.timedScreenshots[nextShot++].second);
+        }
         while (nextMouse < options.mouseEvents.size() && elapsed >= options.mouseEvents[nextMouse].first) {
             commands.push(options.mouseEvents[nextMouse++].second);
         }
-        if (!typed && std::chrono::duration<double>(Clock::now() - start).count() >= options.typeDelay) {
-            typed = true;
-            for (const cmd::KeyEvent& key : keyEventsForText(options.typeText).events) {
+        while (nextTyping < options.typing.size() && elapsed >= options.typing[nextTyping].first) {
+            for (const cmd::KeyEvent& key : keyEventsForText(options.typing[nextTyping++].second).events) {
                 commands.push(key);
             }
         }
@@ -231,6 +252,10 @@ int run(const Options& options) {
             const double seconds = std::chrono::duration<double>(now - lastStats).count();
             const double speed = static_cast<double>(cycles - lastCycles) /
                                  (static_cast<double>(emulator.clockHz()) * seconds) * 100.0;
+            if (logSpeed) {
+                log::tagged("SPEED", "{:.1f}% at {:.0f} s", speed,
+                            std::chrono::duration<double>(now - start).count());
+            }
             ui.setTitle(std::format("SGI Indy - {:.1f}% speed - {}", speed,
                                     ui.mouseCaptured() ? "Ctrl+Alt+G releases the mouse"
                                                        : "click to capture the mouse"));

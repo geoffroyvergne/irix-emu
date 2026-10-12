@@ -156,7 +156,7 @@ The core library `indy_core` has **no SDL dependency**. Only `src/frontend` uses
 | **WD33C93 SCSI** | Select-and-Transfer, plus Select followed by Transfer Info (phase by phase), in polled and DMA modes. |
 | **Hard disk (ID 1)** | Raw image file, 512-byte blocks, read/write in place. INQUIRY (Seagate ST32550N), READ/WRITE(6/10), READ CAPACITY, MODE SENSE/SELECT(6/10) with geometry pages, FORMAT UNIT, VERIFY, SYNCHRONIZE CACHE, READ DEFECT DATA, power-on UNIT ATTENTION. `fx` labels and partitions it. |
 | **CD-ROM (ID 4)** | Presents as a Toshiba XM-3401TA with 512/2048-byte blocks. INQUIRY, READ(6/10), READ CAPACITY, MODE SENSE/SELECT, READ TOC, sense data. Disc swaps raise UNIT ATTENTION. |
-| **Newport XL8** | REX3 drawing engine: spans, blocks, patterns, logic ops, clipping, screen-to-screen copy, host transfers, lines. DCB devices: VC2 (including the hardware cursor), XMAP9, CMAP. Scan-out follows the VC2 display-ID tables, so each window gets its own XMAP9 mode (colour map, CI/RGB). Runs IRIX's X server (`Xsgi`) and the xdm login. 1280×1024 output. |
+| **Newport XL8** | REX3 drawing engine: spans, blocks, patterns, logic ops, clipping, screen-to-screen copy, host transfers, lines. DCB devices: VC2 (including the hardware cursor), XMAP9, CMAP. Scan-out follows the VC2 display-ID tables, so each window gets its own XMAP9 mode (colour map, CI/RGB). RGB mode drawing packs 24-bit colours to 8-bit `BBGGGRRR`, and RGB display modes send each channel through its gamma ramp. The popup planes (menus, 4Dwm's move outline) are drawn on top through the popup colour map. Runs IRIX's X server (`Xsgi`) and the xdm login. 1280×1024 output. |
 | **Not emulated yet** | Ethernet (SEEQ 80C03), audio (HAL2), parallel port, CPU caches (IDE's `icache`/`dcache` tests report a CPU-module failure; harmless). |
 
 ## Building
@@ -192,6 +192,19 @@ Binaries are written to `<build>/bin/`: `indy` (the emulator) and `indy_tests`.
 | `INDY_WARNINGS_AS_ERRORS` | `OFF` | Treat warnings as errors |
 | `INDY_FETCH_SDL` | `ON` | Download SDL3 if no system copy is found |
 | `INDY_BUILD_TESTS` | `ON` | Build `indy_tests` and register it with CTest |
+| `INDY_PGO_GENERATE` | `OFF` | Instrumented build that records a profile for profile-guided optimisation |
+| `INDY_PGO_PROFILE` | *(empty)* | Build optimised with this merged `.profdata` profile |
+
+### Fastest build: profile-guided optimisation
+
+The emulator spends nearly all its time in the CPU interpreter, which benefits from profile-guided optimisation (PGO): the compiler lays out the hot paths from a recording of real IRIX code. One command trains on your own PROM and disk image (the disk is not modified; training runs on a copy) and builds `build-pgo/bin/indy`:
+
+```sh
+tools/build-pgo.sh indy_prom.bin irix.img        # optionally: training seconds (default 120)
+./build-pgo/bin/indy indy_prom.bin --disk irix.img --ram 256
+```
+
+It takes about two minutes and makes the interpreter about 13% faster (133% of a real Indy unthrottled, against 118%). Re-run it after updating the sources. A stale profile still works but helps less.
 
 The code builds cleanly with `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion`.
 
@@ -212,15 +225,16 @@ You need an **Indy boot PROM image**, dumped from your own machine (see [Legal](
 |---|---|
 | `<prom.bin>` / `--prom <file>` | Boot PROM image (required) |
 | `--cdrom <file.iso>` | Disc image to insert at start-up (size must be a multiple of 2048 bytes) |
-| `--disk <file.img>` | SCSI hard disk image at ID 1 (`dksc(0,1,…)`), read and written in place |
-| `--disk-size <MiB>` | With `--disk`: create a blank (sparse) image of this size if the file doesn't exist |
+| `--disk <file>` | SCSI hard disk image, read and written in place: a raw image or an uncompressed MAME CHD (detected from the contents). Repeatable: the first disk is SCSI ID 1 (`dks0d1`, the system disk), then IDs 2, 3, 5, 6, 7 (the CD-ROM's ID 4 is skipped). |
+| `--disk-size <MiB>` | With `--disk`: create a blank (sparse) image of this size for any disk file that doesn't exist |
 | `--nvram <file>` | NVRAM backing file (default `indy_nvram.bin` in the current directory) |
 | `--mac <xx:xx:xx:xx:xx:xx>` | Ethernet address stored in the NVRAM (PROM variable `eaddr`). Default: keep the NVRAM's own, or `08:00:69:0e:1d:01` if it has none. |
-| `--ram <MiB>` | Installed memory, split into SIMM banks: 16, 32, 64 (default), 96, 128, 192 or 256 |
+| `--ram <MiB>` | Installed memory, split into SIMM banks: 16, 32, 64 (default), 96, 128, 192 or 256. Use **256** for the IRIX 6.5 desktop: with 64 MB, only about 13 MB is free at the login screen, before a session starts. |
 | `--no-gfx` | Remove the Newport board. The PROM then uses the serial console in the terminal. |
 | `--trace <N>` | Log the first N executed instructions (PC and opcode) |
 | `--screenshot <file.ppm>` | Save the last displayed frame when the emulator exits |
-| `--type <sec>:<text>` | Type text on the PS/2 keyboard after `sec` seconds (US layout, capitals and symbols included; `\r` = Enter) |
+| `--screenshot-at <sec>:<file.ppm>` | Save the displayed frame `sec` seconds after start. Repeatable. |
+| `--type <sec>:<text>` | Type text on the PS/2 keyboard after `sec` seconds (US layout, capitals and symbols included; `\r` = Enter). Repeatable. |
 | `--mouse <sec>:<dx>,<dy>[,<btn>]` | Send a mouse event after `sec` seconds. Repeatable. Uses PS/2 directions (+dy = up); buttons L=1, R=2, M=4. |
 | `--unthrottled` | Run as fast as possible instead of at real Indy speed |
 | `--no-vsync` | Pace frames with a timer instead of vsync |
@@ -232,6 +246,8 @@ You need an **Indy boot PROM image**, dumped from your own machine (see [Legal](
 |---|---|
 | `INDY_PROM` | PROM image path, used when none is given on the command line |
 | `INDY_TRACE_GFX=<n>` | Log the first `n` Newport register accesses (graphics bring-up) |
+| `INDY_LOG_SPEED=1` | Print the speed meter (as in the window title) to the log once a second, with the time since start |
+| `INDY_TRACE_KBC=1` | Log every byte between the CPU and the 8042 keyboard/mouse controller, and each host key |
 | `INDY_TRACE_EXCEPTIONS=1` | Also log routine CPU exceptions (TLB refills, syscalls, …), which IRIX takes constantly. Without it, only unusual ones are shown (bus/address errors, reserved instructions, faults on the NULL page). |
 | `INDY_TRACE_NULL=1` | On the first access to the NULL page, dump the CPU registers and the last 64 instructions |
 | `INDY_TRACE_SCSI=1` | Log every SCSI command: CDB, transfer count, bytes moved, status, pauses/resumes |
@@ -270,7 +286,24 @@ On a real Indy the NVRAM also holds the factory **Ethernet address**, which the 
 
 ## Hard disk images
 
-The Indy's system disk is emulated as a **raw image file** attached at SCSI ID 1 (`dksc(0,1,…)`), the conventional system disk position. Block *n* of the disk is bytes `n*512 … n*512+511` of the file. There's no container format, so images are interchangeable with `dd` dumps of real SGI disks.
+The Indy's system disk is attached at SCSI ID 1 (`dksc(0,1,…)`), the conventional system disk position. Two image formats work, and the emulator recognises them from the file's contents:
+
+- **Raw image** (the default for new disks). Block *n* of the disk is bytes `n*512 … n*512+511` of the file. There's no container format, so images are interchangeable with `dd` dumps of real SGI disks.
+- **MAME CHD, uncompressed** (`.chd`, v5). Ready-made IRIX disks for MAME's Indy driver work as they are: `--disk irix65.chd`. The file stays sparse. Blocks that were never written take no space, and new data is appended to the file as IRIX writes, as MAME does. The CHD header's checksums aren't updated, so `chdman verify` reports a mismatch after the emulator has written to it, but `chdman extracthd` and `chdman info` still read it. Keep a backup (`cp -c`) of a CHD you care about.
+
+  A MAME setup may come with **several disks**. Pass them in SCSI ID order, `--disk irix65.chd --disk disk2.chd`. If the system's `/etc/fstab` mounts a disk you don't have (for example `/dev/dsk/dks0d2s0 /disk2`), IRIX boots normally but reports `mount: … giving up on: /disk2`. To stop that, remove the line as root:
+
+  ```sh
+  cp /etc/fstab /etc/fstab.orig
+  grep -v ' /disk2 ' /etc/fstab.orig > /etc/fstab
+  ```
+
+  **Compressed CHDs** (MAME's default) and CHDs that depend on a parent image are refused, with a message saying how to convert them:
+
+  ```sh
+  chdman copy -i disk.chd -o disk-rw.chd -c none   # uncompressed CHD, stays compact
+  chdman extracthd -i disk.chd -o disk.img         # or a raw image (as large as the disk)
+  ```
 
 ### 1. Create the image
 
@@ -385,6 +418,8 @@ The title bar shows emulation speed and whether the mouse is captured.
 
 The same text-to-keys conversion is used by `--type`, so scripted typing also handles capitals and symbols.
 
+> **Keyboard layouts:** the emulator sends *physical* key positions, as a real PS/2 keyboard does, and IRIX applies its own keymap. Typing on your keyboard therefore works when IRIX's layout matches your keyboard (e.g. a French AZERTY Mac and an IRIX set up with `LANG=fr`). Paste and `--type` translate text as if from a **US** keyboard, so on an IRIX configured for another layout, letters such as `a`/`q` and most symbols come out wrong.
+
 ## Debugging and diagnostics
 
 - **Instruction trace:** `--trace N` prints `[CPU TRACE] PC: 0xbfc003c0 -> Opcode: 0x3c023041` for the first N instructions.
@@ -416,12 +451,14 @@ Many tests replay the exact register sequences the real PROM performs. Run them 
 
 1. Use the installed system: the 4Dwm desktop after login, applications, and the remaining overlay and application CDs. IRIX 6.5 now installs, boots from disk and reaches the X login.
 2. Ethernet (SEEQ 80C03 through HPC3) and audio (HAL2).
-3. Performance: block caching or a JIT for the interpreter, and a micro-TLB.
-4. Graphics: RGBMODE drawing (colour from the RGB registers), the XL24 board, overlay/popup planes, then an HLE path to OpenGL/Vulkan for 3D.
+3. Performance: a decoded-block cache or JIT for the interpreter. With the PGO build, the heaviest IRIX phases (kernel start-up, boot scripts, starting a desktop session) run at 75–95% of a real Indy; everything else keeps up.
+4. Graphics: dithering and shaded (Gouraud) spans, the XL24 board, then an HLE path to OpenGL/Vulkan for 3D.
 
 **Current simplifications**
 
 - CPU timing is one instruction per cycle; caches are not modelled.
+- Count and Random are computed from an instruction counter when read, and the Count = Compare interrupt is a precomputed deadline.
+- The interpreter keeps three translation caches, all invisible to the guest: a 256-entry micro-TLB in front of the 48-entry TLB, the host page of the current code page for instruction fetch, and a host-page cache for loads and stores to RAM. Context and mode switches (ASID, KSU/EXL/ERL) simply miss. TLB writes drop the affected pages, and memory remaps drop everything.
 - SCSI targets have a single logical unit (LUN 0) and complete commands instantly, without disconnecting or reselecting. A select-and-transfer whose data phase outlasts the transfer count pauses ("unexpected phase") and resumes when the driver re-issues it, as on the real chip.
 - Some behaviour follows the PROM where the references are silent. These spots are marked `ASSUMPTION` or explained in comments; for example, untranslated MC DMA addresses are treated as physical.
 

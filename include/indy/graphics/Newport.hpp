@@ -127,9 +127,16 @@ private:
     [[nodiscard]] uint8_t cursorPixel(int32_t x, int32_t y, bool large) const;
     // Colour of framebuffer value `v` under XMAP9 mode-table entry `mode`.
     [[nodiscard]] uint32_t displayColor(uint32_t mode, uint32_t v) const;
+    // Pixel value as the selected planes (DRAWMODE1) hold it: the main 8 bits,
+    // or the 2-bit popup/CID value.
+    [[nodiscard]] uint32_t planeValue(int32_t x, int32_t y);
 
     std::vector<uint32_t> vram_;    // RGB/CI planes, one word per pixel
-    std::vector<uint8_t> auxPlanes_; // overlay/popup/CID planes (stored, not displayed yet)
+    // Auxiliary planes per pixel: CID (window ID) in bits 0-1 and 4-5, popup
+    // in bits 2-3 and 6-7 (write masks 0x33 / 0xCC as IRIX's X server uses
+    // them; values are replicated into both pairs). The XL8 has no overlay
+    // planes. Popup pixels show on top of the main planes.
+    std::vector<uint8_t> auxPlanes_;
     bool dirty_ = true;
 
     // REX3 state.

@@ -41,6 +41,8 @@ file(REMOVE_RECURSE
   "CMakeFiles/indy_core.dir/src/memory/PromImage.cpp.o.d"
   "CMakeFiles/indy_core.dir/src/scsi/CdRomDrive.cpp.o"
   "CMakeFiles/indy_core.dir/src/scsi/CdRomDrive.cpp.o.d"
+  "CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.o"
+  "CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.o.d"
   "CMakeFiles/indy_core.dir/src/scsi/ScsiController.cpp.o"
   "CMakeFiles/indy_core.dir/src/scsi/ScsiController.cpp.o.d"
   "CMakeFiles/indy_core.dir/src/scsi/ScsiDisk.cpp.o"

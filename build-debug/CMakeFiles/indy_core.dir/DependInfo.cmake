@@ -29,6 +29,7 @@ set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/Users/gv/dev/projects/irix-emu/src/memory/MemoryController.cpp" "CMakeFiles/indy_core.dir/src/memory/MemoryController.cpp.o" "gcc" "CMakeFiles/indy_core.dir/src/memory/MemoryController.cpp.o.d"
   "/Users/gv/dev/projects/irix-emu/src/memory/PromImage.cpp" "CMakeFiles/indy_core.dir/src/memory/PromImage.cpp.o" "gcc" "CMakeFiles/indy_core.dir/src/memory/PromImage.cpp.o.d"
   "/Users/gv/dev/projects/irix-emu/src/scsi/CdRomDrive.cpp" "CMakeFiles/indy_core.dir/src/scsi/CdRomDrive.cpp.o" "gcc" "CMakeFiles/indy_core.dir/src/scsi/CdRomDrive.cpp.o.d"
+  "/Users/gv/dev/projects/irix-emu/src/scsi/DiskImage.cpp" "CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.o" "gcc" "CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.o.d"
   "/Users/gv/dev/projects/irix-emu/src/scsi/ScsiController.cpp" "CMakeFiles/indy_core.dir/src/scsi/ScsiController.cpp.o" "gcc" "CMakeFiles/indy_core.dir/src/scsi/ScsiController.cpp.o.d"
   "/Users/gv/dev/projects/irix-emu/src/scsi/ScsiDisk.cpp" "CMakeFiles/indy_core.dir/src/scsi/ScsiDisk.cpp.o" "gcc" "CMakeFiles/indy_core.dir/src/scsi/ScsiDisk.cpp.o.d"
   "/Users/gv/dev/projects/irix-emu/src/scsi/Wd33c93.cpp" "CMakeFiles/indy_core.dir/src/scsi/Wd33c93.cpp.o" "gcc" "CMakeFiles/indy_core.dir/src/scsi/Wd33c93.cpp.o.d"

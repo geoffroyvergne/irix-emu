@@ -240,10 +240,24 @@ CMakeFiles/indy_core.dir/src/scsi/CdRomDrive.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/indy_core.dir/src/scsi/CdRomDrive.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/gv/dev/projects/irix-emu/src/scsi/CdRomDrive.cpp -o CMakeFiles/indy_core.dir/src/scsi/CdRomDrive.cpp.s
 
+CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.o: CMakeFiles/indy_core.dir/flags.make
+CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.o: /Users/gv/dev/projects/irix-emu/src/scsi/DiskImage.cpp
+CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.o: CMakeFiles/indy_core.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_13) "Building CXX object CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.o -MF CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.o.d -o CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.o -c /Users/gv/dev/projects/irix-emu/src/scsi/DiskImage.cpp
+
+CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /Users/gv/dev/projects/irix-emu/src/scsi/DiskImage.cpp > CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.i
+
+CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/gv/dev/projects/irix-emu/src/scsi/DiskImage.cpp -o CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.s
+
 CMakeFiles/indy_core.dir/src/scsi/ScsiDisk.cpp.o: CMakeFiles/indy_core.dir/flags.make
 CMakeFiles/indy_core.dir/src/scsi/ScsiDisk.cpp.o: /Users/gv/dev/projects/irix-emu/src/scsi/ScsiDisk.cpp
 CMakeFiles/indy_core.dir/src/scsi/ScsiDisk.cpp.o: CMakeFiles/indy_core.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_13) "Building CXX object CMakeFiles/indy_core.dir/src/scsi/ScsiDisk.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_14) "Building CXX object CMakeFiles/indy_core.dir/src/scsi/ScsiDisk.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/indy_core.dir/src/scsi/ScsiDisk.cpp.o -MF CMakeFiles/indy_core.dir/src/scsi/ScsiDisk.cpp.o.d -o CMakeFiles/indy_core.dir/src/scsi/ScsiDisk.cpp.o -c /Users/gv/dev/projects/irix-emu/src/scsi/ScsiDisk.cpp
 
 CMakeFiles/indy_core.dir/src/scsi/ScsiDisk.cpp.i: cmake_force
@@ -257,7 +271,7 @@ CMakeFiles/indy_core.dir/src/scsi/ScsiDisk.cpp.s: cmake_force
 CMakeFiles/indy_core.dir/src/scsi/Wd33c93.cpp.o: CMakeFiles/indy_core.dir/flags.make
 CMakeFiles/indy_core.dir/src/scsi/Wd33c93.cpp.o: /Users/gv/dev/projects/irix-emu/src/scsi/Wd33c93.cpp
 CMakeFiles/indy_core.dir/src/scsi/Wd33c93.cpp.o: CMakeFiles/indy_core.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_14) "Building CXX object CMakeFiles/indy_core.dir/src/scsi/Wd33c93.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_15) "Building CXX object CMakeFiles/indy_core.dir/src/scsi/Wd33c93.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/indy_core.dir/src/scsi/Wd33c93.cpp.o -MF CMakeFiles/indy_core.dir/src/scsi/Wd33c93.cpp.o.d -o CMakeFiles/indy_core.dir/src/scsi/Wd33c93.cpp.o -c /Users/gv/dev/projects/irix-emu/src/scsi/Wd33c93.cpp
 
 CMakeFiles/indy_core.dir/src/scsi/Wd33c93.cpp.i: cmake_force
@@ -271,7 +285,7 @@ CMakeFiles/indy_core.dir/src/scsi/Wd33c93.cpp.s: cmake_force
 CMakeFiles/indy_core.dir/src/graphics/Newport.cpp.o: CMakeFiles/indy_core.dir/flags.make
 CMakeFiles/indy_core.dir/src/graphics/Newport.cpp.o: /Users/gv/dev/projects/irix-emu/src/graphics/Newport.cpp
 CMakeFiles/indy_core.dir/src/graphics/Newport.cpp.o: CMakeFiles/indy_core.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_15) "Building CXX object CMakeFiles/indy_core.dir/src/graphics/Newport.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_16) "Building CXX object CMakeFiles/indy_core.dir/src/graphics/Newport.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/indy_core.dir/src/graphics/Newport.cpp.o -MF CMakeFiles/indy_core.dir/src/graphics/Newport.cpp.o.d -o CMakeFiles/indy_core.dir/src/graphics/Newport.cpp.o -c /Users/gv/dev/projects/irix-emu/src/graphics/Newport.cpp
 
 CMakeFiles/indy_core.dir/src/graphics/Newport.cpp.i: cmake_force
@@ -285,7 +299,7 @@ CMakeFiles/indy_core.dir/src/graphics/Newport.cpp.s: cmake_force
 CMakeFiles/indy_core.dir/src/graphics/TestPatternDisplay.cpp.o: CMakeFiles/indy_core.dir/flags.make
 CMakeFiles/indy_core.dir/src/graphics/TestPatternDisplay.cpp.o: /Users/gv/dev/projects/irix-emu/src/graphics/TestPatternDisplay.cpp
 CMakeFiles/indy_core.dir/src/graphics/TestPatternDisplay.cpp.o: CMakeFiles/indy_core.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_16) "Building CXX object CMakeFiles/indy_core.dir/src/graphics/TestPatternDisplay.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_17) "Building CXX object CMakeFiles/indy_core.dir/src/graphics/TestPatternDisplay.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/indy_core.dir/src/graphics/TestPatternDisplay.cpp.o -MF CMakeFiles/indy_core.dir/src/graphics/TestPatternDisplay.cpp.o.d -o CMakeFiles/indy_core.dir/src/graphics/TestPatternDisplay.cpp.o -c /Users/gv/dev/projects/irix-emu/src/graphics/TestPatternDisplay.cpp
 
 CMakeFiles/indy_core.dir/src/graphics/TestPatternDisplay.cpp.i: cmake_force
@@ -299,7 +313,7 @@ CMakeFiles/indy_core.dir/src/graphics/TestPatternDisplay.cpp.s: cmake_force
 CMakeFiles/indy_core.dir/src/hpc/Ds1386.cpp.o: CMakeFiles/indy_core.dir/flags.make
 CMakeFiles/indy_core.dir/src/hpc/Ds1386.cpp.o: /Users/gv/dev/projects/irix-emu/src/hpc/Ds1386.cpp
 CMakeFiles/indy_core.dir/src/hpc/Ds1386.cpp.o: CMakeFiles/indy_core.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_17) "Building CXX object CMakeFiles/indy_core.dir/src/hpc/Ds1386.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_18) "Building CXX object CMakeFiles/indy_core.dir/src/hpc/Ds1386.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/indy_core.dir/src/hpc/Ds1386.cpp.o -MF CMakeFiles/indy_core.dir/src/hpc/Ds1386.cpp.o.d -o CMakeFiles/indy_core.dir/src/hpc/Ds1386.cpp.o -c /Users/gv/dev/projects/irix-emu/src/hpc/Ds1386.cpp
 
 CMakeFiles/indy_core.dir/src/hpc/Ds1386.cpp.i: cmake_force
@@ -313,7 +327,7 @@ CMakeFiles/indy_core.dir/src/hpc/Ds1386.cpp.s: cmake_force
 CMakeFiles/indy_core.dir/src/hpc/Hpc3.cpp.o: CMakeFiles/indy_core.dir/flags.make
 CMakeFiles/indy_core.dir/src/hpc/Hpc3.cpp.o: /Users/gv/dev/projects/irix-emu/src/hpc/Hpc3.cpp
 CMakeFiles/indy_core.dir/src/hpc/Hpc3.cpp.o: CMakeFiles/indy_core.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_18) "Building CXX object CMakeFiles/indy_core.dir/src/hpc/Hpc3.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_19) "Building CXX object CMakeFiles/indy_core.dir/src/hpc/Hpc3.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/indy_core.dir/src/hpc/Hpc3.cpp.o -MF CMakeFiles/indy_core.dir/src/hpc/Hpc3.cpp.o.d -o CMakeFiles/indy_core.dir/src/hpc/Hpc3.cpp.o -c /Users/gv/dev/projects/irix-emu/src/hpc/Hpc3.cpp
 
 CMakeFiles/indy_core.dir/src/hpc/Hpc3.cpp.i: cmake_force
@@ -327,7 +341,7 @@ CMakeFiles/indy_core.dir/src/hpc/Hpc3.cpp.s: cmake_force
 CMakeFiles/indy_core.dir/src/hpc/Int3.cpp.o: CMakeFiles/indy_core.dir/flags.make
 CMakeFiles/indy_core.dir/src/hpc/Int3.cpp.o: /Users/gv/dev/projects/irix-emu/src/hpc/Int3.cpp
 CMakeFiles/indy_core.dir/src/hpc/Int3.cpp.o: CMakeFiles/indy_core.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_19) "Building CXX object CMakeFiles/indy_core.dir/src/hpc/Int3.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_20) "Building CXX object CMakeFiles/indy_core.dir/src/hpc/Int3.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/indy_core.dir/src/hpc/Int3.cpp.o -MF CMakeFiles/indy_core.dir/src/hpc/Int3.cpp.o.d -o CMakeFiles/indy_core.dir/src/hpc/Int3.cpp.o -c /Users/gv/dev/projects/irix-emu/src/hpc/Int3.cpp
 
 CMakeFiles/indy_core.dir/src/hpc/Int3.cpp.i: cmake_force
@@ -341,7 +355,7 @@ CMakeFiles/indy_core.dir/src/hpc/Int3.cpp.s: cmake_force
 CMakeFiles/indy_core.dir/src/hpc/Pit8254.cpp.o: CMakeFiles/indy_core.dir/flags.make
 CMakeFiles/indy_core.dir/src/hpc/Pit8254.cpp.o: /Users/gv/dev/projects/irix-emu/src/hpc/Pit8254.cpp
 CMakeFiles/indy_core.dir/src/hpc/Pit8254.cpp.o: CMakeFiles/indy_core.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_20) "Building CXX object CMakeFiles/indy_core.dir/src/hpc/Pit8254.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_21) "Building CXX object CMakeFiles/indy_core.dir/src/hpc/Pit8254.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/indy_core.dir/src/hpc/Pit8254.cpp.o -MF CMakeFiles/indy_core.dir/src/hpc/Pit8254.cpp.o.d -o CMakeFiles/indy_core.dir/src/hpc/Pit8254.cpp.o -c /Users/gv/dev/projects/irix-emu/src/hpc/Pit8254.cpp
 
 CMakeFiles/indy_core.dir/src/hpc/Pit8254.cpp.i: cmake_force
@@ -355,7 +369,7 @@ CMakeFiles/indy_core.dir/src/hpc/Pit8254.cpp.s: cmake_force
 CMakeFiles/indy_core.dir/src/hpc/SgiNvram.cpp.o: CMakeFiles/indy_core.dir/flags.make
 CMakeFiles/indy_core.dir/src/hpc/SgiNvram.cpp.o: /Users/gv/dev/projects/irix-emu/src/hpc/SgiNvram.cpp
 CMakeFiles/indy_core.dir/src/hpc/SgiNvram.cpp.o: CMakeFiles/indy_core.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_21) "Building CXX object CMakeFiles/indy_core.dir/src/hpc/SgiNvram.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_22) "Building CXX object CMakeFiles/indy_core.dir/src/hpc/SgiNvram.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/indy_core.dir/src/hpc/SgiNvram.cpp.o -MF CMakeFiles/indy_core.dir/src/hpc/SgiNvram.cpp.o.d -o CMakeFiles/indy_core.dir/src/hpc/SgiNvram.cpp.o -c /Users/gv/dev/projects/irix-emu/src/hpc/SgiNvram.cpp
 
 CMakeFiles/indy_core.dir/src/hpc/SgiNvram.cpp.i: cmake_force
@@ -369,7 +383,7 @@ CMakeFiles/indy_core.dir/src/hpc/SgiNvram.cpp.s: cmake_force
 CMakeFiles/indy_core.dir/src/hpc/Ioc2.cpp.o: CMakeFiles/indy_core.dir/flags.make
 CMakeFiles/indy_core.dir/src/hpc/Ioc2.cpp.o: /Users/gv/dev/projects/irix-emu/src/hpc/Ioc2.cpp
 CMakeFiles/indy_core.dir/src/hpc/Ioc2.cpp.o: CMakeFiles/indy_core.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_22) "Building CXX object CMakeFiles/indy_core.dir/src/hpc/Ioc2.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_23) "Building CXX object CMakeFiles/indy_core.dir/src/hpc/Ioc2.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/indy_core.dir/src/hpc/Ioc2.cpp.o -MF CMakeFiles/indy_core.dir/src/hpc/Ioc2.cpp.o.d -o CMakeFiles/indy_core.dir/src/hpc/Ioc2.cpp.o -c /Users/gv/dev/projects/irix-emu/src/hpc/Ioc2.cpp
 
 CMakeFiles/indy_core.dir/src/hpc/Ioc2.cpp.i: cmake_force
@@ -383,7 +397,7 @@ CMakeFiles/indy_core.dir/src/hpc/Ioc2.cpp.s: cmake_force
 CMakeFiles/indy_core.dir/src/input/Kbc8042.cpp.o: CMakeFiles/indy_core.dir/flags.make
 CMakeFiles/indy_core.dir/src/input/Kbc8042.cpp.o: /Users/gv/dev/projects/irix-emu/src/input/Kbc8042.cpp
 CMakeFiles/indy_core.dir/src/input/Kbc8042.cpp.o: CMakeFiles/indy_core.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_23) "Building CXX object CMakeFiles/indy_core.dir/src/input/Kbc8042.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_24) "Building CXX object CMakeFiles/indy_core.dir/src/input/Kbc8042.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/indy_core.dir/src/input/Kbc8042.cpp.o -MF CMakeFiles/indy_core.dir/src/input/Kbc8042.cpp.o.d -o CMakeFiles/indy_core.dir/src/input/Kbc8042.cpp.o -c /Users/gv/dev/projects/irix-emu/src/input/Kbc8042.cpp
 
 CMakeFiles/indy_core.dir/src/input/Kbc8042.cpp.i: cmake_force
@@ -397,7 +411,7 @@ CMakeFiles/indy_core.dir/src/input/Kbc8042.cpp.s: cmake_force
 CMakeFiles/indy_core.dir/src/input/TextKeys.cpp.o: CMakeFiles/indy_core.dir/flags.make
 CMakeFiles/indy_core.dir/src/input/TextKeys.cpp.o: /Users/gv/dev/projects/irix-emu/src/input/TextKeys.cpp
 CMakeFiles/indy_core.dir/src/input/TextKeys.cpp.o: CMakeFiles/indy_core.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_24) "Building CXX object CMakeFiles/indy_core.dir/src/input/TextKeys.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_25) "Building CXX object CMakeFiles/indy_core.dir/src/input/TextKeys.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/indy_core.dir/src/input/TextKeys.cpp.o -MF CMakeFiles/indy_core.dir/src/input/TextKeys.cpp.o.d -o CMakeFiles/indy_core.dir/src/input/TextKeys.cpp.o -c /Users/gv/dev/projects/irix-emu/src/input/TextKeys.cpp
 
 CMakeFiles/indy_core.dir/src/input/TextKeys.cpp.i: cmake_force
@@ -411,7 +425,7 @@ CMakeFiles/indy_core.dir/src/input/TextKeys.cpp.s: cmake_force
 CMakeFiles/indy_core.dir/src/serial/Z8530.cpp.o: CMakeFiles/indy_core.dir/flags.make
 CMakeFiles/indy_core.dir/src/serial/Z8530.cpp.o: /Users/gv/dev/projects/irix-emu/src/serial/Z8530.cpp
 CMakeFiles/indy_core.dir/src/serial/Z8530.cpp.o: CMakeFiles/indy_core.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_25) "Building CXX object CMakeFiles/indy_core.dir/src/serial/Z8530.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_26) "Building CXX object CMakeFiles/indy_core.dir/src/serial/Z8530.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/indy_core.dir/src/serial/Z8530.cpp.o -MF CMakeFiles/indy_core.dir/src/serial/Z8530.cpp.o.d -o CMakeFiles/indy_core.dir/src/serial/Z8530.cpp.o -c /Users/gv/dev/projects/irix-emu/src/serial/Z8530.cpp
 
 CMakeFiles/indy_core.dir/src/serial/Z8530.cpp.i: cmake_force
@@ -436,6 +450,7 @@ indy_core_OBJECTS = \
 "CMakeFiles/indy_core.dir/src/memory/PromImage.cpp.o" \
 "CMakeFiles/indy_core.dir/src/scsi/ScsiController.cpp.o" \
 "CMakeFiles/indy_core.dir/src/scsi/CdRomDrive.cpp.o" \
+"CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.o" \
 "CMakeFiles/indy_core.dir/src/scsi/ScsiDisk.cpp.o" \
 "CMakeFiles/indy_core.dir/src/scsi/Wd33c93.cpp.o" \
 "CMakeFiles/indy_core.dir/src/graphics/Newport.cpp.o" \
@@ -465,6 +480,7 @@ lib/libindy_core.a: CMakeFiles/indy_core.dir/src/memory/MemoryController.cpp.o
 lib/libindy_core.a: CMakeFiles/indy_core.dir/src/memory/PromImage.cpp.o
 lib/libindy_core.a: CMakeFiles/indy_core.dir/src/scsi/ScsiController.cpp.o
 lib/libindy_core.a: CMakeFiles/indy_core.dir/src/scsi/CdRomDrive.cpp.o
+lib/libindy_core.a: CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.o
 lib/libindy_core.a: CMakeFiles/indy_core.dir/src/scsi/ScsiDisk.cpp.o
 lib/libindy_core.a: CMakeFiles/indy_core.dir/src/scsi/Wd33c93.cpp.o
 lib/libindy_core.a: CMakeFiles/indy_core.dir/src/graphics/Newport.cpp.o
@@ -480,7 +496,7 @@ lib/libindy_core.a: CMakeFiles/indy_core.dir/src/input/TextKeys.cpp.o
 lib/libindy_core.a: CMakeFiles/indy_core.dir/src/serial/Z8530.cpp.o
 lib/libindy_core.a: CMakeFiles/indy_core.dir/build.make
 lib/libindy_core.a: CMakeFiles/indy_core.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_26) "Linking CXX static library lib/libindy_core.a"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_27) "Linking CXX static library lib/libindy_core.a"
 	$(CMAKE_COMMAND) -P CMakeFiles/indy_core.dir/cmake_clean_target.cmake
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/indy_core.dir/link.txt --verbose=$(VERBOSE)
 

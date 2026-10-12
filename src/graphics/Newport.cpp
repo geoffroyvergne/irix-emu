@@ -27,6 +27,7 @@ constexpr uint32_t kDm0LsOpaque = 0x20000;
 constexpr uint32_t kDm1PlanesMask = 0x7;    // 1/2 = RGB/CI planes, 4 overlay, 5 popup, 6 CID
 constexpr uint32_t kDm1RwPacked   = 0x80;
 constexpr uint32_t kDm1RwDouble   = 0x400;
+constexpr uint32_t kDm1RgbMode    = 0x8000;  // colour registers hold 24-bit RGB (0xBBGGRR)
 constexpr uint32_t kDm1FastClear  = 0x20000; // source = COLORVRAM
 constexpr unsigned kDm1LogicShift = 28;
 // STATUS.
@@ -133,6 +134,9 @@ bool Newport::read(uint32_t offset, AccessSize size, uint64_t& value) {
         ++g_traced;
         log::tagged("GFX", "read  {:#06x}{} -> {:#x} (dcbmode {:#x})", reg, go ? " GO" : "", value, dcbMode_);
     }
+    // REX3 reads are pipelined: a GO read returns the pixels the previous GO
+    // fetched, then fetches the next ones. X primes PIO reads with a dummy
+    // GO write; the MC's DMA engine primes its own transfers (see there).
     if (go) {
         runCommand();
     }
@@ -470,27 +474,53 @@ void Newport::writePixel(int32_t x, int32_t y, uint32_t source) {
     if (!clipPass(x, y)) return;
     const uint32_t planes = drawMode1_ & kDm1PlanesMask;
     const uint32_t mask = wrMask_ & kGlobalMask;
+    uint32_t* p = pixelAddress(x, y);
+    if (p == nullptr) return;
     if (planes == 1 || planes == 2) {
-        uint32_t* p = pixelAddress(x, y);
-        if (p == nullptr) return;
         const uint32_t value = applyLogicOp(source, *p);
         *p = (*p & ~mask) | (value & mask);
         dirty_ = true;
-    } else if (planes >= 4) {
-        uint32_t* p = pixelAddress(x, y); // same addressing for the auxiliary planes
-        if (p == nullptr) return;
+    } else if (planes == 5 || planes == 6) {
+        // Popup (5) or CID (6): the 2-bit value goes into both bit pairs of
+        // its planes; the write mask selects which of them change.
+        const uint32_t v = source & 3;
+        const uint32_t data = planes == 5 ? (v << 2) | (v << 6) : v | (v << 4);
         uint8_t& aux = auxPlanes_[static_cast<size_t>(p - vram_.data())];
-        aux = static_cast<uint8_t>((aux & ~mask) | (applyLogicOp(source, aux) & mask));
+        aux = static_cast<uint8_t>((aux & ~mask) | (applyLogicOp(data, aux) & mask));
+        dirty_ = true;
+    }
+    // Planes 4 (overlay): not fitted on the XL8.
+}
+
+uint32_t Newport::planeValue(int32_t x, int32_t y) {
+    const uint32_t* p = pixelAddress(x, y);
+    if (p == nullptr) return 0;
+    const uint8_t aux = auxPlanes_[static_cast<size_t>(p - vram_.data())];
+    switch (drawMode1_ & kDm1PlanesMask) {
+    case 5:  return (aux >> 2) & 3;
+    case 6:  return aux & 3;
+    default: return *p & kGlobalMask;
     }
 }
 
 uint32_t Newport::sourceColor(bool patternBit, bool& draw) {
+    uint32_t color;
     if (patternBit) {
         draw = true;
-        return ((drawMode1_ & kDm1FastClear) != 0 ? colorVram_ : colorI_) & kGlobalMask;
+        color = (drawMode1_ & kDm1FastClear) != 0 ? colorVram_ : colorI_;
+    } else {
+        draw = (drawMode0_ & (kDm0ZOpaque | kDm0LsOpaque)) != 0; // opaque: background colour
+        color = colorBack_;
     }
-    draw = (drawMode0_ & (kDm0ZOpaque | kDm0LsOpaque)) != 0; // opaque: background colour
-    return colorBack_ & kGlobalMask;
+    const uint32_t planes = drawMode1_ & kDm1PlanesMask;
+    if ((drawMode1_ & kDm1RgbMode) != 0 && (planes == 1 || planes == 2)) {
+        // RGB mode: the register holds 0xBBGGRR; an 8-bit framebuffer stores
+        // it as BBGGGRRR. (X's TrueColor pixels arrive expanded, e.g. 0xAAB6B6
+        // = blue 2, green 5, red 5, and pack back exactly.)
+        const uint32_t r = color & 0xFF, g = (color >> 8) & 0xFF, b = (color >> 16) & 0xFF;
+        color = ((b >> 6) << 6) | ((g >> 5) << 3) | (r >> 5);
+    }
+    return color & kGlobalMask;
 }
 
 void Newport::drawBlock(bool screenToScreen) {
@@ -518,9 +548,7 @@ void Newport::drawBlock(bool screenToScreen) {
             const bool patternBit = ((pattern >> bit) & 1) != 0;
             bit = (bit - 1) & 31;
             if (screenToScreen) {
-                if (const uint32_t* src = pixelAddress(x, y)) {
-                    writePixel(x + xMove_, y + yMove_, *src);
-                }
+                writePixel(x + xMove_, y + yMove_, planeValue(x, y));
             } else {
                 bool draw = false;
                 uint32_t color = sourceColor(patternBit, draw);
@@ -598,8 +626,7 @@ void Newport::readPixels() {
     const unsigned n = std::min(maxPixels, width);
     uint64_t data = 0;
     for (unsigned i = 0; i < n; ++i) {
-        const uint32_t* p = pixelAddress(xStart_ + static_cast<int32_t>(i), yStart_);
-        data |= uint64_t{p != nullptr ? (*p & kGlobalMask) : 0u} << (56 - 8 * i);
+        data |= uint64_t{planeValue(xStart_ + static_cast<int32_t>(i), yStart_)} << (56 - 8 * i);
     }
     hostData_ = data;
     xStart_ += static_cast<int32_t>(n);
@@ -828,6 +855,7 @@ void Newport::compose() {
         // X gives every window its own DID (colour map base, CI or RGB).
         constexpr uint32_t kRamMask = kVc2RamWords - 1;
         const auto& modes = xmap_[0].modes;
+        const uint32_t popupBase = static_cast<uint32_t>(xmap_[0].popupMsb) << 5;
         for (uint32_t y = 0; y < height; ++y) {
             uint32_t ptr = vc2Ram_[(vc2Regs_[kVc2DidEntry] + y) & kRamMask];
             uint32_t mode = modes[vc2Ram_[ptr & kRamMask] & 0x1F];
@@ -842,6 +870,14 @@ void Newport::compose() {
                     next = vc2Ram_[++ptr & kRamMask];
                 }
                 dst[x] = displayColor(mode, src[x] & kGlobalMask);
+            }
+            // Popup planes on top: value 0 is transparent, 1-3 come from the
+            // popup colour map (XMAP9 popup MSBs), like the cursor's.
+            const uint8_t* aux = &auxPlanes_[size_t{y} * kVramWidth];
+            for (uint32_t x = 0; x < width; ++x) {
+                if (const uint32_t popup = (aux[x] >> 2) & 3; popup != 0) [[unlikely]] {
+                    dst[x] = cmap_[(popupBase | popup) & (kCmapEntries - 1)];
+                }
             }
         }
 
@@ -872,17 +908,32 @@ void Newport::compose() {
 
 uint32_t Newport::displayColor(uint32_t mode, uint32_t v) const {
     // Mode entry: [2] buffer select (4 bpp), [7:3] colour-map MSBs for CI,
-    // [9:8] pixel mode (0 CI, 1-3 RGB through the fixed maps at 0x1D00,
+    // [9:8] pixel mode (0 CI, 1-3 RGB through the gamma ramps at 0x1D00,
     // 0x1E00, 0x1F00), [11:10] pixel size (0 = 4 bpp, 1 = 8 bpp; the XL8's
-    // 8 planes hold nothing deeper). Every pixel goes through the CMAP.
+    // 8 planes hold nothing deeper).
     static constexpr uint32_t kRgbMapBase[4] = {0, 0x1D00, 0x1E00, 0x1F00};
     const uint32_t pixelMode = (mode >> 8) & 3;
-    const uint32_t base = pixelMode == 0 ? (mode & 0xF8) << 5 : kRgbMapBase[pixelMode];
     const bool fourBit = ((mode >> 10) & 3) == 0;
     // ASSUMPTION: in 4 bpp (double-buffered) modes the buffer-select bit picks
     // the high nibble.
-    const uint32_t index = fourBit ? ((mode & 0x4) != 0 ? v >> 4 : v & 0xF) : v;
-    return cmap_[(base | index) & (kCmapEntries - 1)];
+    const uint32_t pixel = fourBit ? ((mode & 0x4) != 0 ? v >> 4 : v & 0xF) : v;
+    if (pixelMode == 0) { // colour index
+        return cmap_[(((mode & 0xF8) << 5) | pixel) & (kCmapEntries - 1)];
+    }
+    // RGB: split into components, expand each to 8 bits, and pass each through
+    // its channel of the gamma ramp (X loads an identity ramp: entry i = i,i,i).
+    uint32_t r, g, b;
+    if (fourBit) { // ASSUMPTION: BGGR, as the 8 bpp layout scaled down
+        r = (pixel & 0x1) * 0xFF;
+        g = ((pixel >> 1) & 0x3) * 0x55;
+        b = ((pixel >> 3) & 0x1) * 0xFF;
+    } else {       // BBGGGRRR
+        r = (pixel & 0x7) * 0x24 + ((pixel & 0x7) >> 1);   // 0..7 -> 0..255 (7 -> 0xFF)
+        g = ((pixel >> 3) & 0x7) * 0x24 + (((pixel >> 3) & 0x7) >> 1);
+        b = ((pixel >> 6) & 0x3) * 0x55;
+    }
+    const uint32_t base = kRgbMapBase[pixelMode];
+    return (cmap_[base + r] & 0xFF0000) | (cmap_[base + g] & 0x00FF00) | (cmap_[base + b] & 0x0000FF);
 }
 
 uint8_t Newport::cursorPixel(int32_t x, int32_t y, bool large) const {

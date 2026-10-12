@@ -94,6 +94,22 @@ public:
     void mapDevice(PhysAddr base, uint64_t size, MmioDevice& device);
 
     // ---- Accessors ---------------------------------------------------------
+    // Host memory holding the RAM/PROM page at `addr` (aligned down to 4 KiB),
+    // or nullptr for devices and unmapped space. Valid while mapGeneration()
+    // is unchanged.
+    [[nodiscard]] const uint8_t* hostPage4k(PhysAddr addr) const noexcept {
+        if (addr >= kAddressSpace) return nullptr;
+        const Page& page = pages_[addr >> kPageShift];
+        return page.host != nullptr ? page.host + (addr & kPageMask & ~PhysAddr{0xFFF}) : nullptr;
+    }
+    // Writable host memory for the RAM page at `addr` (4 KiB aligned), or nullptr.
+    [[nodiscard]] uint8_t* writableHostPage4k(PhysAddr addr) const noexcept {
+        if (addr >= kAddressSpace) return nullptr;
+        const Page& page = pages_[addr >> kPageShift];
+        return page.host != nullptr && page.writable ? page.host + (addr & kPageMask & ~PhysAddr{0xFFF}) : nullptr;
+    }
+    [[nodiscard]] uint64_t mapGeneration() const noexcept { return mapGeneration_; }
+
     [[nodiscard]] std::optional<uint32_t> read32(PhysAddr addr) {
         uint32_t value;
         return read(addr, value) ? std::optional<uint32_t>{value} : std::nullopt;
@@ -188,6 +204,7 @@ private:
     void requireFree(size_t firstPage, size_t lastPage) const;
 
     std::vector<Page> pages_;
+    uint64_t mapGeneration_ = 0; // bumped whenever pages_ changes
     std::optional<Ram> ram_;
     std::vector<uint8_t> prom_; // page-padded with 0xFF (erased EPROM)
     uint64_t promSize_ = 0;     // bytes actually loaded

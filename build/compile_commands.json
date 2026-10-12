@@ -73,6 +73,12 @@
 },
 {
   "directory": "/Users/gv/dev/projects/irix-emu/build",
+  "command": "/usr/bin/c++  -I/Users/gv/dev/projects/irix-emu/include -O2 -g -DNDEBUG -std=c++23 -flto=thin -arch arm64 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wnon-virtual-dtor -Woverloaded-virtual -Wnull-dereference -Wimplicit-fallthrough -O3 -o CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.o -c /Users/gv/dev/projects/irix-emu/src/scsi/DiskImage.cpp",
+  "file": "/Users/gv/dev/projects/irix-emu/src/scsi/DiskImage.cpp",
+  "output": "CMakeFiles/indy_core.dir/src/scsi/DiskImage.cpp.o"
+},
+{
+  "directory": "/Users/gv/dev/projects/irix-emu/build",
   "command": "/usr/bin/c++  -I/Users/gv/dev/projects/irix-emu/include -O2 -g -DNDEBUG -std=c++23 -flto=thin -arch arm64 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wnon-virtual-dtor -Woverloaded-virtual -Wnull-dereference -Wimplicit-fallthrough -O3 -o CMakeFiles/indy_core.dir/src/scsi/ScsiDisk.cpp.o -c /Users/gv/dev/projects/irix-emu/src/scsi/ScsiDisk.cpp",
   "file": "/Users/gv/dev/projects/irix-emu/src/scsi/ScsiDisk.cpp",
   "output": "CMakeFiles/indy_core.dir/src/scsi/ScsiDisk.cpp.o"

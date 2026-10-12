@@ -133,12 +133,15 @@ uint8_t Kbc8042::readData() {
         return kbdLastSent_; // the latch keeps the last byte
     }
     const uint8_t value = output_.front().value;
+    if (trace_) log::tagged("KBC", "CPU read data {:#04x} ({})", value,
+                            output_.front().source == Source::Mouse ? "mouse" : "kbd");
     output_.pop_front();
     updateIrq();
     return value;
 }
 
 void Kbc8042::writeCommand(uint8_t value) {
+    if (trace_) log::tagged("KBC", "CPU command {:#04x}", value);
     lastWasCommand_ = true;
     pendingCommand_ = 0;
 
@@ -179,6 +182,7 @@ void Kbc8042::writeCommand(uint8_t value) {
 }
 
 void Kbc8042::writeData(uint8_t value) {
+    if (trace_) log::tagged("KBC", "CPU data {:#04x} (after command {:#04x})", value, pendingCommand_);
     lastWasCommand_ = false;
     const uint8_t pending = std::exchange(pendingCommand_, 0);
 
@@ -262,6 +266,8 @@ void Kbc8042::keyboardCommand(uint8_t value) {
 }
 
 void Kbc8042::hostKey(uint16_t hidUsage, bool pressed) {
+    if (trace_) log::tagged("KBC", "host key {:#04x} {} (set {}, enabled {}, cmd byte {:#04x})", hidUsage,
+                            pressed ? "down" : "up", kbdScanSet_, kbdEnabled_, commandByte_);
     if (hidUsage >= kSet2.size() || kSet2[hidUsage] == 0) {
         return;
     }

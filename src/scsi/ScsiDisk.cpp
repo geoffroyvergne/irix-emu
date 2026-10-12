@@ -3,7 +3,6 @@
 #include "indy/core/Log.hpp"
 
 #include <format>
-#include <system_error>
 
 namespace indy {
 
@@ -26,35 +25,19 @@ constexpr uint32_t sixByteCount(std::span<const uint8_t> cdb) { return cdb[4] ==
 
 std::expected<std::unique_ptr<ScsiDisk>, std::string> ScsiDisk::open(const std::filesystem::path& image,
                                                                      uint64_t createBytes) {
-    std::error_code ec;
-    if (!std::filesystem::exists(image, ec)) {
-        if (createBytes == 0) {
-            return std::unexpected(std::format(
-                "disk image '{}' does not exist (use --disk-size <MiB> to create a blank one)", image.string()));
-        }
-        { std::ofstream create(image, std::ios::binary); }
-        std::filesystem::resize_file(image, createBytes, ec); // sparse on APFS/ext4/NTFS
-        if (ec) {
-            return std::unexpected(std::format("cannot create '{}': {}", image.string(), ec.message()));
-        }
-        log::info("Disk: created blank {} MiB image '{}'", createBytes / (1024 * 1024), image.string());
+    auto opened = openDiskImage(image, createBytes);
+    if (!opened) {
+        return std::unexpected(opened.error());
     }
-    const uintmax_t size = std::filesystem::file_size(image, ec);
-    if (ec) {
-        return std::unexpected(std::format("cannot stat '{}': {}", image.string(), ec.message()));
-    }
+    const uint64_t size = (*opened)->size();
     if (size < kBlockSize || size % kBlockSize != 0) {
         return std::unexpected(std::format("'{}' is not a whole number of {}-byte blocks", image.string(), kBlockSize));
     }
-    std::fstream file(image, std::ios::binary | std::ios::in | std::ios::out);
-    if (!file) {
-        return std::unexpected(std::format("cannot open '{}' for reading and writing", image.string()));
-    }
-    return std::unique_ptr<ScsiDisk>(new ScsiDisk(std::move(file), image, static_cast<uint64_t>(size / kBlockSize)));
+    return std::unique_ptr<ScsiDisk>(new ScsiDisk(std::move(*opened), image));
 }
 
 ScsiDisk::~ScsiDisk() {
-    file_.flush();
+    image_->flush();
 }
 
 ScsiCommandResult ScsiDisk::checkCondition(uint8_t key, uint8_t asc, uint8_t ascq) {
@@ -147,10 +130,7 @@ ScsiCommandResult ScsiDisk::read(uint64_t lba, uint32_t blocks) {
         return checkCondition(kSenseIllegalRequest, kAscLbaOutOfRange);
     }
     std::vector<uint8_t> data(size_t{blocks} * kBlockSize);
-    file_.seekg(static_cast<std::streamoff>(lba * kBlockSize));
-    file_.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(data.size()));
-    if (!file_) {
-        file_.clear();
+    if (!image_->read(lba * kBlockSize, data)) {
         return checkCondition(kSenseMediumError, kAscUnrecoveredRead);
     }
     return good(std::move(data));
@@ -162,10 +142,7 @@ ScsiCommandResult ScsiDisk::write(uint64_t lba, uint32_t blocks, std::span<const
     }
     // Only whole blocks actually received are written.
     const size_t bytes = std::min(data.size(), size_t{blocks} * kBlockSize) / kBlockSize * kBlockSize;
-    file_.seekp(static_cast<std::streamoff>(lba * kBlockSize));
-    file_.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(bytes));
-    if (!file_) {
-        file_.clear();
+    if (!image_->write(lba * kBlockSize, data.first(bytes))) {
         return checkCondition(kSenseMediumError, 0x0C); // write error
     }
     return good();

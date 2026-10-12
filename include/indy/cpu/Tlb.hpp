@@ -41,6 +41,7 @@ public:
     struct Result {
         Outcome  outcome;
         PhysAddr phys = 0;
+        bool     dirty = false; // the page is writable (D set), for translation caches
     };
 
     void reset() { entries_.fill(Entry{}); }

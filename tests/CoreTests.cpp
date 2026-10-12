@@ -14,6 +14,7 @@
 #include "indy/input/Kbc8042.hpp"
 #include "indy/input/TextKeys.hpp"
 #include "indy/scsi/CdRomDrive.hpp"
+#include "indy/scsi/DiskImage.hpp"
 #include "indy/scsi/ScsiDisk.hpp"
 #include "indy/scsi/Wd33c93.hpp"
 #include "indy/serial/Z8530.hpp"
@@ -71,6 +72,13 @@ std::vector<uint8_t> beWords(std::initializer_list<uint32_t> words) {
         out.push_back(static_cast<uint8_t>(w >> 16));
         out.push_back(static_cast<uint8_t>(w >> 8));
         out.push_back(static_cast<uint8_t>(w));
+    }
+    return out;
+}
+std::vector<uint8_t> beWords(const std::vector<uint32_t>& words) {
+    std::vector<uint8_t> out;
+    for (uint32_t w : words) {
+        for (int shift = 24; shift >= 0; shift -= 8) out.push_back(static_cast<uint8_t>(w >> shift));
     }
     return out;
 }
@@ -229,7 +237,8 @@ struct Harness {
     MemoryBus bus;
     R4600 cpu{bus};
 
-    explicit Harness(std::initializer_list<uint32_t> program) : prom(beWords(program)) {
+    explicit Harness(std::initializer_list<uint32_t> program) : Harness(std::vector<uint32_t>(program)) {}
+    explicit Harness(const std::vector<uint32_t>& program) : prom(beWords(program)) {
         bus.installRam(physmap::kRamBase, 1 * MiB);
         if (!bus.loadProm(prom.path)) throw std::runtime_error("harness: PROM load failed");
         cpu.reset();
@@ -434,6 +443,69 @@ void tlbWriteThenAccess() {
     CHECK(h.cpu.tlb().entry(0).global);
 }
 
+// Remapping a page with TLBWI must not leave a stale micro-TLB translation.
+void tlbRewriteInvalidatesMicroTlb() {
+    Harness h({
+        0x3C01'0040, // lui  $1, 0x0040
+        0x4081'6000, // mtc0 $1, $12          Status = BEV
+        0x4080'2800, // mtc0 $zero, $5        PageMask = 4 KiB
+        0x3C02'0040, // lui  $2, 0x0040
+        0x4082'5000, // mtc0 $2, $10          EntryHi = VPN2 0x00400000
+        0x3C03'0020, // lui  $3, 0x0020
+        0x3463'0007, // ori  $3, $3, 7
+        0x4083'1000, // mtc0 $3, $2           EntryLo0 = PA 0x08000000, D V G
+        0x4080'1800, // mtc0 $zero, $3        EntryLo1 invalid
+        0x4080'0000, // mtc0 $zero, $0        Index = 0
+        0x4200'0002, // tlbwi
+        0x3C05'1234, // lui  $5, 0x1234
+        0xAC45'0000, // sw   $5, 0($2)        -> PA 0x08000000
+        0x8C46'0000, // lw   $6, 0($2)        cached translation
+        0x3463'0080, // ori  $3, $3, 0x80     EntryLo0 = PA 0x08002000
+        0x4083'1000, // mtc0 $3, $2
+        0x4200'0002, // tlbwi                 same VPN, new frame
+        0x8C47'0000, // lw   $7, 0($2)        must see the new frame
+        0xAC45'0004, // sw   $5, 4($2)        -> PA 0x08002004
+    });
+    h.step(19);
+    CHECK(excCode(h.cpu) == 0 && (h.cpu.cop0(R4600::kStatus) & 2) == 0);
+    CHECK(h.cpu.gpr(6) == 0x1234'0000u);
+    CHECK(h.cpu.gpr(7) == 0u);
+    CHECK(h.bus.ram()[0x2004] == 0x12 && h.bus.ram()[0x0004] == 0x00);
+}
+
+// Random counts down from 47 to Wired once per instruction; Count advances
+// every other instruction; Count reaching Compare raises IP7. (Computed
+// lazily from an instruction counter, so pin the exact sequence.)
+void cp0TimersRandomCountCompare() {
+    std::vector<uint32_t> program = {
+        0x3C01'0040, // 0: lui  $1, 0x0040
+        0x4081'6000, // 1: mtc0 $1, $12        Status = BEV (interrupts off)
+    };
+    program.resize(10, 0);                       // 2..9: nop
+    program.push_back(0x2402'0028);              // 10: addiu $2, $zero, 40
+    program.push_back(0x4082'3000);              // 11: mtc0 $2, $6   Wired = 40
+    program.resize(19, 0);                       // 12..18: nop
+    program.push_back(0x2403'000D);              // 19: addiu $3, $zero, 13
+    program.push_back(0x4083'5800);              // 20: mtc0 $3, $11  Compare = 13
+    program.resize(40, 0);
+    Harness h(program);
+    CHECK(h.cpu.cop0(R4600::kRandom) == 47u && h.cpu.cop0(R4600::kCount) == 0u);
+    h.step(1);
+    CHECK(h.cpu.cop0(R4600::kRandom) == 46u && h.cpu.cop0(R4600::kCount) == 0u);
+    h.step(9);                                   // 10 instructions
+    CHECK(h.cpu.cop0(R4600::kCount) == 5u && h.cpu.cop0(R4600::kRandom) == 37u);
+    h.step(2);                                   // Wired = 40: Random restarts at 47
+    CHECK(h.cpu.cop0(R4600::kRandom) == 46u);
+    h.step(7);                                   // 46..40, then back to 47
+    CHECK(h.cpu.cop0(R4600::kRandom) == 47u);
+    h.step(2);                                   // Compare = 13 written at Count 10
+    CHECK((h.cpu.cop0(R4600::kCause) & 0x8000) == 0);
+    h.step(4);                                   // Count 12
+    CHECK(h.cpu.cop0(R4600::kCount) == 12u && (h.cpu.cop0(R4600::kCause) & 0x8000) == 0);
+    h.step(1);                                   // Count 13 = Compare
+    CHECK(h.cpu.cop0(R4600::kCount) == 13u && (h.cpu.cop0(R4600::kCause) & 0x8000) != 0);
+}
+
 void exceptionInDelaySlotSetsBD() {
     Harness h({
         0x3C01'0040, // lui  $1, 0x0040
@@ -572,6 +644,25 @@ void mcMemoryConfigMapsAndMirrors() {
     CHECK(h.bus.read32(physmap::kRamBase) == 0u);                      // RAM gone, segment floats
     CHECK(!h.bus.read32(physmap::kLowAliasBase));                      // alias gone: undecoded
     CHECK(!h.bus.read32(physmap::kMemSeg1Base + physmap::kMemSeg1Size)); // beyond segment 1
+}
+
+// SBANKS (two sub-banks): 128 MiB banks of double-sided SIMMs fill their whole
+// window; a bank no larger than half the window has only the first sub-bank.
+// (The PROM sizes banks this way; halving every SBANKS window made 256 MiB
+// machines show 128 MiB.)
+void mcSubbankWindows() {
+    McHarness h({128 * MiB, 128 * MiB});
+    // A: valid | SBANKS | 128 MiB (size 31) at 0x08000000; B: same at 0x10000000.
+    CHECK(h.bus.write32(kMc + 0xC4, 0x7F20'7F40));
+    CHECK(h.bus.write32(physmap::kRamBase + 100 * MiB, 0xAAAA'0001));     // second half of A
+    CHECK(h.bus.write32(0x1000'0000 + 100 * MiB, 0xBBBB'0002));           // second half of B
+    CHECK(h.bus.ram()[100 * MiB] == 0xAA);
+    CHECK(h.bus.ram()[128 * MiB + 100 * MiB] == 0xBB);
+
+    McHarness single({64 * MiB});
+    CHECK(single.bus.write32(kMc + 0xC4, 0x7F20'0000));                   // SBANKS, 128 MiB window
+    CHECK(single.bus.write32(physmap::kRamBase, 0x1234'5678));
+    CHECK(single.bus.read32(physmap::kRamBase + 64 * MiB) == 0u);          // no second sub-bank: floats
 }
 
 void mcSemaphoresAndClearOnWrite() {
@@ -920,6 +1011,24 @@ void mcDmaTlbTranslationAndStride() {
     CHECK(h.bus.read32(0x0820'0010) == 0x1234'5678u);      // line 1 at +4 +12
     h.clock += 100;
     CHECK((*h.bus.read32(kMc + 0x164) & 0x08) != 0);       // DMA-done cause latched
+}
+
+// On a 256 MiB machine IRIX puts DMA page tables in the second bank, above
+// 0x10000000 (seen: TLB lo 0x005C8042 -> table at 0x17201000); the table
+// frame field must reach that far (the X server's tile uploads failed).
+void mcDmaPageTableInHighMemory() {
+    McHarness h({128 * MiB, 128 * MiB});
+    CHECK(h.bus.write32(kMc + 0xC4, 0x7F20'7F40));                // A at 0x08000000, B at 0x10000000
+    CHECK(h.bus.write32(kMc + 0x184, 0x1040'0000));               // region 0x10400000
+    CHECK(h.bus.write32(kMc + 0x18C, (0x1720'1000 >> 6) | 0x2));  // table at 0x17201000, valid
+    CHECK(h.bus.write32(0x1720'1000 + 0x0FD * 4, 0x1600'0000 >> 6)); // page 0x104FD000 -> frame 0x16000000
+    CHECK(h.bus.write32(kMc + 0x2024, 0xCAFE'BABE));              // fill pattern (GIO address)
+    CHECK(h.bus.write32(kMc + 0x2004, 0x104F'DB40));
+    CHECK(h.bus.write32(kMc + 0x2034, 0x1A));                     // ToHost | Fill | Incr
+    CHECK(h.bus.write32(kMc + 0x201C, 0x0001'0000));
+    CHECK(h.bus.write32(kMc + 0x2014, 0x0001'0004));              // 1 line x 4 bytes
+    CHECK(h.bus.write32(kMc + 0x2044, 1));
+    CHECK(h.bus.read32(0x1600'0B40) == 0xCAFE'BABEu);
 }
 
 // ---- PROM persistence / vectors / history ---------------------------------------------
@@ -1722,6 +1831,40 @@ void newportDisplayIdRuns() {
     CHECK(h.fb.frontBuffer()[4] == 0x0000FFu);                    // DID 1 from x = 4
 }
 
+// Menus and 4Dwm's move outline live in the popup planes: 2-bit values
+// (write mask 0xCC) shown on top through the XMAP9 popup colour map; 0 is
+// transparent. CID (window ID) writes are never visible.
+void newportPopupPlanes() {
+    NewportHarness h;
+    h.dcb((0u << 7) | 3u, (0x10u << 24) | (0x0002u << 8));       // VC2: display enable
+    h.dcb((4u << 7) | (4u << 4) | 1u, 0xE6);                      // XMAP9 popup MSBs: map 0x1CC0
+    h.dcb((1u << 7) | 2u, 0x1CC2);                                // popup colour 2 = red
+    h.dcb((1u << 7) | (2u << 4) | 3u, 0xFF'00'00'00);
+    h.dcb((1u << 7) | 2u, 0x0007);                                // main pixel 7 = grey
+    h.dcb((1u << 7) | (2u << 4) | 3u, 0x80'80'80'00);
+    auto fill = [&](uint32_t dm1, uint32_t mask, uint32_t color, uint32_t x0, uint32_t x1) {
+        h.w(Newport::kDrawMode1, dm1);
+        h.w(Newport::kWrMask, mask);
+        h.w(Newport::kColorI, color);
+        h.w(Newport::kDrawMode0, 0x0326);
+        h.w(Newport::kXYStartI, (x0 << 16) | 0u);
+        h.w(Newport::kXYEndI | Newport::kGo, (x1 << 16) | 0u);
+    };
+    fill(0x3000'0001, 0xFF, 7, 0, 9);                             // main planes: grey row
+    fill(0x3000'0005, 0xCC, 2, 2, 3);                             // popup value 2 at x 2..3
+    fill(0x3000'0006, 0x33, 3, 5, 6);                             // CID at x 5..6: invisible
+    CHECK(h.np.vramAt(2, 0) == 7u);                               // main planes untouched
+    h.np.onVBlank(0);
+    (void)h.fb.acquire();
+    CHECK(h.fb.frontBuffer()[2] == 0xFF0000u && h.fb.frontBuffer()[3] == 0xFF0000u);
+    CHECK(h.fb.frontBuffer()[1] == 0x808080u && h.fb.frontBuffer()[5] == 0x808080u);
+
+    fill(0x3000'0005, 0xCC, 0, 2, 2);                             // popup 0: transparent again
+    h.np.onVBlank(0);
+    (void)h.fb.acquire();
+    CHECK(h.fb.frontBuffer()[2] == 0x808080u && h.fb.frontBuffer()[3] == 0xFF0000u);
+}
+
 // ---- Phase 17: PS/2 mouse streaming, VC2 hardware cursor -------------------------------------
 
 void kbcMouseStreamPackets() {
@@ -1873,6 +2016,67 @@ void wd33c93SatPausesAndResumesDataPhase() {
     fs::remove(image, ec);
 }
 
+// MAME CHD v5, uncompressed: 4 hunks of 4 KiB; hunk 0 stored at file slot 1,
+// the others missing (they read as zeros).
+void chdDiskImageReadWrite() {
+    const fs::path path = fs::temp_directory_path() / "indy_test.chd";
+    auto put32 = [](std::vector<uint8_t>& v, size_t at, uint64_t x) {
+        for (int i = 0; i < 4; ++i) v[at + static_cast<size_t>(i)] = static_cast<uint8_t>(x >> (24 - 8 * i));
+    };
+    auto makeChd = [&](uint32_t version, uint32_t compressor) {
+        std::vector<uint8_t> file(2 * 4096, 0);
+        const std::string tag = "MComprHD";
+        std::copy(tag.begin(), tag.end(), file.begin());
+        put32(file, 8, 124);                  // header length
+        put32(file, 12, version);
+        put32(file, 16, compressor);
+        put32(file, 36, 4 * 4096);            // logical bytes (low word of the 64-bit field)
+        put32(file, 44, 124);                 // map offset
+        put32(file, 56, 4096);                // hunk bytes
+        put32(file, 60, 512);                 // unit bytes
+        put32(file, 124, 1);                  // map: hunk 0 -> slot 1, others missing
+        for (size_t i = 0; i < 4096; ++i) file[4096 + i] = static_cast<uint8_t>(i * 7);
+        std::ofstream(path, std::ios::binary).write(reinterpret_cast<const char*>(file.data()),
+                                                    static_cast<std::streamsize>(file.size()));
+    };
+
+    makeChd(5, 0);
+    {
+        auto image = openDiskImage(path);
+        CHECK(image.has_value());
+        if (!image) return;
+        DiskImage& d = **image;
+        CHECK(d.size() == 4 * 4096u && d.format() == "CHD (uncompressed)");
+        std::vector<uint8_t> buf(1024);
+        CHECK(d.read(4096 - 512, buf));                              // spans stored hunk 0 and missing hunk 1
+        CHECK(buf[0] == static_cast<uint8_t>((4096 - 512) * 7) && buf[511] == static_cast<uint8_t>(4095 * 7));
+        CHECK(buf[512] == 0 && buf[1023] == 0);
+        const std::vector<uint8_t> data(512, 0xAB);
+        CHECK(d.write(2 * 4096 + 512, data));                        // missing hunk 2: appended at slot 2
+        CHECK(d.write(100, std::vector<uint8_t>(4, 0x11)));          // stored hunk 0: in place
+        CHECK(d.write(3 * 4096, std::vector<uint8_t>(512, 0)));      // zeros into a missing hunk: no growth
+        CHECK(!d.read(4 * 4096 - 4, buf));                           // past the end
+    }
+    CHECK(fs::file_size(path) == 3 * 4096u);
+    {
+        auto image = openDiskImage(path);                            // persisted, including the map
+        CHECK(image.has_value());
+        if (!image) return;
+        std::vector<uint8_t> buf(4096);
+        CHECK((*image)->read(2 * 4096, buf));
+        CHECK(buf[0] == 0 && buf[512] == 0xAB && buf[1023] == 0xAB && buf[1024] == 0);
+        std::vector<uint8_t> head(4);
+        CHECK((*image)->read(100, head) && head[0] == 0x11 && head[3] == 0x11);
+    }
+    makeChd(5, 0x7A6C6962);                                          // 'zlib': compressed
+    auto compressed = openDiskImage(path);
+    CHECK(!compressed.has_value() && compressed.error().find("chdman") != std::string::npos);
+    makeChd(4, 0);
+    CHECK(!openDiskImage(path).has_value());
+    std::error_code ec;
+    fs::remove(path, ec);
+}
+
 void scsiDiskCommandsAndPersistence() {
     const fs::path image = fs::temp_directory_path() / "indy_test_disk.img";
     std::error_code ec;
@@ -1984,6 +2188,8 @@ int main() {
         {"tlbTranslation", tlbTranslation},
         {"tlbRefillException", tlbRefillException},
         {"tlbWriteThenAccess", tlbWriteThenAccess},
+        {"tlbRewriteInvalidatesMicroTlb", tlbRewriteInvalidatesMicroTlb},
+        {"cp0TimersRandomCountCompare", cp0TimersRandomCountCompare},
         {"exceptionInDelaySlotSetsBD", exceptionInDelaySlotSetsBD},
         {"eretReturnsToEpc", eretReturnsToEpc},
         {"syscallAndCoprocessorUnusable", syscallAndCoprocessorUnusable},
@@ -1993,6 +2199,7 @@ int main() {
         {"mcMemoryConfigMapsAndMirrors", mcMemoryConfigMapsAndMirrors},
         {"mcSemaphoresAndClearOnWrite", mcSemaphoresAndClearOnWrite},
         {"mcBankLayout", mcBankLayout},
+        {"mcSubbankWindows", mcSubbankWindows},
         {"sccPointerProtocolAndTransmit", sccPointerProtocolAndTransmit},
         {"ioc2SerialAndIdsThroughBus", ioc2SerialAndIdsThroughBus},
         {"hpc3RegisterFiles", hpc3RegisterFiles},
@@ -2005,6 +2212,7 @@ int main() {
         {"fpuPromScratchRegisterPattern", fpuPromScratchRegisterPattern},
         {"mcDmaFillLikePromAndStatusLatency", mcDmaFillLikePromAndStatusLatency},
         {"mcDmaTlbTranslationAndStride", mcDmaTlbTranslationAndStride},
+        {"mcDmaPageTableInHighMemory", mcDmaPageTableInHighMemory},
         {"promSurvivesMcRemapsAndResets", promSurvivesMcRemapsAndResets},
         {"exceptionVectorsTranslateAndFetch", exceptionVectorsTranslateAndFetch},
         {"haltRecordsInstructionHistory", haltRecordsInstructionHistory},
@@ -2037,8 +2245,10 @@ int main() {
         {"newportHardwareCursor", newportHardwareCursor},
         {"newportPackedHostDataPerGo", newportPackedHostDataPerGo},
         {"newportDisplayIdRuns", newportDisplayIdRuns},
+        {"newportPopupPlanes", newportPopupPlanes},
         {"unalignedLoadStorePairs", unalignedLoadStorePairs},
         {"scsiDiskCommandsAndPersistence", scsiDiskCommandsAndPersistence},
+        {"chdDiskImageReadWrite", chdDiskImageReadWrite},
         {"wd33c93SatPausesAndResumesDataPhase", wd33c93SatPausesAndResumesDataPhase},
         {"textToKeyPresses", textToKeyPresses},
     };

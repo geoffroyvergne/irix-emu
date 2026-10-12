@@ -18,6 +18,10 @@ option(INDY_NATIVE_ARCH        "Tune for the build machine (-march=native)"     
 option(INDY_SANITIZE           "Enable ASan + UBSan (Debug builds)"             OFF)
 option(INDY_FETCH_SDL          "Download and build SDL3 if no system copy is found" ON)
 option(INDY_BUILD_TESTS        "Build the unit tests (run with ctest)"           ON)
+# Profile-guided optimisation (see tools/build-pgo.sh): an instrumented build
+# records a profile while IRIX runs; a second build uses it (~13% faster).
+option(INDY_PGO_GENERATE       "Instrument for profile-guided optimisation"      OFF)
+set(INDY_PGO_PROFILE "" CACHE FILEPATH "Merged PGO profile (.profdata) to optimise with")
 
 # ---------------------------------------------------------------------------
 # Global settings
@@ -79,6 +83,7 @@ add_library(indy_core STATIC
     src/memory/PromImage.cpp
     src/scsi/ScsiController.cpp
     src/scsi/CdRomDrive.cpp
+    src/scsi/DiskImage.cpp
     src/scsi/ScsiDisk.cpp
     src/scsi/Wd33c93.cpp
     src/graphics/Newport.cpp

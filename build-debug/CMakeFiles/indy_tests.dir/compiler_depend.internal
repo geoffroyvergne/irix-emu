@@ -1052,6 +1052,7 @@ CMakeFiles/indy_tests.dir/tests/CoreTests.cpp.o
  /Users/gv/dev/projects/irix-emu/include/indy/memory/PromImage.hpp
  /Users/gv/dev/projects/irix-emu/include/indy/memory/Ram.hpp
  /Users/gv/dev/projects/irix-emu/include/indy/scsi/CdRomDrive.hpp
+ /Users/gv/dev/projects/irix-emu/include/indy/scsi/DiskImage.hpp
  /Users/gv/dev/projects/irix-emu/include/indy/scsi/ScsiController.hpp
  /Users/gv/dev/projects/irix-emu/include/indy/scsi/ScsiDisk.hpp
  /Users/gv/dev/projects/irix-emu/include/indy/scsi/ScsiDmaPort.hpp

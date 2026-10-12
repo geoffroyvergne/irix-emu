@@ -11,6 +11,8 @@
 #include "indy/cpu/AddressSpace.hpp"
 #include "indy/cpu/Fpu.hpp"
 
+#include <bit>
+#include <cstring>
 #include <format>
 #include <limits>
 #include <type_traits>
@@ -100,16 +102,56 @@ void R4600::trap(bool condition) {
 // Memory access
 // ---------------------------------------------------------------------------
 
+uint64_t R4600::accessContext() const noexcept {
+    constexpr uint64_t kModeBits = 0x1E; // Status KSU (4:3), ERL (2), EXL (1): what decides the mode
+    return (cop0_[kEntryHi] & 0xFF) | ((cop0_[kStatus] & kModeBits) << 8);
+}
+
+template <bool Store>
+R4600::HostPageEntry* R4600::hostPageHit(VirtAddr vaddr) noexcept {
+    HostPageEntry& e = hostPages_[(vaddr >> 12) % kMicroTlbEntries];
+    const bool usable = Store ? e.write != nullptr : e.read != nullptr;
+    if (usable && e.page == (vaddr >> 12) && e.generation == microTlbGeneration_ &&
+        e.mapGeneration == bus_.mapGeneration() && e.context == accessContext()) [[likely]] {
+        return &e;
+    }
+    return nullptr;
+}
+
+template <bool Store>
+void R4600::hostPageFill(VirtAddr vaddr, PhysAddr phys) noexcept {
+    HostPageEntry& e = hostPages_[(vaddr >> 12) % kMicroTlbEntries];
+    const uint64_t context = accessContext();
+    if (e.page != (vaddr >> 12) || e.context != context || e.generation != microTlbGeneration_ ||
+        e.mapGeneration != bus_.mapGeneration()) {
+        e = HostPageEntry{.page = vaddr >> 12, .context = context, .generation = microTlbGeneration_,
+                          .mapGeneration = bus_.mapGeneration()};
+    }
+    if constexpr (Store) {
+        e.write = bus_.writableHostPage4k(phys);
+        if (e.read == nullptr) e.read = e.write;
+    } else {
+        e.read = bus_.hostPage4k(phys);
+    }
+}
+
 template <BusWord T>
 bool R4600::load(VirtAddr vaddr, T& out) {
     if (vaddr % sizeof(T) != 0) [[unlikely]] {
         raiseAddressError(vaddr, Access::Load);
         return false;
     }
+    if (const HostPageEntry* hit = hostPageHit<false>(vaddr)) [[likely]] {
+        T raw;
+        std::memcpy(&raw, hit->read + (vaddr & 0xFFF), sizeof(T));
+        out = std::endian::native == std::endian::little ? std::byteswap(raw) : raw;
+        return true;
+    }
     const auto phys = translate(vaddr, Access::Load);
     if (!phys) [[unlikely]] {
         return false; // exception raised
     }
+    hostPageFill<false>(vaddr, *phys);
     if (!bus_.read(*phys, out)) [[unlikely]] {
         unmappedAccess(*phys, sizeof(T), /*isWrite=*/false);
         if (busErrorHook_) busErrorHook_(*phys, false);
@@ -125,10 +167,16 @@ bool R4600::store(VirtAddr vaddr, T value) {
         raiseAddressError(vaddr, Access::Store);
         return false;
     }
+    if (HostPageEntry* hit = hostPageHit<true>(vaddr)) [[likely]] {
+        const T raw = std::endian::native == std::endian::little ? std::byteswap(value) : value;
+        std::memcpy(hit->write + (vaddr & 0xFFF), &raw, sizeof(T));
+        return true;
+    }
     const auto phys = translate(vaddr, Access::Store);
     if (!phys) [[unlikely]] {
         return false; // exception raised
     }
+    hostPageFill<true>(vaddr, *phys);
     if (!bus_.write(*phys, value)) [[unlikely]] {
         // Posted write: the CPU moves on; the board reports it asynchronously.
         unmappedAccess(*phys, sizeof(T), /*isWrite=*/true);
@@ -563,8 +611,8 @@ void R4600::executeCop0(Instruction insn) {
     const unsigned reg = insn.rd();
 
     switch (insn.rs()) {
-    case mips::cop0::Mf:  setGpr(insn.rt(), sx32(cop0_[reg])); return; // MFC0 rt, rd
-    case mips::cop0::Dmf: setGpr(insn.rt(), cop0_[reg]); return;
+    case mips::cop0::Mf:  setGpr(insn.rt(), sx32(readCop0(reg))); return; // MFC0 rt, rd
+    case mips::cop0::Dmf: setGpr(insn.rt(), readCop0(reg)); return;
     case mips::cop0::Mt:  writeCop0(reg, sx32(gpr_[insn.rt()])); return; // MTC0 rt, rd
     case mips::cop0::Dmt: writeCop0(reg, gpr_[insn.rt()]); return;
     default: break;
@@ -574,7 +622,7 @@ void R4600::executeCop0(Instruction insn) {
         switch (insn.funct()) {
         case mips::cop0::co::Tlbr:  tlbRead(); return;
         case mips::cop0::co::Tlbwi: tlbWrite(static_cast<unsigned>(cop0_[kIndex] & 0x3F)); return;
-        case mips::cop0::co::Tlbwr: tlbWrite(static_cast<unsigned>(cop0_[kRandom])); return;
+        case mips::cop0::co::Tlbwr: tlbWrite(randomValue()); return;
         case mips::cop0::co::Tlbp:  tlbProbe(); return;
         case mips::cop0::co::Eret:  eret(); return;
         // R4600 low-power standby until an interrupt. The kernel only issues it

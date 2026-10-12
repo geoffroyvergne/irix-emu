@@ -1051,6 +1051,7 @@ CMakeFiles/indy_tests.dir/tests/CoreTests.cpp.o: /Users/gv/dev/projects/irix-emu
   /Users/gv/dev/projects/irix-emu/include/indy/memory/PromImage.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/memory/Ram.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/scsi/CdRomDrive.hpp \
+  /Users/gv/dev/projects/irix-emu/include/indy/scsi/DiskImage.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/scsi/ScsiController.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/scsi/ScsiDisk.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/scsi/ScsiDmaPort.hpp \
@@ -1155,6 +1156,8 @@ CMakeFiles/indy_tests.dir/tests/CoreTests.cpp.o: /Users/gv/dev/projects/irix-emu
 /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/sys/errno.h:
 
 /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/sys/cdefs.h:
+
+/Users/gv/dev/projects/irix-emu/include/indy/scsi/DiskImage.hpp:
 
 /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/sys/_types/_wchar_t.h:
 

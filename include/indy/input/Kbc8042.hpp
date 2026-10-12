@@ -3,6 +3,7 @@
 #include "indy/core/WarnOnce.hpp"
 
 #include <array>
+#include <cstdlib>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -94,6 +95,7 @@ private:
     std::function<void(bool)> irq_;
     bool irqLevel_ = false;
     WarnOnce warnings_{64};
+    bool trace_ = std::getenv("INDY_TRACE_KBC") != nullptr; // log CPU <-> 8042 traffic and host keys
 };
 
 } // namespace indy

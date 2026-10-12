@@ -893,6 +893,7 @@ CMakeFiles/indy_tests.dir/tests/CoreTests.cpp.o: \
   /Users/gv/dev/projects/irix-emu/include/indy/scsi/CdRomDrive.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/scsi/ScsiTarget.hpp \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/fstream \
+  /Users/gv/dev/projects/irix-emu/include/indy/scsi/DiskImage.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/scsi/ScsiDisk.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/scsi/ScsiUtil.hpp \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/algorithm \
