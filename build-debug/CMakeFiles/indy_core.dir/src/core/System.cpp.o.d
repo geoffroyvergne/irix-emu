@@ -901,7 +901,7 @@ CMakeFiles/indy_core.dir/src/core/System.cpp.o: \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__iterator/unreachable_sentinel.h \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__ranges/rbegin.h \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__ranges/rend.h \
-  /Users/gv/dev/projects/irix-emu/include/indy/cpu/R4600.hpp \
+  /Users/gv/dev/projects/irix-emu/include/indy/cpu/R5000.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/cpu/Instruction.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/cpu/Tlb.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/graphics/Newport.hpp \

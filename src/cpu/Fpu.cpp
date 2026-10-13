@@ -162,7 +162,7 @@ template <class To, class Int> Result convertInteger(Int value, uint32_t fcr31) 
 
 // Float to W/L with rounding mode `rm`. NaN, infinity and out-of-range values
 // are invalid and give the largest positive integer, as the kernel's
-// emulation of the R4600's unimplemented-operation trap does.
+// emulation of the R5000's unimplemented-operation trap does.
 template <class Int, class From> Result toInteger(uint64_t a, uint32_t rm) {
     using UInt = std::make_unsigned_t<Int>;
     Result r{.wide = sizeof(Int) == 8};

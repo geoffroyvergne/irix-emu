@@ -114,33 +114,33 @@ CMakeFiles/indy_core.dir/src/core/EmulationThread.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/indy_core.dir/src/core/EmulationThread.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/gv/dev/projects/irix-emu/src/core/EmulationThread.cpp -o CMakeFiles/indy_core.dir/src/core/EmulationThread.cpp.s
 
-CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.o: CMakeFiles/indy_core.dir/flags.make
-CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.o: /Users/gv/dev/projects/irix-emu/src/cpu/R4600.cpp
-CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.o: CMakeFiles/indy_core.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.o -MF CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.o.d -o CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.o -c /Users/gv/dev/projects/irix-emu/src/cpu/R4600.cpp
+CMakeFiles/indy_core.dir/src/cpu/R5000.cpp.o: CMakeFiles/indy_core.dir/flags.make
+CMakeFiles/indy_core.dir/src/cpu/R5000.cpp.o: /Users/gv/dev/projects/irix-emu/src/cpu/R5000.cpp
+CMakeFiles/indy_core.dir/src/cpu/R5000.cpp.o: CMakeFiles/indy_core.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/indy_core.dir/src/cpu/R5000.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/indy_core.dir/src/cpu/R5000.cpp.o -MF CMakeFiles/indy_core.dir/src/cpu/R5000.cpp.o.d -o CMakeFiles/indy_core.dir/src/cpu/R5000.cpp.o -c /Users/gv/dev/projects/irix-emu/src/cpu/R5000.cpp
 
-CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.i: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /Users/gv/dev/projects/irix-emu/src/cpu/R4600.cpp > CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.i
+CMakeFiles/indy_core.dir/src/cpu/R5000.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/indy_core.dir/src/cpu/R5000.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /Users/gv/dev/projects/irix-emu/src/cpu/R5000.cpp > CMakeFiles/indy_core.dir/src/cpu/R5000.cpp.i
 
-CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.s: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/gv/dev/projects/irix-emu/src/cpu/R4600.cpp -o CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.s
+CMakeFiles/indy_core.dir/src/cpu/R5000.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/indy_core.dir/src/cpu/R5000.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/gv/dev/projects/irix-emu/src/cpu/R5000.cpp -o CMakeFiles/indy_core.dir/src/cpu/R5000.cpp.s
 
-CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.o: CMakeFiles/indy_core.dir/flags.make
-CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.o: /Users/gv/dev/projects/irix-emu/src/cpu/R4600Execute.cpp
-CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.o: CMakeFiles/indy_core.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.o -MF CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.o.d -o CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.o -c /Users/gv/dev/projects/irix-emu/src/cpu/R4600Execute.cpp
+CMakeFiles/indy_core.dir/src/cpu/R5000Execute.cpp.o: CMakeFiles/indy_core.dir/flags.make
+CMakeFiles/indy_core.dir/src/cpu/R5000Execute.cpp.o: /Users/gv/dev/projects/irix-emu/src/cpu/R5000Execute.cpp
+CMakeFiles/indy_core.dir/src/cpu/R5000Execute.cpp.o: CMakeFiles/indy_core.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/gv/dev/projects/irix-emu/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/indy_core.dir/src/cpu/R5000Execute.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/indy_core.dir/src/cpu/R5000Execute.cpp.o -MF CMakeFiles/indy_core.dir/src/cpu/R5000Execute.cpp.o.d -o CMakeFiles/indy_core.dir/src/cpu/R5000Execute.cpp.o -c /Users/gv/dev/projects/irix-emu/src/cpu/R5000Execute.cpp
 
-CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.i: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /Users/gv/dev/projects/irix-emu/src/cpu/R4600Execute.cpp > CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.i
+CMakeFiles/indy_core.dir/src/cpu/R5000Execute.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/indy_core.dir/src/cpu/R5000Execute.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /Users/gv/dev/projects/irix-emu/src/cpu/R5000Execute.cpp > CMakeFiles/indy_core.dir/src/cpu/R5000Execute.cpp.i
 
-CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.s: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/gv/dev/projects/irix-emu/src/cpu/R4600Execute.cpp -o CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.s
+CMakeFiles/indy_core.dir/src/cpu/R5000Execute.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/indy_core.dir/src/cpu/R5000Execute.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/gv/dev/projects/irix-emu/src/cpu/R5000Execute.cpp -o CMakeFiles/indy_core.dir/src/cpu/R5000Execute.cpp.s
 
 CMakeFiles/indy_core.dir/src/cpu/Fpu.cpp.o: CMakeFiles/indy_core.dir/flags.make
 CMakeFiles/indy_core.dir/src/cpu/Fpu.cpp.o: /Users/gv/dev/projects/irix-emu/src/cpu/Fpu.cpp
@@ -441,8 +441,8 @@ indy_core_OBJECTS = \
 "CMakeFiles/indy_core.dir/src/core/Scheduler.cpp.o" \
 "CMakeFiles/indy_core.dir/src/core/System.cpp.o" \
 "CMakeFiles/indy_core.dir/src/core/EmulationThread.cpp.o" \
-"CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.o" \
-"CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.o" \
+"CMakeFiles/indy_core.dir/src/cpu/R5000.cpp.o" \
+"CMakeFiles/indy_core.dir/src/cpu/R5000Execute.cpp.o" \
 "CMakeFiles/indy_core.dir/src/cpu/Fpu.cpp.o" \
 "CMakeFiles/indy_core.dir/src/cpu/Tlb.cpp.o" \
 "CMakeFiles/indy_core.dir/src/memory/MemoryBus.cpp.o" \
@@ -471,8 +471,8 @@ indy_core_EXTERNAL_OBJECTS =
 lib/libindy_core.a: CMakeFiles/indy_core.dir/src/core/Scheduler.cpp.o
 lib/libindy_core.a: CMakeFiles/indy_core.dir/src/core/System.cpp.o
 lib/libindy_core.a: CMakeFiles/indy_core.dir/src/core/EmulationThread.cpp.o
-lib/libindy_core.a: CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.o
-lib/libindy_core.a: CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.o
+lib/libindy_core.a: CMakeFiles/indy_core.dir/src/cpu/R5000.cpp.o
+lib/libindy_core.a: CMakeFiles/indy_core.dir/src/cpu/R5000Execute.cpp.o
 lib/libindy_core.a: CMakeFiles/indy_core.dir/src/cpu/Fpu.cpp.o
 lib/libindy_core.a: CMakeFiles/indy_core.dir/src/cpu/Tlb.cpp.o
 lib/libindy_core.a: CMakeFiles/indy_core.dir/src/memory/MemoryBus.cpp.o

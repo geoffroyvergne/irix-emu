@@ -23,7 +23,7 @@ void Tlb::write(unsigned index, uint64_t pageMask, uint64_t entryHi, uint64_t en
 }
 
 std::optional<unsigned> Tlb::find(VirtAddr vaddr, uint8_t asid) const {
-    // Linear search; R4600 keeps recent translations in a micro-TLB in front
+    // Linear search; R5000 keeps recent translations in a micro-TLB in front
     // of this, so it only runs on a miss there.
     for (unsigned i = 0; i < kEntries; ++i) {
         const Entry& e = entries_[i];

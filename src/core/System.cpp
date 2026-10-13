@@ -1,7 +1,7 @@
 #include "indy/core/System.hpp"
 
 #include "indy/core/Log.hpp"
-#include "indy/cpu/R4600.hpp"
+#include "indy/cpu/R5000.hpp"
 #include "indy/graphics/Newport.hpp"
 #include "indy/graphics/TestPatternDisplay.hpp"
 #include "indy/hpc/SgiNvram.hpp"
@@ -19,7 +19,7 @@ namespace indy {
 
 namespace {
 
-constexpr unsigned kBusErrorLine = 4; // R4600 Int4 -> Cause.IP6
+constexpr unsigned kBusErrorLine = 4; // R5000 Int4 -> Cause.IP6
 
 template <typename... Ts>
 struct Overloaded : Ts... { using Ts::operator()...; };
@@ -36,7 +36,7 @@ System::System(SystemConfig config, FrameBuffer& display)
           std::cout << static_cast<char>(byte);
           std::cout.flush();
       }),
-      cpu_(std::make_unique<R4600>(bus_, config_.traceInstructions)),
+      cpu_(std::make_unique<R5000>(bus_, config_.traceInstructions, config_.cpuModel)),
       graphics_(config_.graphics ? std::unique_ptr<GraphicsSubsystem>(std::make_unique<Newport>(display))
                                  : std::make_unique<TestPatternDisplay>(display)) {
 
@@ -77,7 +77,7 @@ System::System(SystemConfig config, FrameBuffer& display)
     scsi_.attachDma(hpc3_.scsiDma(0));
 
     // ---- Interrupt routing -------------------------------------------------
-    // INT3 drives R4600 Int0..3 (Cause.IP2..IP5); the 8254 counts against
+    // INT3 drives R5000 Int0..3 (Cause.IP2..IP5); the 8254 counts against
     // emulated time and fires through the scheduler.
     ioc2_.connect([this](unsigned line, bool level) { cpu_->setInterruptLine(line, level); },
                   scheduler_, [this] { return currentCycle(); }, config_.cpuClockHz);
@@ -96,7 +96,7 @@ System::System(SystemConfig config, FrameBuffer& display)
     // interrupt the CPU directly on Int4 (Cause.IP6).
     mc_->setDmaIrqCallback([this](bool level) { ioc2_.int3().setLocal0(Int3::kL0McDma, level); });
     mc_->setBusErrorCallback([this](bool level) { cpu_->setInterruptLine(kBusErrorLine, level); });
-    static_cast<R4600&>(*cpu_).setBusErrorHook(
+    static_cast<R5000&>(*cpu_).setBusErrorHook(
         [this](PhysAddr addr, bool isWrite) { mc_->reportCpuBusError(addr, isWrite); });
     hpc3_.setScsiIrqCallback([this, updateScsiIrq](unsigned channel, bool level) {
         if (channel == 0) {
@@ -142,8 +142,8 @@ System::System(SystemConfig config, FrameBuffer& display)
         ++nextId;
     }
 
-    log::info("System: R4600 @ {} MHz, {} MiB RAM (bank A {} MiB, bank B {} MiB), CD-ROM at SCSI ID {}",
-              config_.cpuClockHz / 1'000'000, config_.ramBytes / MiB, (*banks)[0] / MiB,
+    log::info("System: {} @ {} MHz, {} MiB RAM (bank A {} MiB, bank B {} MiB), CD-ROM at SCSI ID {}",
+              config_.cpuModel == CpuModel::R5000 ? "R5000" : "R5000", config_.cpuClockHz / 1'000'000, config_.ramBytes / MiB, (*banks)[0] / MiB,
               (*banks)[1] / MiB, config_.cdromScsiId);
     reset();
 }

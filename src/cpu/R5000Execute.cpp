@@ -1,11 +1,11 @@
-// R4600 instruction semantics: decode dispatch and the MIPS III integer ISA.
+// R5000 instruction semantics: decode dispatch and the MIPS III integer ISA.
 //
 // Conventions:
 //   * 32-bit operations sign-extend their result to 64 bits (MIPS III rule).
 //   * Operands are read before any destination is written, so rd == rs works.
 //   * Adding an instruction = one `case` in the relevant switch.
 
-#include "indy/cpu/R4600.hpp"
+#include "indy/cpu/R5000.hpp"
 
 #include "indy/core/Log.hpp"
 #include "indy/cpu/AddressSpace.hpp"
@@ -72,7 +72,7 @@ static_assert(muls64(~uint64_t{0}, 2).hi == ~uint64_t{0}); // -1 * 2 = -2
 // Control flow
 // ---------------------------------------------------------------------------
 
-void R4600::branch(bool taken, int64_t offset) noexcept {
+void R5000::branch(bool taken, int64_t offset) noexcept {
     // Target is relative to the delay slot, which pc_ already points at. The
     // slot exists whether or not the branch is taken (it matters for Cause.BD).
     if (taken) {
@@ -81,7 +81,7 @@ void R4600::branch(bool taken, int64_t offset) noexcept {
     branchPending_ = true;
 }
 
-void R4600::branchLikely(bool taken, int64_t offset) noexcept {
+void R5000::branchLikely(bool taken, int64_t offset) noexcept {
     if (taken) {
         nextPc_ = pc_ + static_cast<uint64_t>(offset * 4);
         branchPending_ = true;
@@ -92,7 +92,7 @@ void R4600::branchLikely(bool taken, int64_t offset) noexcept {
     }
 }
 
-void R4600::trap(bool condition) {
+void R5000::trap(bool condition) {
     if (condition) {
         raiseException(ExcCode::Tr);
     }
@@ -102,13 +102,13 @@ void R4600::trap(bool condition) {
 // Memory access
 // ---------------------------------------------------------------------------
 
-uint64_t R4600::accessContext() const noexcept {
+uint64_t R5000::accessContext() const noexcept {
     constexpr uint64_t kModeBits = 0x1E; // Status KSU (4:3), ERL (2), EXL (1): what decides the mode
     return (cop0_[kEntryHi] & 0xFF) | ((cop0_[kStatus] & kModeBits) << 8);
 }
 
 template <bool Store>
-R4600::HostPageEntry* R4600::hostPageHit(VirtAddr vaddr) noexcept {
+R5000::HostPageEntry* R5000::hostPageHit(VirtAddr vaddr) noexcept {
     HostPageEntry& e = hostPages_[(vaddr >> 12) % kMicroTlbEntries];
     const bool usable = Store ? e.write != nullptr : e.read != nullptr;
     if (usable && e.page == (vaddr >> 12) && e.generation == microTlbGeneration_ &&
@@ -119,7 +119,7 @@ R4600::HostPageEntry* R4600::hostPageHit(VirtAddr vaddr) noexcept {
 }
 
 template <bool Store>
-void R4600::hostPageFill(VirtAddr vaddr, PhysAddr phys) noexcept {
+void R5000::hostPageFill(VirtAddr vaddr, PhysAddr phys) noexcept {
     HostPageEntry& e = hostPages_[(vaddr >> 12) % kMicroTlbEntries];
     const uint64_t context = accessContext();
     if (e.page != (vaddr >> 12) || e.context != context || e.generation != microTlbGeneration_ ||
@@ -136,7 +136,7 @@ void R4600::hostPageFill(VirtAddr vaddr, PhysAddr phys) noexcept {
 }
 
 template <BusWord T>
-bool R4600::load(VirtAddr vaddr, T& out) {
+bool R5000::load(VirtAddr vaddr, T& out) {
     if (vaddr % sizeof(T) != 0) [[unlikely]] {
         raiseAddressError(vaddr, Access::Load);
         return false;
@@ -162,7 +162,7 @@ bool R4600::load(VirtAddr vaddr, T& out) {
 }
 
 template <BusWord T>
-bool R4600::store(VirtAddr vaddr, T value) {
+bool R5000::store(VirtAddr vaddr, T value) {
     if (vaddr % sizeof(T) != 0) [[unlikely]] {
         raiseAddressError(vaddr, Access::Store);
         return false;
@@ -186,7 +186,7 @@ bool R4600::store(VirtAddr vaddr, T value) {
 }
 
 template <BusWord T, bool SignExtend>
-void R4600::loadOp(Instruction insn) {
+void R5000::loadOp(Instruction insn) {
     T value;
     if (!load(effectiveAddress(insn), value)) {
         return;
@@ -199,7 +199,7 @@ void R4600::loadOp(Instruction insn) {
 }
 
 template <BusWord T>
-void R4600::storeOp(Instruction insn) {
+void R5000::storeOp(Instruction insn) {
     (void)store(effectiveAddress(insn), static_cast<T>(gpr_[insn.rt()]));
 }
 
@@ -208,7 +208,7 @@ void R4600::storeOp(Instruction insn) {
 // that unit into the high end of rt, LxR the bytes from its start up to the
 // address into the low end. The other bytes of rt are kept.
 template <BusWord T>
-void R4600::loadUnaligned(Instruction insn, bool left) {
+void R5000::loadUnaligned(Instruction insn, bool left) {
     constexpr unsigned kBytes = sizeof(T);
     constexpr uint64_t kAll = kBytes == 8 ? ~uint64_t{0} : 0xFFFF'FFFFu;
     const VirtAddr va = effectiveAddress(insn);
@@ -243,7 +243,7 @@ void R4600::loadUnaligned(Instruction insn, bool left) {
 // of the unit up to the address. Bytes are stored individually, so no
 // read-modify-write ever touches neighbouring bytes or device registers.
 template <BusWord T>
-void R4600::storeUnaligned(Instruction insn, bool left) {
+void R5000::storeUnaligned(Instruction insn, bool left) {
     constexpr unsigned kBytes = sizeof(T);
     const VirtAddr va = effectiveAddress(insn);
     const VirtAddr aligned = va & ~VirtAddr{kBytes - 1};
@@ -265,7 +265,7 @@ void R4600::storeUnaligned(Instruction insn, bool left) {
 // Primary opcode dispatch
 // ---------------------------------------------------------------------------
 
-void R4600::execute(Instruction insn) {
+void R5000::execute(Instruction insn) {
     const uint64_t rs = gpr_[insn.rs()];
     const uint64_t rt = gpr_[insn.rt()];
     const int64_t simm = insn.simm();
@@ -384,13 +384,17 @@ void R4600::execute(Instruction insn) {
     case mips::op::Ldc2:
     case mips::op::Swc2:
     case mips::op::Sdc2:
-        // The R4600 has no COP2: unusable unless CU2 is set, then reserved.
+        // No COP2 on the R5000/R4600: unusable unless CU2 is set, then reserved.
         if (!coprocessorUsable(2)) raiseException(ExcCode::CpU, 2);
         else unimplemented(insn);
         break;
 
     // Caches are not modelled: CACHE operations (index invalidate, fill, ...) are no-ops.
     case mips::op::Cache: break;
+    // MIPS IV prefetch: a hint that never faults.
+    case mips::op::Pref:
+        if (!mipsIV()) unimplemented(insn);
+        break;
 
     default:
         unimplemented(insn);
@@ -402,7 +406,7 @@ void R4600::execute(Instruction insn) {
 // SPECIAL (opcode 0x00): register-register ALU, shifts, jumps, HI/LO
 // ---------------------------------------------------------------------------
 
-void R4600::executeSpecial(Instruction insn) {
+void R5000::executeSpecial(Instruction insn) {
     const uint64_t rs = gpr_[insn.rs()];
     const uint64_t rt = gpr_[insn.rt()];
     const unsigned rd = insn.rd();
@@ -560,6 +564,21 @@ void R4600::executeSpecial(Instruction insn) {
     case mips::fn::Slt:  setGpr(rd, s64(rs) < s64(rt) ? 1 : 0); break;
     case mips::fn::Sltu: setGpr(rd, rs < rt ? 1 : 0); break;
 
+    // ---- MIPS IV (R5000): conditional moves ------------------------------------
+    case mips::fn::Movz:
+        if (!mipsIV()) { unimplemented(insn); break; }
+        if (rt == 0) setGpr(rd, rs);
+        break;
+    case mips::fn::Movn:
+        if (!mipsIV()) { unimplemented(insn); break; }
+        if (rt != 0) setGpr(rd, rs);
+        break;
+    case mips::fn::Movci: // MOVF / MOVT rd, rs, cc: rt field = cc << 2 | tf
+        if (!mipsIV()) { unimplemented(insn); break; }
+        if (!coprocessorUsable(1)) { raiseException(ExcCode::CpU, 1); break; }
+        if (fpCondition(insn.rt() >> 2) == ((insn.rt() & 1) != 0)) setGpr(rd, rs);
+        break;
+
     default:
         unimplemented(insn);
         break;
@@ -570,7 +589,7 @@ void R4600::executeSpecial(Instruction insn) {
 // REGIMM (opcode 0x01): branches on sign of rs, optionally linking
 // ---------------------------------------------------------------------------
 
-void R4600::executeRegImm(Instruction insn) {
+void R5000::executeRegImm(Instruction insn) {
     const int64_t rs = s64(gpr_[insn.rs()]);
     const int64_t simm = insn.simm();
 
@@ -603,7 +622,7 @@ void R4600::executeRegImm(Instruction insn) {
 // COP0 (opcode 0x10): system control coprocessor
 // ---------------------------------------------------------------------------
 
-void R4600::executeCop0(Instruction insn) {
+void R5000::executeCop0(Instruction insn) {
     if (!coprocessorUsable(0)) {
         raiseException(ExcCode::CpU, 0);
         return;
@@ -625,7 +644,7 @@ void R4600::executeCop0(Instruction insn) {
         case mips::cop0::co::Tlbwr: tlbWrite(randomValue()); return;
         case mips::cop0::co::Tlbp:  tlbProbe(); return;
         case mips::cop0::co::Eret:  eret(); return;
-        // R4600 low-power standby until an interrupt. The kernel only issues it
+        // R5000 low-power standby until an interrupt. The kernel only issues it
         // from its idle loop, which re-checks for work, so running on is safe.
         case mips::cop0::co::Wait:  return;
         default: break;
@@ -650,18 +669,18 @@ constexpr uint32_t kFcr31Enable = 0x0000'0F80; // enable V Z O U I
 constexpr uint32_t kFcr31WritableMask = 0x0183'FFFF;
 } // namespace
 
-bool R4600::fpr64Mode() const noexcept {
+bool R5000::fpr64Mode() const noexcept {
     return (cop0_[kStatus] & kStatusFR) != 0;
 }
 
-uint32_t R4600::readFpr32(unsigned reg) const noexcept {
+uint32_t R5000::readFpr32(unsigned reg) const noexcept {
     if (fpr64Mode() || (reg & 1) == 0) {
         return static_cast<uint32_t>(fpr_[reg]);
     }
     return static_cast<uint32_t>(fpr_[reg & ~1u] >> 32);
 }
 
-void R4600::writeFpr32(unsigned reg, uint32_t value) noexcept {
+void R5000::writeFpr32(unsigned reg, uint32_t value) noexcept {
     if (fpr64Mode() || (reg & 1) == 0) {
         // FR=1 leaves the upper half undefined; keeping it is a valid choice.
         fpr_[reg] = (fpr_[reg] & 0xFFFF'FFFF'0000'0000) | value;
@@ -671,17 +690,18 @@ void R4600::writeFpr32(unsigned reg, uint32_t value) noexcept {
     }
 }
 
-uint64_t R4600::readFpr64(unsigned reg) const noexcept {
+uint64_t R5000::readFpr64(unsigned reg) const noexcept {
     // FR=0: odd specifiers are undefined for 64-bit accesses; use the pair.
     return fpr_[fpr64Mode() ? reg : (reg & ~1u)];
 }
 
-void R4600::writeFpr64(unsigned reg, uint64_t value) noexcept {
+void R5000::writeFpr64(unsigned reg, uint64_t value) noexcept {
     fpr_[fpr64Mode() ? reg : (reg & ~1u)] = value;
 }
 
-void R4600::writeFcr31(uint32_t value) {
-    fcr31_ = value & kFcr31WritableMask;
+void R5000::writeFcr31(uint32_t value) {
+    // MIPS IV adds condition codes 1-7 in bits 31:25.
+    fcr31_ = value & (mipsIV() ? (kFcr31WritableMask | 0xFE00'0000u) : kFcr31WritableMask);
     // Setting a cause bit whose exception is enabled (or the always-enabled
     // "unimplemented operation" cause) traps immediately.
     const uint32_t enabledCauses = ((fcr31_ & kFcr31Cause) >> 5) & (fcr31_ & kFcr31Enable);
@@ -690,7 +710,7 @@ void R4600::writeFcr31(uint32_t value) {
     }
 }
 
-void R4600::executeCop1(Instruction insn) {
+void R5000::executeCop1(Instruction insn) {
     if (!coprocessorUsable(1)) {
         raiseException(ExcCode::CpU, 1); // Status.CU1 (bit 29) clear
         return;
@@ -711,8 +731,12 @@ void R4600::executeCop1(Instruction insn) {
     case mips::op::Swc1: (void)store(effectiveAddress(insn), readFpr32(insn.rt())); return;
     case mips::op::Sdc1: (void)store(effectiveAddress(insn), readFpr64(insn.rt())); return;
     case mips::op::Cop1: break;
+    case mips::op::Cop1x:
+        if (mipsIV()) executeCop1x(insn);
+        else unimplemented(insn); // MIPS IV: not an R5000 instruction
+        return;
     default:
-        unimplemented(insn); // COP1X is MIPS IV: not an R4600 instruction
+        unimplemented(insn);
         return;
     }
 
@@ -729,14 +753,15 @@ void R4600::executeCop1(Instruction insn) {
         if (fpr64Mode() || (fs & 1) == 0) writeFpr64(fs, gpr_[rt]);
         return;
     case mips::cop1::Cf:                                               // CFC1 rt, fs
-        setGpr(rt, fs == 0 ? sx32(kFcr0) : fs == 31 ? sx32(fcr31_) : 0);
+        setGpr(rt, fs == 0 ? sx32(fcr0()) : fs == 31 ? sx32(fcr31_) : 0);
         return;
     case mips::cop1::Ct:                                               // CTC1 rt, fs
         if (fs == 31) writeFcr31(u32(gpr_[rt]));                       // FCR0 is read-only
         return;
     case mips::cop1::Bc: {
-        // rt bit 0 = branch on true, bit 1 = "likely".
-        const bool condition = (fcr31_ & kFcr31C) != 0;
+        // rt bit 0 = branch on true, bit 1 = "likely", bits 4:2 = condition
+        // code (always 0 before MIPS IV).
+        const bool condition = fpCondition(rt >> 2);
         const bool taken = (rt & 1) != 0 ? condition : !condition;
         if ((rt & 2) != 0) branchLikely(taken, insn.simm());
         else branch(taken, insn.simm());
@@ -755,7 +780,7 @@ void R4600::executeCop1(Instruction insn) {
     }
 }
 
-bool R4600::completeFpuOperation(uint32_t cause) {
+bool R5000::completeFpuOperation(uint32_t cause) {
     // Every arithmetic instruction rewrites the cause field. An enabled
     // exception (or E, which has no enable) traps before anything is written
     // and leaves the sticky flags alone; otherwise the flags accumulate.
@@ -769,7 +794,66 @@ bool R4600::completeFpuOperation(uint32_t cause) {
     return true;
 }
 
-void R4600::executeFpuOperation(Instruction insn) {
+bool R5000::fpCondition(unsigned cc) const noexcept {
+    const uint32_t bit = cc == 0 ? kFcr31C : uint32_t{1} << (24 + (cc & 7));
+    return (fcr31_ & bit) != 0;
+}
+
+void R5000::setFpCondition(unsigned cc, bool value) noexcept {
+    const uint32_t bit = cc == 0 ? kFcr31C : uint32_t{1} << (24 + (cc & 7));
+    fcr31_ = value ? (fcr31_ | bit) : (fcr31_ & ~bit);
+}
+
+void R5000::executeCop1x(Instruction insn) {
+    // MIPS IV COP1X: indexed loads/stores (base = rs, index = rt) and the
+    // multiply-add family (fr = rs, ft = rt, fs = rd, fd = shamt).
+    const VirtAddr indexed = gpr_[insn.rs()] + gpr_[insn.rt()];
+    switch (insn.funct()) {
+    case 0x00: { // LWXC1 fd, index(base)
+        uint32_t value;
+        if (load(indexed, value)) writeFpr32(insn.shamt(), value);
+        return;
+    }
+    case 0x01: { // LDXC1
+        uint64_t value;
+        if (load(indexed, value)) writeFpr64(insn.shamt(), value);
+        return;
+    }
+    case 0x08: (void)store(indexed, readFpr32(insn.rd())); return; // SWXC1 fs, index(base)
+    case 0x09: (void)store(indexed, readFpr64(insn.rd())); return; // SDXC1
+    case 0x0F: return;                                             // PREFX: a hint
+    default: break;
+    }
+
+    // MADD/MSUB/NMADD/NMSUB .S/.D: function bits 5:3 = 4..7, bits 2:0 = format.
+    const uint32_t op = insn.funct() >> 3;
+    const uint32_t format = insn.funct() & 7;
+    if (op < 4 || format > 1) {
+        completeFpuOperation(fpu::kUnimplemented);
+        return;
+    }
+    const bool dbl = format == 1;
+    const uint32_t fmt = dbl ? fpu::kDouble : fpu::kSingle;
+    auto operand = [&](unsigned reg) -> uint64_t { return dbl ? readFpr64(reg) : readFpr32(reg); };
+    // The product is rounded before the add (R5000: not fused).
+    const fpu::Result product = fpu::operate(0x02, fmt, operand(insn.rd()), operand(insn.rt()), fcr31_);
+    const bool subtract = op == 5 || op == 7;                       // MSUB, NMSUB: fs*ft - fr
+    fpu::Result r = fpu::operate(subtract ? 0x01 : 0x00, fmt, product.value, operand(insn.rs()), fcr31_);
+    if (op >= 6) { // NMADD, NMSUB: negate (NaNs keep their sign)
+        const uint64_t sign = dbl ? uint64_t{1} << 63 : uint64_t{1} << 31;
+        const uint64_t exponent = dbl ? 0x7FF0'0000'0000'0000u : 0x7F80'0000u;
+        const uint64_t fraction = dbl ? 0x000F'FFFF'FFFF'FFFFu : 0x007F'FFFFu;
+        const bool nan = (r.value & exponent) == exponent && (r.value & fraction) != 0;
+        if (!nan) r.value ^= sign;
+    }
+    if (!completeFpuOperation(product.cause | r.cause)) {
+        return;
+    }
+    if (dbl) writeFpr64(insn.shamt(), r.value);
+    else writeFpr32(insn.shamt(), static_cast<uint32_t>(r.value));
+}
+
+void R5000::executeFpuOperation(Instruction insn) {
     const uint32_t fmt   = insn.rs();
     const uint32_t funct = insn.funct();
     const unsigned ft = insn.rt();
@@ -778,10 +862,44 @@ void R4600::executeFpuOperation(Instruction insn) {
     const bool wideOperands = fmt == mips::cop1::D || fmt == mips::cop1::L;
     auto operand = [&](unsigned reg) -> uint64_t { return wideOperands ? readFpr64(reg) : readFpr32(reg); };
 
+    // MIPS IV (R5000) additions for .S/.D.
+    if (mipsIV() && (fmt == mips::cop1::S || fmt == mips::cop1::D)) {
+        const bool dbl = fmt == mips::cop1::D;
+        auto copy = [&] {
+            if (dbl) writeFpr64(fd, readFpr64(fs));
+            else writeFpr32(fd, readFpr32(fs));
+        };
+        const uint64_t one = dbl ? 0x3FF0'0000'0000'0000u : 0x3F80'0000u;
+        switch (funct) {
+        case 0x11: // MOVF.fmt / MOVT.fmt fd, fs, cc: ft field = cc << 2 | tf
+            if (fpCondition(ft >> 2) == ((ft & 1) != 0)) copy();
+            return;
+        case 0x12: if (gpr_[ft] == 0) copy(); return; // MOVZ.fmt fd, fs, rt
+        case 0x13: if (gpr_[ft] != 0) copy(); return; // MOVN.fmt fd, fs, rt
+        case 0x15:   // RECIP.fmt: 1 / fs
+        case 0x16: { // RSQRT.fmt: 1 / sqrt(fs)
+            uint32_t cause = 0;
+            uint64_t divisor = operand(fs);
+            if (funct == 0x16) {
+                const fpu::Result root = fpu::operate(0x04, fmt, divisor, 0, fcr31_);
+                cause |= root.cause;
+                divisor = root.value;
+            }
+            const fpu::Result r = fpu::operate(0x03, fmt, one, divisor, fcr31_);
+            if (!completeFpuOperation(cause | r.cause)) return;
+            if (dbl) writeFpr64(fd, r.value);
+            else writeFpr32(fd, static_cast<uint32_t>(r.value));
+            return;
+        }
+        default:
+            break;
+        }
+    }
+
     if (funct >= 0x30) { // C.cond.fmt
         const fpu::Comparison c = fpu::compare(funct & 0xF, fmt, operand(fs), operand(ft));
         if (completeFpuOperation(c.cause)) {
-            fcr31_ = c.condition ? (fcr31_ | kFcr31C) : (fcr31_ & ~kFcr31C);
+            setFpCondition(insn.shamt() >> 2, c.condition); // cc in bits 10:8 (MIPS IV)
         }
         return;
     }

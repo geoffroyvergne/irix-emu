@@ -2570,7 +2570,7 @@ CMakeFiles/indy_core.dir/src/core/System.cpp.o: /Users/gv/dev/projects/irix-emu/
   /Users/gv/dev/projects/irix-emu/include/indy/core/WarnOnce.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/cpu/Cpu.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/cpu/Instruction.hpp \
-  /Users/gv/dev/projects/irix-emu/include/indy/cpu/R4600.hpp \
+  /Users/gv/dev/projects/irix-emu/include/indy/cpu/R5000.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/cpu/Tlb.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/graphics/GraphicsSubsystem.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/graphics/Newport.hpp \
@@ -2889,7 +2889,7 @@ CMakeFiles/indy_core.dir/src/cpu/Fpu.cpp.o: /Users/gv/dev/projects/irix-emu/src/
   /Library/Developer/CommandLineTools/usr/lib/clang/21/include/stdint.h \
   /Users/gv/dev/projects/irix-emu/include/indy/cpu/Fpu.hpp
 
-CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.o: /Users/gv/dev/projects/irix-emu/src/cpu/R4600.cpp \
+CMakeFiles/indy_core.dir/src/cpu/R5000.cpp.o: /Users/gv/dev/projects/irix-emu/src/cpu/R5000.cpp \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/SDKSettings.json \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/Availability.h \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/AvailabilityInternal.h \
@@ -3863,14 +3863,14 @@ CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.o: /Users/gv/dev/projects/irix-emu/sr
   /Users/gv/dev/projects/irix-emu/include/indy/cpu/AddressSpace.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/cpu/Cpu.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/cpu/Instruction.hpp \
-  /Users/gv/dev/projects/irix-emu/include/indy/cpu/R4600.hpp \
+  /Users/gv/dev/projects/irix-emu/include/indy/cpu/R5000.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/cpu/Tlb.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/memory/MemoryBus.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/memory/PhysicalMap.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/memory/PromImage.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/memory/Ram.hpp
 
-CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.o: /Users/gv/dev/projects/irix-emu/src/cpu/R4600Execute.cpp \
+CMakeFiles/indy_core.dir/src/cpu/R5000Execute.cpp.o: /Users/gv/dev/projects/irix-emu/src/cpu/R5000Execute.cpp \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/SDKSettings.json \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/Availability.h \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/AvailabilityInternal.h \
@@ -4701,7 +4701,7 @@ CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.o: /Users/gv/dev/projects/irix
   /Users/gv/dev/projects/irix-emu/include/indy/cpu/Cpu.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/cpu/Fpu.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/cpu/Instruction.hpp \
-  /Users/gv/dev/projects/irix-emu/include/indy/cpu/R4600.hpp \
+  /Users/gv/dev/projects/irix-emu/include/indy/cpu/R5000.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/cpu/Tlb.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/memory/MemoryBus.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/memory/PromImage.hpp \
@@ -19996,7 +19996,7 @@ CMakeFiles/indy_core.dir/src/serial/Z8530.cpp.o: /Users/gv/dev/projects/irix-emu
 
 /Users/gv/dev/projects/irix-emu/src/cpu/Tlb.cpp:
 
-/Users/gv/dev/projects/irix-emu/src/cpu/R4600.cpp:
+/Users/gv/dev/projects/irix-emu/src/cpu/R5000Execute.cpp:
 
 /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/fenv.h:
 
@@ -20028,7 +20028,7 @@ CMakeFiles/indy_core.dir/src/serial/Z8530.cpp.o: /Users/gv/dev/projects/irix-emu
 
 /Users/gv/dev/projects/irix-emu/include/indy/cpu/Tlb.hpp:
 
-/Users/gv/dev/projects/irix-emu/include/indy/cpu/R4600.hpp:
+/Users/gv/dev/projects/irix-emu/include/indy/cpu/R5000.hpp:
 
 /Users/gv/dev/projects/irix-emu/include/indy/cpu/Instruction.hpp:
 
@@ -21908,6 +21908,8 @@ CMakeFiles/indy_core.dir/src/serial/Z8530.cpp.o: /Users/gv/dev/projects/irix-emu
 
 /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/_abort.h:
 
+/Users/gv/dev/projects/irix-emu/src/cpu/R5000.cpp:
+
 /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/_types/_uint8_t.h:
 
 /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/limits.h:
@@ -22235,8 +22237,6 @@ CMakeFiles/indy_core.dir/src/serial/Z8530.cpp.o: /Users/gv/dev/projects/irix-emu
 /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/_bounds.h:
 
 /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__algorithm/reverse.h:
-
-/Users/gv/dev/projects/irix-emu/src/cpu/R4600Execute.cpp:
 
 /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__functional/not_fn.h:
 

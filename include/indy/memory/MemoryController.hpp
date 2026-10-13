@@ -119,7 +119,7 @@ public:
     // DMA done (INT3 local 0 bit 4): DMA_INTR_CAUSE bit 3, set at completion
     // when DMA_CTRL bit 4 enables it, cleared by writing the cause register.
     void setDmaIrqCallback(Line line) { dmaIrq_ = std::move(line); updateDmaIrq(); }
-    // Bus error (R4600 Int4 = Cause.IP6): asserted while a write error is latched.
+    // Bus error (R5000 Int4 = Cause.IP6): asserted while a write error is latched.
     void setBusErrorCallback(Line line) { busErrorIrq_ = std::move(line); updateBusErrorIrq(); }
     // Lets DMA completion happen on time rather than on the next status read.
     void setScheduler(Scheduler& scheduler) { scheduler_ = &scheduler; }

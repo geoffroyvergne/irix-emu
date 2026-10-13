@@ -2578,7 +2578,7 @@ CMakeFiles/indy_core.dir/src/core/System.cpp.o
  /Users/gv/dev/projects/irix-emu/include/indy/core/WarnOnce.hpp
  /Users/gv/dev/projects/irix-emu/include/indy/cpu/Cpu.hpp
  /Users/gv/dev/projects/irix-emu/include/indy/cpu/Instruction.hpp
- /Users/gv/dev/projects/irix-emu/include/indy/cpu/R4600.hpp
+ /Users/gv/dev/projects/irix-emu/include/indy/cpu/R5000.hpp
  /Users/gv/dev/projects/irix-emu/include/indy/cpu/Tlb.hpp
  /Users/gv/dev/projects/irix-emu/include/indy/graphics/GraphicsSubsystem.hpp
  /Users/gv/dev/projects/irix-emu/include/indy/graphics/Newport.hpp
@@ -2899,8 +2899,8 @@ CMakeFiles/indy_core.dir/src/cpu/Fpu.cpp.o
  /Library/Developer/CommandLineTools/usr/lib/clang/21/share/asan_ignorelist.txt
  /Users/gv/dev/projects/irix-emu/include/indy/cpu/Fpu.hpp
 
-CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.o
- /Users/gv/dev/projects/irix-emu/src/cpu/R4600.cpp
+CMakeFiles/indy_core.dir/src/cpu/R5000.cpp.o
+ /Users/gv/dev/projects/irix-emu/src/cpu/R5000.cpp
  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/SDKSettings.json
  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/Availability.h
  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/AvailabilityInternal.h
@@ -3876,15 +3876,15 @@ CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.o
  /Users/gv/dev/projects/irix-emu/include/indy/cpu/AddressSpace.hpp
  /Users/gv/dev/projects/irix-emu/include/indy/cpu/Cpu.hpp
  /Users/gv/dev/projects/irix-emu/include/indy/cpu/Instruction.hpp
- /Users/gv/dev/projects/irix-emu/include/indy/cpu/R4600.hpp
+ /Users/gv/dev/projects/irix-emu/include/indy/cpu/R5000.hpp
  /Users/gv/dev/projects/irix-emu/include/indy/cpu/Tlb.hpp
  /Users/gv/dev/projects/irix-emu/include/indy/memory/MemoryBus.hpp
  /Users/gv/dev/projects/irix-emu/include/indy/memory/PhysicalMap.hpp
  /Users/gv/dev/projects/irix-emu/include/indy/memory/PromImage.hpp
  /Users/gv/dev/projects/irix-emu/include/indy/memory/Ram.hpp
 
-CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.o
- /Users/gv/dev/projects/irix-emu/src/cpu/R4600Execute.cpp
+CMakeFiles/indy_core.dir/src/cpu/R5000Execute.cpp.o
+ /Users/gv/dev/projects/irix-emu/src/cpu/R5000Execute.cpp
  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/SDKSettings.json
  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/Availability.h
  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/AvailabilityInternal.h
@@ -4717,7 +4717,7 @@ CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.o
  /Users/gv/dev/projects/irix-emu/include/indy/cpu/Cpu.hpp
  /Users/gv/dev/projects/irix-emu/include/indy/cpu/Fpu.hpp
  /Users/gv/dev/projects/irix-emu/include/indy/cpu/Instruction.hpp
- /Users/gv/dev/projects/irix-emu/include/indy/cpu/R4600.hpp
+ /Users/gv/dev/projects/irix-emu/include/indy/cpu/R5000.hpp
  /Users/gv/dev/projects/irix-emu/include/indy/cpu/Tlb.hpp
  /Users/gv/dev/projects/irix-emu/include/indy/memory/MemoryBus.hpp
  /Users/gv/dev/projects/irix-emu/include/indy/memory/PromImage.hpp

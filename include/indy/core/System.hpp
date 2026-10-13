@@ -24,7 +24,8 @@ namespace indy {
 class CdRomDrive;
 
 struct SystemConfig {
-    uint64_t cpuClockHz  = 133'000'000; // R4600 pipeline clock (Indy shipped 100/133 MHz)
+    uint64_t cpuClockHz  = 150'000'000; // R5000 Indys shipped at 150/180 MHz (R4600: 100/133); the PROM measures it
+    CpuModel cpuModel = CpuModel::R5000; // CpuModel::R4600: the older MIPS III Indy
     uint64_t ramBytes    = 64 * MiB;
     double   refreshHz   = 60.0;
     uint32_t displayWidth  = 1280;      // Newport XL scan-out

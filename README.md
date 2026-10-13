@@ -2,7 +2,7 @@
 
 A clean-room emulator of the **Silicon Graphics Indy** (IP24 board, "Guinness" architecture), written in modern C++23 with SDL3.
 
-**Current status:** the real Indy boot PROM (5.3 Rev B10) runs every power-on diagnostic and passes. It shows its graphical boot screen and the *"Welcome to Indy"* System Maintenance Menu on the emulated Newport XL graphics board, and you can drive it with the emulated PS/2 keyboard and mouse. The PROM sees the virtual SCSI CD-ROM and hard disk (`hinv`), boots SGI's diagnostics (IDE) and disk tool (`fx`) from real IRIX 6.5.22 media, and `fx` labels and partitions the emulated disk. Next milestone: the IRIX installer and kernel.
+**Current status:** an R5000 Indy (150 MHz, up to 256 MB, Newport XL8) runs **IRIX 6.5** to the full 4Dwm desktop: the xdm/clogin graphical login, Toolchest menus, window moves, shells, and applications such as Maya 6.5, which starts as far as its licence check. IRIX installs from the original CDs onto a raw disk image, and MAME's uncompressed CHD disks boot as they are. The real Indy boot PROM (5.3 Rev B10) passes its power-on diagnostics. Speed is about that of a real Indy (with the PGO build).
 
 ---
 
@@ -37,7 +37,7 @@ A clean-room emulator of the **Silicon Graphics Indy** (IP24 board, "Guinness" a
 - **Linux** headers and drivers (`arch/mips/include/asm/sgi/*.h`, `arch/mips/sgi-ip22`, `include/video/newport.h`)
 - **NetBSD** (`sys/arch/sgimips`)
 - **MAME**, read for facts only and not copied as code (`src/mame/sgi`, `src/devices/bus/gio64`)
-- Public chip datasheets (MIPS R4000/R4600, WD33C93, Z85C30, Intel 8042/8254, Dallas DS1386)
+- Public chip datasheets (MIPS R4000/R4600/R5000, WD33C93, Z85C30, Intel 8042/8254, Dallas DS1386)
 
 **No guessed registers.** Every SGI register address and bit used here is checked against at least one reference, and usually two. Where the references disagree or say nothing, the emulator follows what the **real PROM's own code** does, found by disassembling the PROM and tracing its accesses. Each such case is documented in the source. Examples:
 
@@ -92,7 +92,7 @@ Neither side ever blocks the other. The UI never touches `System` directly: it p
 `System` owns every component and the master clock. `runFor()` lets the CPU run in chunks of at most 256 cycles, and never past the next **scheduler** event. Devices schedule events instead of being polled each cycle; examples are the 8254 terminal counts, MC DMA completion and the 60 Hz vertical blank. Counters such as RPSS, the 8254 and the RTC are worked out from the current cycle when software reads them, so reads are always exact.
 
 ```
-R4600 CPU ──► MemoryBus (64 KiB page table, big-endian storage)
+R5000 CPU ──► MemoryBus (64 KiB page table, big-endian storage)
                ├── RAM windows (driven by the MC's MEMCFG)
                ├── PROM (read-only, byte order normalised on load)
                ├── MemoryController   0x1FA00000
@@ -127,7 +127,7 @@ Any other address gives a bus error, including empty GIO expansion slots. The PR
 CMakeLists.txt, cmake/        build configuration (warnings, LTO, sanitizers)
 include/indy/                 public headers of the emulation core
   core/      System, Scheduler, EmulationThread, FrameBuffer, Commands, Log, MmioDevice
-  cpu/       Cpu interface, R4600 (interpreter + COP0/COP1), Tlb, Instruction decode
+  cpu/       Cpu interface, R5000 (interpreter + COP0/COP1, optional R4600 mode), Fpu, Tlb, Instruction decode
   memory/    MemoryBus, MemoryController (MC), PhysicalMap, PROM image handling
   hpc/       Hpc3, Ioc2, Int3, Pit8254, Ds1386
   scsi/      ScsiController, Wd33c93, ScsiTarget, CdRomDrive, ScsiDmaPort
@@ -145,7 +145,7 @@ The core library `indy_core` has **no SDL dependency**. Only `src/frontend` uses
 
 | Component | Status |
 |---|---|
-| **R4600 CPU** | MIPS III integer interpreter with exact branch delay slots. COP0: 48-entry TLB, exceptions, interrupts IP2–IP7, Count/Compare timer. COP1: register file, moves, loads/stores, branches, and IEEE arithmetic, conversions and compares (`.S/.D/.W/.L`) under the guest rounding mode, with FCR31 cause/flag/enable bits and FPE traps. |
+| **R5000 CPU** | An R5000PC at 150 MHz (32 KB primary caches, no secondary cache), as in the later Indys: MIPS IV (conditional moves, PREF, indexed FP loads/stores, multiply-add, RECIP/RSQRT, eight FP condition codes) on top of a MIPS III integer interpreter with exact branch delay slots. COP0: 48-entry TLB, exceptions, interrupts IP2–IP7, Count/Compare timer. COP1: register file, moves, loads/stores, branches, and IEEE arithmetic, conversions and compares (`.S/.D/.W/.L`) under the guest rounding mode, with FCR31 cause/flag/enable bits and FPE traps. |
 | **Memory controller (MC)** | SIMM bank decoding from MEMCFG, with mirroring and the low alias. RPSS counter. Virtual DMA engine (fill, copy, stride, zoom, DMA TLB) with completion interrupt. Bus-error latching and IP6. Semaphores. |
 | **HPC3** | SCSI DMA descriptor chains with interrupts, PBUS routing, RTC/NVRAM window, register files. |
 | **IOC2 / INT3** | Interrupt aggregation into CPU IP2–IP5, including the mappable sources. Board ID `0x26` (Indy). Front panel. |
@@ -229,6 +229,8 @@ You need an **Indy boot PROM image**, dumped from your own machine (see [Legal](
 | `--disk-size <MiB>` | With `--disk`: create a blank (sparse) image of this size for any disk file that doesn't exist |
 | `--nvram <file>` | NVRAM backing file (default `indy_nvram.bin` in the current directory) |
 | `--mac <xx:xx:xx:xx:xx:xx>` | Ethernet address stored in the NVRAM (PROM variable `eaddr`). Default: keep the NVRAM's own, or `08:00:69:0e:1d:01` if it has none. |
+| `--cpu r5000\|r4600` | Processor: `r5000` (the default: an R5000PC Indy, MIPS IV, 32 KB caches) or `r4600` (the earlier MIPS III Indy, 16 KB caches, 133 MHz). Software built for MIPS IV, such as parts of Maya 6.5, needs the R5000. On the R4600 it fails with `Program not supported by architecture`. |
+| `--mhz <MHz>` | CPU clock (default 150 for the R5000, 133 for the R4600; real Indys used 100–180). The PROM measures it at power-on and IRIX follows. A higher clock needs more host speed. |
 | `--ram <MiB>` | Installed memory, split into SIMM banks: 16, 32, 64 (default), 96, 128, 192 or 256. Use **256** for the IRIX 6.5 desktop: with 64 MB, only about 13 MB is free at the login screen, before a session starts. |
 | `--no-gfx` | Remove the Newport board. The PROM then uses the serial console in the terminal. |
 | `--trace <N>` | Log the first N executed instructions (PC and opcode) |

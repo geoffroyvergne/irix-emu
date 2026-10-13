@@ -591,6 +591,7 @@ void Newport::drawLine() {
         log::debug("Newport: fractional/antialiased line drawn as an integer line");
     }
     const bool usePattern = (drawMode0_ & kDm0LsEnab) != 0;
+    const bool stop = (drawMode0_ & (kDm0StopX | kDm0StopY)) != 0;
     int32_t x = xStart_, y = yStart_;
     const int32_t x1 = xEnd_, y1 = yEnd_;
     const int32_t adx = std::abs(x1 - x), ady = -std::abs(y1 - y);
@@ -613,6 +614,17 @@ void Newport::drawLine() {
         const int32_t e2 = 2 * err;
         if (e2 >= ady) { err += ady; x += sx; }
         if (e2 <= adx) { err += adx; y += sy; }
+        if (!stop) {
+            // Neither STOPONX nor STOPONY: one pixel per GO (as MAME's
+            // iterate_one), with the position written back. X plots points
+            // this way (I_LINE without DOSETUP, a new XYSTARTI per GO); the end
+            // registers may hold a stale span end.
+            xStart_ = x;
+            yStart_ = y;
+            xStartFix_ = (static_cast<uint32_t>(x) << 11) & kFixedMask;
+            yStartFix_ = (static_cast<uint32_t>(y) << 11) & kFixedMask;
+            return;
+        }
     }
     xStart_ = x1;
     yStart_ = y1;

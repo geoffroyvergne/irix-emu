@@ -592,7 +592,7 @@ CMakeFiles/indy_tests.dir/tests/CoreTests.cpp.o: \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__format/formatter_string.h \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__format/formatter_tuple.h \
   /Users/gv/dev/projects/irix-emu/include/indy/cpu/Fpu.hpp \
-  /Users/gv/dev/projects/irix-emu/include/indy/cpu/R4600.hpp \
+  /Users/gv/dev/projects/irix-emu/include/indy/cpu/R5000.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/core/WarnOnce.hpp \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/unordered_set \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__algorithm/is_permutation.h \

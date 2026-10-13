@@ -6,6 +6,12 @@ namespace indy {
 
 // Abstract CPU core. Keeping this an interface lets us swap the interpreter for
 // a cached interpreter or a JIT later without touching System or the devices.
+// Processor fitted to the Indy. The R4600 implements MIPS III; the R5000
+// (shipped as R5000PC/SC Indys) adds MIPS IV: conditional moves, PREF,
+// indexed FP loads/stores, FP multiply-add, RECIP/RSQRT and eight FP
+// condition codes. Some IRIX software (e.g. parts of Maya 6.5) is MIPS IV only.
+enum class CpuModel : uint8_t { R4600, R5000 };
+
 class Cpu {
 public:
     Cpu() = default;

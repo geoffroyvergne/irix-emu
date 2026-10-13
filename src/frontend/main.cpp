@@ -38,6 +38,7 @@ struct Options {
     bool throttle = true;
     bool vsync = true;
     std::string screenshot; // write the last frame here (PPM) on exit
+    bool clockGiven = false; // --mhz seen (otherwise the CPU model picks the clock)
     std::vector<std::pair<double, std::string>> timedScreenshots; // --screenshot-at <sec>:<file>
     // --type (repeatable): at <seconds>, text sent through the PS/2 keyboard.
     std::vector<std::pair<double, std::string>> typing;
@@ -65,7 +66,7 @@ void writeScreenshot(FrameBuffer& frame, const std::string& path) {
 
 constexpr std::string_view kUsage =
     "usage: indy <prom.bin> [--cdrom <file.iso>] [--disk <image> ...] [--disk-size <MiB>] [--nvram <file>]\n"
-    "            [--mac <xx:xx:xx:xx:xx:xx>] [--ram <MiB>] [--trace <N>]\n"
+    "            [--mac <xx:xx:xx:xx:xx:xx>] [--cpu r5000|r4600] [--mhz <MHz>] [--ram <MiB>] [--trace <N>]\n"
     "            [--no-gfx] [--screenshot <file.ppm>] [--screenshot-at <sec>:<file.ppm>] [--type <sec>:<text>] [--mouse <sec>:<dx>,<dy>[,<btn>]]\n"
     "            [--unthrottled] [--no-vsync]\n"
     "       Type into this terminal to reach the serial console; the window feeds the PS/2 keyboard.\n"
@@ -113,6 +114,24 @@ std::expected<Options, std::string> parseArgs(int argc, char* argv[]) {
             auto mac = sgi_nvram::parseMac(*v);
             if (!mac) return std::unexpected(std::format("invalid --mac value '{}' (expected xx:xx:xx:xx:xx:xx)", *v));
             options.system.macAddress = *mac;
+        } else if (arg == "--cpu") {
+            auto v = value();
+            if (!v) return std::unexpected(v.error());
+            if (*v == "r4600") {
+                options.system.cpuModel = CpuModel::R4600;
+                if (!options.clockGiven) options.system.cpuClockHz = 133'000'000; // the R4600 Indy's clock
+            } else if (*v == "r5000") {
+                options.system.cpuModel = CpuModel::R5000;
+            } else {
+                return std::unexpected(std::format("invalid --cpu value '{}' (r4600 or r5000)", *v));
+            }
+        } else if (arg == "--mhz") {
+            auto v = value();
+            if (!v) return std::unexpected(v.error());
+            auto mhz = parseUnsigned(arg, *v);
+            if (!mhz || *mhz < 50 || *mhz > 400) return std::unexpected(std::format("invalid --mhz value '{}'", *v));
+            options.system.cpuClockHz = *mhz * 1'000'000;
+            options.clockGiven = true;
         } else if (arg == "--ram") {
             auto v = value();
             if (!v) return std::unexpected(v.error());

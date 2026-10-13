@@ -7,7 +7,7 @@
 
 namespace indy {
 
-// R4600 joint TLB: 48 fully-associative entries, each mapping an even/odd pair
+// R5000 joint TLB: 48 fully-associative entries, each mapping an even/odd pair
 // of virtual pages to two physical pages. Register layouts follow the MIPS
 // R4000-family (64-bit) definitions:
 //

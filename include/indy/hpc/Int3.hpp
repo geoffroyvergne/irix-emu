@@ -7,12 +7,12 @@ namespace indy {
 
 // SGI INT3 interrupt controller (inside the Indy's IOC2, registers at
 // 0x1FBD9880..0x1FBD98A7). Aggregates level-sensitive device interrupts into
-// the R4600's hardware interrupt inputs:
+// the R5000's hardware interrupt inputs:
 //
 //   local 0 (status & mask)  -> Int0 = Cause.IP2
 //   local 1 (status & mask)  -> Int1 = Cause.IP3
 //   8254 counter 0 / 1       -> Int2 / Int3 = Cause.IP4 / IP5 (latched until cleared)
-//   (bus error -> IP6, R4600 Count/Compare -> IP7 are elsewhere)
+//   (bus error -> IP6, R5000 Count/Compare -> IP7 are elsewhere)
 //
 // "Mappable" sources cascade through map mask 0 into local 0 bit 7 and through
 // map mask 1 into local 1 bit 3. Refs: Linux arch/mips/sgi-ip22/ip22-int.c,
@@ -42,7 +42,7 @@ public:
     static constexpr uint8_t kMapKeyboardMouse = 0x10;
     static constexpr uint8_t kMapSerial        = 0x20;
 
-    // R4600 hardware interrupt inputs Int[n] (Cause.IP(n+2)).
+    // R5000 hardware interrupt inputs Int[n] (Cause.IP(n+2)).
     static constexpr unsigned kCpuLocal0 = 0;
     static constexpr unsigned kCpuLocal1 = 1;
     static constexpr unsigned kCpuTimer0 = 2;

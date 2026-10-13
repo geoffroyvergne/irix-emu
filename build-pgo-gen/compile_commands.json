@@ -19,15 +19,15 @@
 },
 {
   "directory": "/Users/gv/dev/projects/irix-emu/build-pgo-gen",
-  "command": "/usr/bin/c++  -I/Users/gv/dev/projects/irix-emu/include -O3 -DNDEBUG -std=c++23 -flto=thin -arch arm64 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wnon-virtual-dtor -Woverloaded-virtual -Wnull-dereference -Wimplicit-fallthrough -O3 -fprofile-instr-generate -o CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.o -c /Users/gv/dev/projects/irix-emu/src/cpu/R4600.cpp",
-  "file": "/Users/gv/dev/projects/irix-emu/src/cpu/R4600.cpp",
-  "output": "CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.o"
+  "command": "/usr/bin/c++  -I/Users/gv/dev/projects/irix-emu/include -O3 -DNDEBUG -std=c++23 -flto=thin -arch arm64 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wnon-virtual-dtor -Woverloaded-virtual -Wnull-dereference -Wimplicit-fallthrough -O3 -fprofile-instr-generate -o CMakeFiles/indy_core.dir/src/cpu/R5000.cpp.o -c /Users/gv/dev/projects/irix-emu/src/cpu/R5000.cpp",
+  "file": "/Users/gv/dev/projects/irix-emu/src/cpu/R5000.cpp",
+  "output": "CMakeFiles/indy_core.dir/src/cpu/R5000.cpp.o"
 },
 {
   "directory": "/Users/gv/dev/projects/irix-emu/build-pgo-gen",
-  "command": "/usr/bin/c++  -I/Users/gv/dev/projects/irix-emu/include -O3 -DNDEBUG -std=c++23 -flto=thin -arch arm64 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wnon-virtual-dtor -Woverloaded-virtual -Wnull-dereference -Wimplicit-fallthrough -O3 -fprofile-instr-generate -o CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.o -c /Users/gv/dev/projects/irix-emu/src/cpu/R4600Execute.cpp",
-  "file": "/Users/gv/dev/projects/irix-emu/src/cpu/R4600Execute.cpp",
-  "output": "CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.o"
+  "command": "/usr/bin/c++  -I/Users/gv/dev/projects/irix-emu/include -O3 -DNDEBUG -std=c++23 -flto=thin -arch arm64 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wnon-virtual-dtor -Woverloaded-virtual -Wnull-dereference -Wimplicit-fallthrough -O3 -fprofile-instr-generate -o CMakeFiles/indy_core.dir/src/cpu/R5000Execute.cpp.o -c /Users/gv/dev/projects/irix-emu/src/cpu/R5000Execute.cpp",
+  "file": "/Users/gv/dev/projects/irix-emu/src/cpu/R5000Execute.cpp",
+  "output": "CMakeFiles/indy_core.dir/src/cpu/R5000Execute.cpp.o"
 },
 {
   "directory": "/Users/gv/dev/projects/irix-emu/build-pgo-gen",

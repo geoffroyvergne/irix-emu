@@ -1,7 +1,7 @@
-// R4600: reset, tick loop, MMU, exceptions, COP0 and diagnostics.
-// Instruction semantics live in R4600Execute.cpp.
+// R5000: reset, tick loop, MMU, exceptions, COP0 and diagnostics.
+// Instruction semantics live in R5000Execute.cpp.
 
-#include "indy/cpu/R4600.hpp"
+#include "indy/cpu/R5000.hpp"
 
 #include "indy/core/Log.hpp"
 #include "indy/cpu/AddressSpace.hpp"
@@ -47,16 +47,20 @@ constexpr uint64_t kVectorTlbRefill  = 0x000;
 constexpr uint64_t kVectorGeneral    = 0x180;
 
 // ---- Identification / configuration -------------------------------------------
-// PRId: implementation 0x20 = R4600, revision 2.0.
+// PRId: implementation 0x23 = R5000 (revision 2.1); 0x20 = R4600 (revision 2.0) in R4600 mode.
 constexpr uint64_t kR4600PRId = 0x2020;
+constexpr uint64_t kR5000PRId = 0x2321;
 // Config (R4000-family layout), fixed by hardware except K0.
 constexpr uint64_t kConfigBE = uint64_t{1} << 15;  // big-endian
-constexpr uint64_t kConfigSC = uint64_t{1} << 17;  // 1 = no secondary cache (R4600PC)
+constexpr uint64_t kConfigSC = uint64_t{1} << 17;  // 1 = no secondary cache (R5000PC / R4600PC)
 constexpr uint64_t kConfigIC = uint64_t{2} << 9;   // I-cache 2^(12+2) = 16 KiB
 constexpr uint64_t kConfigDC = uint64_t{2} << 6;   // D-cache 16 KiB
 constexpr uint64_t kConfigIB = uint64_t{1} << 5;   // I-cache line 32 bytes
 constexpr uint64_t kConfigDB = uint64_t{1} << 4;   // D-cache line 32 bytes
 constexpr uint64_t kConfigReset = kConfigBE | kConfigSC | kConfigIC | kConfigDC | kConfigIB | kConfigDB;
+// R5000PC: same layout, 32 KiB primary caches (2^(12+3)), no secondary cache.
+constexpr uint64_t kConfigResetR5000 = kConfigBE | kConfigSC | (uint64_t{3} << 9) | (uint64_t{3} << 6) |
+                                       kConfigIB | kConfigDB;
 constexpr uint64_t kConfigWritableMask = 0x7;      // K0: KSEG0 cache coherency
 
 // ---- TLB-related register fields ----------------------------------------------
@@ -67,8 +71,8 @@ constexpr uint64_t kXContextLow     = 0x1'FFFF'FFFF;    // bits 32:0 (R + BadVPN
 constexpr uint64_t kEntryHiVpn2     = 0xC000'00FF'FFFF'E000;
 constexpr uint64_t kEntryHiAsid     = 0xFF;
 
-constexpr std::string_view excName(R4600::ExcCode code) {
-    using E = R4600::ExcCode;
+constexpr std::string_view excName(R5000::ExcCode code) {
+    using E = R5000::ExcCode;
     switch (code) {
     case E::Int:  return "Interrupt";
     case E::Mod:  return "TLB modified";
@@ -95,7 +99,7 @@ constexpr std::string_view excName(R4600::ExcCode code) {
 // Reset & run loop
 // ---------------------------------------------------------------------------
 
-void R4600::reset() {
+void R5000::reset() {
     dropFetchCache();
     gpr_.fill(0);
     hi_ = 0;
@@ -107,8 +111,8 @@ void R4600::reset() {
     fcr31_ = 0;
     cop0_.fill(0);
     cop0_[kStatus] = kStatusBEV | kStatusERL;
-    cop0_[kPRId]   = kR4600PRId;
-    cop0_[kConfig] = kConfigReset;
+    cop0_[kPRId]   = mipsIV() ? kR5000PRId : kR4600PRId;
+    cop0_[kConfig] = mipsIV() ? kConfigResetR5000 : kConfigReset;
     ticks_ = 0;
     randomBase_ = 0;
     countValue_ = 0;
@@ -141,7 +145,7 @@ void R4600::reset() {
     }
 }
 
-void R4600::logTracePc() {
+void R5000::logTracePc() {
     // Arguments a0..a3, each shown as a string when it points into KSEG0/KSEG1
     // (read straight from physical memory, so no TLB state is disturbed).
     auto text = [this](uint64_t addr) -> std::string {
@@ -164,7 +168,7 @@ void R4600::logTracePc() {
                 static_cast<uint32_t>(gpr_[6]), static_cast<uint32_t>(gpr_[7]));
 }
 
-Cycles R4600::run(Cycles budget) {
+Cycles R5000::run(Cycles budget) {
     // Placeholder timing: one instruction per cycle. Time keeps passing while
     // halted so the scheduler and devices still run.
     for (runElapsed_ = 0; runElapsed_ < budget && !halted_; ++runElapsed_) {
@@ -174,7 +178,7 @@ Cycles R4600::run(Cycles budget) {
     return budget;
 }
 
-bool R4600::tick() {
+bool R5000::tick() {
     if (halted_) {
         return false;
     }
@@ -272,12 +276,12 @@ bool R4600::tick() {
 // (all sign-extended to 64 bits)
 // ---------------------------------------------------------------------------
 
-bool R4600::kernelMode() const noexcept {
+bool R5000::kernelMode() const noexcept {
     const uint64_t status = cop0_[kStatus];
     return (status & (kStatusEXL | kStatusERL)) != 0 || ((status >> kStatusKsuShift) & 3) == 0;
 }
 
-std::optional<PhysAddr> R4600::translate(VirtAddr vaddr, Access access) {
+std::optional<PhysAddr> R5000::translate(VirtAddr vaddr, Access access) {
     // Fast path: KSEG0/KSEG1, where the PROM and most of the kernel run.
     if (vaddr >= mips::kKseg0Base && vaddr < mips::kKseg2Base) [[likely]] {
         if (kernelMode()) [[likely]] {
@@ -340,7 +344,7 @@ std::optional<PhysAddr> R4600::translate(VirtAddr vaddr, Access access) {
 // Exceptions
 // ---------------------------------------------------------------------------
 
-void R4600::raiseException(ExcCode code, unsigned coprocessor, bool tlbRefill) {
+void R5000::raiseException(ExcCode code, unsigned coprocessor, bool tlbRefill) {
     dropFetchCache(); // EXL switches to kernel mode
     uint64_t& status = cop0_[kStatus];
     uint64_t& cause  = cop0_[kCause];
@@ -391,12 +395,12 @@ void R4600::raiseException(ExcCode code, unsigned coprocessor, bool tlbRefill) {
     }
 }
 
-void R4600::raiseAddressError(VirtAddr vaddr, Access access) {
+void R5000::raiseAddressError(VirtAddr vaddr, Access access) {
     cop0_[kBadVAddr] = vaddr;
     raiseException(access == Access::Store ? ExcCode::AdES : ExcCode::AdEL);
 }
 
-void R4600::raiseTlbException(VirtAddr vaddr, Access access, Tlb::Outcome outcome) {
+void R5000::raiseTlbException(VirtAddr vaddr, Access access, Tlb::Outcome outcome) {
     // Pre-load the registers a refill handler needs to locate and write the PTE.
     cop0_[kBadVAddr] = vaddr;
     cop0_[kContext]  = (cop0_[kContext] & ~kContextBadVpn2) | (((vaddr >> 13) & 0x7'FFFF) << 4);
@@ -411,14 +415,14 @@ void R4600::raiseTlbException(VirtAddr vaddr, Access access, Tlb::Outcome outcom
     raiseException(code, 0, /*tlbRefill=*/outcome == Tlb::Outcome::Miss);
 }
 
-bool R4600::interruptPending() const noexcept {
+bool R5000::interruptPending() const noexcept {
     // Taken when IE=1, EXL=0, ERL=0 and some Cause.IP bit is enabled in Status.IM.
     const uint64_t status = cop0_[kStatus];
     return (status & (kStatusIE | kStatusEXL | kStatusERL)) == kStatusIE &&
            (status & cop0_[kCause] & kInterruptMask) != 0;
 }
 
-bool R4600::coprocessorUsable(unsigned cop) const noexcept {
+bool R5000::coprocessorUsable(unsigned cop) const noexcept {
     if (cop == 0 && kernelMode()) {
         return true; // COP0 is always usable in kernel mode
     }
@@ -429,7 +433,7 @@ bool R4600::coprocessorUsable(unsigned cop) const noexcept {
 // COP0 registers
 // ---------------------------------------------------------------------------
 
-uint32_t R4600::randomValue() const noexcept {
+uint32_t R5000::randomValue() const noexcept {
     // Counts down from 47 to Wired, one step per tick, then wraps to 47.
     const uint64_t wired = cop0_[kWired];
     if (wired >= Tlb::kEntries - 1) {
@@ -439,7 +443,7 @@ uint32_t R4600::randomValue() const noexcept {
     return static_cast<uint32_t>(Tlb::kEntries - 1 - (ticks_ - randomBase_) % period);
 }
 
-uint64_t R4600::readCop0(unsigned reg) const noexcept {
+uint64_t R5000::readCop0(unsigned reg) const noexcept {
     switch (reg) {
     case kRandom: return randomValue();
     case kCount:  return countValue();
@@ -447,7 +451,7 @@ uint64_t R4600::readCop0(unsigned reg) const noexcept {
     }
 }
 
-void R4600::scheduleTimer() noexcept {
+void R5000::scheduleTimer() noexcept {
     // Count = Compare is only checked when Count increments, so equality at
     // the time of a write fires after a full 2^32 wrap.
     uint64_t increments = (static_cast<uint32_t>(cop0_[kCompare]) - countValue()) & 0xFFFF'FFFFu;
@@ -457,12 +461,12 @@ void R4600::scheduleTimer() noexcept {
     timerDeadline_ = ((ticks_ >> 1) + increments) << 1;
 }
 
-void R4600::timerFire() noexcept {
+void R5000::timerFire() noexcept {
     cop0_[kCause] |= kCauseTimerIp;
     timerDeadline_ += uint64_t{1} << 33; // the next match is one Count wrap later
 }
 
-void R4600::writeCop0(unsigned reg, uint64_t value) {
+void R5000::writeCop0(unsigned reg, uint64_t value) {
     dropFetchCache(); // Status (mode) or EntryHi (ASID) may change what the PC maps to
     uint64_t& r = cop0_[reg];
     switch (reg) {
@@ -498,7 +502,7 @@ void R4600::writeCop0(unsigned reg, uint64_t value) {
     }
 }
 
-void R4600::tlbRead() {
+void R5000::tlbRead() {
     dropFetchCache(); // loads EntryHi, including the ASID
     const Tlb::Entry& e = tlb_.entry(static_cast<unsigned>(cop0_[kIndex] & kIndexMask));
     cop0_[kPageMask] = e.pageMask;
@@ -507,12 +511,12 @@ void R4600::tlbRead() {
     cop0_[kEntryLo1] = e.entryLo1;
 }
 
-void R4600::tlbWrite(unsigned index) {
+void R5000::tlbWrite(unsigned index) {
     invalidateMicroTlb(tlb_.entry(index)); // its pages may be cached
     tlb_.write(index, cop0_[kPageMask], cop0_[kEntryHi], cop0_[kEntryLo0], cop0_[kEntryLo1]);
 }
 
-void R4600::invalidateMicroTlb(const Tlb::Entry& replaced) noexcept {
+void R5000::invalidateMicroTlb(const Tlb::Entry& replaced) noexcept {
     dropFetchCache();
     // The entry maps an even/odd pair of pages of (PageMask + 1) * 4 KiB each.
     const uint64_t pages = ((replaced.pageMask >> 13) + 1) * 2;
@@ -527,12 +531,12 @@ void R4600::invalidateMicroTlb(const Tlb::Entry& replaced) noexcept {
     }
 }
 
-void R4600::tlbProbe() {
+void R5000::tlbProbe() {
     const auto index = tlb_.probe(cop0_[kEntryHi]);
     cop0_[kIndex] = index ? uint64_t{*index} : kIndexProbeFail;
 }
 
-void R4600::eret() {
+void R5000::eret() {
     dropFetchCache(); // back to the interrupted mode
     // Returns to ErrorEPC if ERL is set, else EPC. ERET has no delay slot and
     // clears the LL reservation.
@@ -548,7 +552,7 @@ void R4600::eret() {
     llBit_         = false;
 }
 
-void R4600::setInterruptLine(unsigned line, bool asserted) {
+void R5000::setInterruptLine(unsigned line, bool asserted) {
     assert(line < kHardwareInterruptLines);
     const uint64_t bit = uint64_t{1} << (kCauseHwIpShift + line);
     if (asserted) {
@@ -562,7 +566,7 @@ void R4600::setInterruptLine(unsigned line, bool asserted) {
 // Diagnostics
 // ---------------------------------------------------------------------------
 
-void R4600::unimplemented(mips::Instruction insn) {
+void R5000::unimplemented(mips::Instruction insn) {
     // pc_ has already advanced past this instruction, so execution simply
     // continues with the next one.
     if (unimplementedWarnings_.first(currentPc_)) {
@@ -574,7 +578,7 @@ void R4600::unimplemented(mips::Instruction insn) {
     }
 }
 
-void R4600::unmappedAccess(PhysAddr addr, unsigned bytes, bool isWrite) {
+void R5000::unmappedAccess(PhysAddr addr, unsigned bytes, bool isWrite) {
     if (unmappedWarnings_.first(addr)) {
         log::tagged("CPU WARNING", "Bus error: {}-byte {} at undecoded physical {:#010x} (PC {})",
                     bytes, isWrite ? "write" : "read", addr, mips::formatAddress(currentPc_));
@@ -584,13 +588,13 @@ void R4600::unmappedAccess(PhysAddr addr, unsigned bytes, bool isWrite) {
     }
 }
 
-void R4600::halt(std::string_view reason) {
+void R5000::halt(std::string_view reason) {
     halted_ = true;
     log::error("CPU halted after {} instructions: {}", executed_, reason);
     logHistory();
 }
 
-void R4600::logRegisters() const {
+void R5000::logRegisters() const {
     static constexpr const char* kNames[32] = {
         "zero", "at", "v0", "v1", "a0", "a1", "a2", "a3", "t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7",
         "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "t8", "t9", "k0", "k1", "gp", "sp", "s8", "ra"};
@@ -601,7 +605,7 @@ void R4600::logRegisters() const {
     }
 }
 
-std::vector<R4600::HistoryEntry> R4600::history() const {
+std::vector<R5000::HistoryEntry> R5000::history() const {
     // The entry for an instruction is recorded at fetch, before executed_ is
     // bumped, so a faulting instruction is included.
     const size_t valid = static_cast<size_t>(std::min<uint64_t>(executed_ + 1, kHistorySize));
@@ -616,7 +620,7 @@ std::vector<R4600::HistoryEntry> R4600::history() const {
     return out;
 }
 
-void R4600::logHistory() const {
+void R5000::logHistory() const {
     const auto entries = history();
     if (entries.empty()) {
         log::tagged("CPU HISTORY", "(no instructions executed since reset)");

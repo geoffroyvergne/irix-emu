@@ -238,53 +238,53 @@ src/cpu/Fpu.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/cpu/Fpu.cpp.s
 .PHONY : src/cpu/Fpu.cpp.s
 
-src/cpu/R4600.o: src/cpu/R4600.cpp.o
-.PHONY : src/cpu/R4600.o
+src/cpu/R5000.o: src/cpu/R5000.cpp.o
+.PHONY : src/cpu/R5000.o
 
 # target to build an object file
-src/cpu/R4600.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.o
-.PHONY : src/cpu/R4600.cpp.o
+src/cpu/R5000.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/cpu/R5000.cpp.o
+.PHONY : src/cpu/R5000.cpp.o
 
-src/cpu/R4600.i: src/cpu/R4600.cpp.i
-.PHONY : src/cpu/R4600.i
+src/cpu/R5000.i: src/cpu/R5000.cpp.i
+.PHONY : src/cpu/R5000.i
 
 # target to preprocess a source file
-src/cpu/R4600.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.i
-.PHONY : src/cpu/R4600.cpp.i
+src/cpu/R5000.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/cpu/R5000.cpp.i
+.PHONY : src/cpu/R5000.cpp.i
 
-src/cpu/R4600.s: src/cpu/R4600.cpp.s
-.PHONY : src/cpu/R4600.s
+src/cpu/R5000.s: src/cpu/R5000.cpp.s
+.PHONY : src/cpu/R5000.s
 
 # target to generate assembly for a file
-src/cpu/R4600.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/cpu/R4600.cpp.s
-.PHONY : src/cpu/R4600.cpp.s
+src/cpu/R5000.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/cpu/R5000.cpp.s
+.PHONY : src/cpu/R5000.cpp.s
 
-src/cpu/R4600Execute.o: src/cpu/R4600Execute.cpp.o
-.PHONY : src/cpu/R4600Execute.o
+src/cpu/R5000Execute.o: src/cpu/R5000Execute.cpp.o
+.PHONY : src/cpu/R5000Execute.o
 
 # target to build an object file
-src/cpu/R4600Execute.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.o
-.PHONY : src/cpu/R4600Execute.cpp.o
+src/cpu/R5000Execute.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/cpu/R5000Execute.cpp.o
+.PHONY : src/cpu/R5000Execute.cpp.o
 
-src/cpu/R4600Execute.i: src/cpu/R4600Execute.cpp.i
-.PHONY : src/cpu/R4600Execute.i
+src/cpu/R5000Execute.i: src/cpu/R5000Execute.cpp.i
+.PHONY : src/cpu/R5000Execute.i
 
 # target to preprocess a source file
-src/cpu/R4600Execute.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.i
-.PHONY : src/cpu/R4600Execute.cpp.i
+src/cpu/R5000Execute.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/cpu/R5000Execute.cpp.i
+.PHONY : src/cpu/R5000Execute.cpp.i
 
-src/cpu/R4600Execute.s: src/cpu/R4600Execute.cpp.s
-.PHONY : src/cpu/R4600Execute.s
+src/cpu/R5000Execute.s: src/cpu/R5000Execute.cpp.s
+.PHONY : src/cpu/R5000Execute.s
 
 # target to generate assembly for a file
-src/cpu/R4600Execute.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/cpu/R4600Execute.cpp.s
-.PHONY : src/cpu/R4600Execute.cpp.s
+src/cpu/R5000Execute.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/indy_core.dir/build.make CMakeFiles/indy_core.dir/src/cpu/R5000Execute.cpp.s
+.PHONY : src/cpu/R5000Execute.cpp.s
 
 src/cpu/Tlb.o: src/cpu/Tlb.cpp.o
 .PHONY : src/cpu/Tlb.o
@@ -860,12 +860,12 @@ help:
 	@echo "... src/cpu/Fpu.o"
 	@echo "... src/cpu/Fpu.i"
 	@echo "... src/cpu/Fpu.s"
-	@echo "... src/cpu/R4600.o"
-	@echo "... src/cpu/R4600.i"
-	@echo "... src/cpu/R4600.s"
-	@echo "... src/cpu/R4600Execute.o"
-	@echo "... src/cpu/R4600Execute.i"
-	@echo "... src/cpu/R4600Execute.s"
+	@echo "... src/cpu/R5000.o"
+	@echo "... src/cpu/R5000.i"
+	@echo "... src/cpu/R5000.s"
+	@echo "... src/cpu/R5000Execute.o"
+	@echo "... src/cpu/R5000Execute.i"
+	@echo "... src/cpu/R5000Execute.s"
 	@echo "... src/cpu/Tlb.o"
 	@echo "... src/cpu/Tlb.i"
 	@echo "... src/cpu/Tlb.s"

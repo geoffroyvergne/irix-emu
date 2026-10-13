@@ -2,7 +2,7 @@
 
 #include "indy/cpu/AddressSpace.hpp"
 #include "indy/cpu/Fpu.hpp"
-#include "indy/cpu/R4600.hpp"
+#include "indy/cpu/R5000.hpp"
 #include "indy/cpu/Tlb.hpp"
 #include "indy/graphics/Newport.hpp"
 #include "indy/hpc/Ds1386.hpp"
@@ -178,7 +178,7 @@ void cpuFetchesFromResetVector() {
     MemoryBus bus;
     CHECK(bus.loadProm(prom.path).has_value());
 
-    R4600 cpu(bus);
+    R5000 cpu(bus);
     cpu.reset();
     CHECK(cpu.pc() == mips::kResetVector);
 
@@ -193,10 +193,10 @@ void cpuFetchesFromResetVector() {
 
 void cpuHaltsWithoutProm() {
     MemoryBus bus;
-    R4600 cpu(bus);
+    R5000 cpu(bus);
     cpu.reset();
     CHECK(cpu.tick());   // fetch fails -> instruction bus error exception
-    CHECK(cpu.cop0(R4600::kEPC) == mips::kResetVector);
+    CHECK(cpu.cop0(R5000::kEPC) == mips::kResetVector);
     CHECK(!cpu.tick());  // the handler cannot be fetched either -> halt
     CHECK(cpu.halted());
     cpu.reset();
@@ -235,10 +235,12 @@ void promByteOrderDetection() {
 struct Harness {
     TempFile prom;
     MemoryBus bus;
-    R4600 cpu{bus};
+    R5000 cpu;
 
-    explicit Harness(std::initializer_list<uint32_t> program) : Harness(std::vector<uint32_t>(program)) {}
-    explicit Harness(const std::vector<uint32_t>& program) : prom(beWords(program)) {
+    explicit Harness(std::initializer_list<uint32_t> program, CpuModel model = CpuModel::R5000)
+        : Harness(std::vector<uint32_t>(program), model) {}
+    explicit Harness(const std::vector<uint32_t>& program, CpuModel model = CpuModel::R5000)
+        : prom(beWords(program)), cpu(bus, 0, model) {
         bus.installRam(physmap::kRamBase, 1 * MiB);
         if (!bus.loadProm(prom.path)) throw std::runtime_error("harness: PROM load failed");
         cpu.reset();
@@ -328,14 +330,14 @@ void busErrorOnUndecodedAccess() {
     h.cpu.setBusErrorHook([&](PhysAddr a, bool w) { reported.emplace_back(a, w); });
     h.step(4); // stop at the vector (the test PROM has no handler there)
     CHECK(h.cpu.gpr(3) == 1u);
-    CHECK(((h.cpu.cop0(R4600::kCause) >> 2) & 0x1F) == 7);       // DBE
-    CHECK(h.cpu.cop0(R4600::kEPC) == 0xFFFF'FFFF'BFC0'000Cu);
+    CHECK(((h.cpu.cop0(R5000::kCause) >> 2) & 0x1F) == 7);       // DBE
+    CHECK(h.cpu.cop0(R5000::kEPC) == 0xFFFF'FFFF'BFC0'000Cu);
     CHECK(h.cpu.gpr(4) == 0u);
     CHECK(reported.size() == 2 && reported[0] == std::pair<PhysAddr, bool>{0x1FA0'00EC, true} &&
           reported[1] == std::pair<PhysAddr, bool>{0x1FA0'0004, false});
 }
 
-void cop0ConfigMatchesR4600() {
+void cop0ConfigMatchesR5000() {
     Harness h({
         0x4002'8000, // mfc0 $2, $16 (Config)
         0x4080'8000, // mtc0 $zero, $16
@@ -347,7 +349,7 @@ void cop0ConfigMatchesR4600() {
     CHECK((h.cpu.gpr(2) & 0x2'0000) != 0); // SC: no secondary cache
     CHECK((h.cpu.gpr(3) & 0x7) == 0);      // K0 writable
     CHECK((h.cpu.gpr(3) & 0x8000) != 0);   // BE read-only
-    CHECK(((h.cpu.gpr(4) >> 8) & 0xFF) == 0x20); // R4600 implementation number
+    CHECK(((h.cpu.gpr(4) >> 8) & 0xFF) == 0x23); // R5000 implementation number
 }
 
 // ---- Exceptions and TLB ------------------------------------------------------
@@ -355,7 +357,7 @@ void cop0ConfigMatchesR4600() {
 constexpr uint64_t kBootGeneralVector = 0xFFFF'FFFF'BFC0'0380; // BEV=1, offset 0x180
 constexpr uint64_t kBootRefillVector  = 0xFFFF'FFFF'BFC0'0200; // BEV=1, offset 0x000
 
-uint64_t excCode(const R4600& cpu) { return (cpu.cop0(R4600::kCause) >> 2) & 0x1F; }
+uint64_t excCode(const R5000& cpu) { return (cpu.cop0(R5000::kCause) >> 2) & 0x1F; }
 
 void misalignedLoadRaisesAddressError() {
     Harness h({
@@ -366,9 +368,9 @@ void misalignedLoadRaisesAddressError() {
     CHECK(!h.cpu.halted());
     CHECK(h.cpu.pc() == kBootGeneralVector);
     CHECK(excCode(h.cpu) == 4);
-    CHECK(h.cpu.cop0(R4600::kEPC) == 0xFFFF'FFFF'BFC0'0004u);
-    CHECK(h.cpu.cop0(R4600::kBadVAddr) == 0xFFFF'FFFF'A800'0002u);
-    CHECK((h.cpu.cop0(R4600::kStatus) & 2) != 0); // EXL
+    CHECK(h.cpu.cop0(R5000::kEPC) == 0xFFFF'FFFF'BFC0'0004u);
+    CHECK(h.cpu.cop0(R5000::kBadVAddr) == 0xFFFF'FFFF'A800'0002u);
+    CHECK((h.cpu.cop0(R5000::kStatus) & 2) != 0); // EXL
 }
 
 void tlbTranslation() {
@@ -408,10 +410,10 @@ void tlbRefillException() {
     h.step(4);
     CHECK(h.cpu.pc() == kBootRefillVector);
     CHECK(excCode(h.cpu) == 2); // TLBL
-    CHECK(h.cpu.cop0(R4600::kEPC) == 0xFFFF'FFFF'BFC0'000Cu);
-    CHECK(h.cpu.cop0(R4600::kBadVAddr) == 0x1234'5678u);
-    CHECK(h.cpu.cop0(R4600::kEntryHi) == 0x1234'4000u);                 // VPN2
-    CHECK((h.cpu.cop0(R4600::kContext) & 0x7F'FFF0) == (0x12345678u >> 13) << 4); // BadVPN2
+    CHECK(h.cpu.cop0(R5000::kEPC) == 0xFFFF'FFFF'BFC0'000Cu);
+    CHECK(h.cpu.cop0(R5000::kBadVAddr) == 0x1234'5678u);
+    CHECK(h.cpu.cop0(R5000::kEntryHi) == 0x1234'4000u);                 // VPN2
+    CHECK((h.cpu.cop0(R5000::kContext) & 0x7F'FFF0) == (0x12345678u >> 13) << 4); // BadVPN2
 }
 
 void tlbWriteThenAccess() {
@@ -436,7 +438,7 @@ void tlbWriteThenAccess() {
         0x4007'0800, // mfc0 $7, $1           Random
     });
     h.step(18);
-    CHECK(excCode(h.cpu) == 0 && (h.cpu.cop0(R4600::kStatus) & 2) == 0); // no exception taken
+    CHECK(excCode(h.cpu) == 0 && (h.cpu.cop0(R5000::kStatus) & 2) == 0); // no exception taken
     CHECK(h.bus.ram()[0x1000] == 0x12 && h.bus.ram()[0x1001] == 0x34);
     CHECK(h.cpu.gpr(6) == 0u);
     CHECK(h.cpu.gpr(7) <= 47u);
@@ -467,7 +469,7 @@ void tlbRewriteInvalidatesMicroTlb() {
         0xAC45'0004, // sw   $5, 4($2)        -> PA 0x08002004
     });
     h.step(19);
-    CHECK(excCode(h.cpu) == 0 && (h.cpu.cop0(R4600::kStatus) & 2) == 0);
+    CHECK(excCode(h.cpu) == 0 && (h.cpu.cop0(R5000::kStatus) & 2) == 0);
     CHECK(h.cpu.gpr(6) == 0x1234'0000u);
     CHECK(h.cpu.gpr(7) == 0u);
     CHECK(h.bus.ram()[0x2004] == 0x12 && h.bus.ram()[0x0004] == 0x00);
@@ -489,21 +491,69 @@ void cp0TimersRandomCountCompare() {
     program.push_back(0x4083'5800);              // 20: mtc0 $3, $11  Compare = 13
     program.resize(40, 0);
     Harness h(program);
-    CHECK(h.cpu.cop0(R4600::kRandom) == 47u && h.cpu.cop0(R4600::kCount) == 0u);
+    CHECK(h.cpu.cop0(R5000::kRandom) == 47u && h.cpu.cop0(R5000::kCount) == 0u);
     h.step(1);
-    CHECK(h.cpu.cop0(R4600::kRandom) == 46u && h.cpu.cop0(R4600::kCount) == 0u);
+    CHECK(h.cpu.cop0(R5000::kRandom) == 46u && h.cpu.cop0(R5000::kCount) == 0u);
     h.step(9);                                   // 10 instructions
-    CHECK(h.cpu.cop0(R4600::kCount) == 5u && h.cpu.cop0(R4600::kRandom) == 37u);
+    CHECK(h.cpu.cop0(R5000::kCount) == 5u && h.cpu.cop0(R5000::kRandom) == 37u);
     h.step(2);                                   // Wired = 40: Random restarts at 47
-    CHECK(h.cpu.cop0(R4600::kRandom) == 46u);
+    CHECK(h.cpu.cop0(R5000::kRandom) == 46u);
     h.step(7);                                   // 46..40, then back to 47
-    CHECK(h.cpu.cop0(R4600::kRandom) == 47u);
+    CHECK(h.cpu.cop0(R5000::kRandom) == 47u);
     h.step(2);                                   // Compare = 13 written at Count 10
-    CHECK((h.cpu.cop0(R4600::kCause) & 0x8000) == 0);
+    CHECK((h.cpu.cop0(R5000::kCause) & 0x8000) == 0);
     h.step(4);                                   // Count 12
-    CHECK(h.cpu.cop0(R4600::kCount) == 12u && (h.cpu.cop0(R4600::kCause) & 0x8000) == 0);
+    CHECK(h.cpu.cop0(R5000::kCount) == 12u && (h.cpu.cop0(R5000::kCause) & 0x8000) == 0);
     h.step(1);                                   // Count 13 = Compare
-    CHECK(h.cpu.cop0(R4600::kCount) == 13u && (h.cpu.cop0(R4600::kCause) & 0x8000) != 0);
+    CHECK(h.cpu.cop0(R5000::kCount) == 13u && (h.cpu.cop0(R5000::kCause) & 0x8000) != 0);
+}
+
+// MIPS IV on the R5000: conditional moves, FP condition codes 1-7, COP1X
+// multiply-add and indexed load/store, RECIP. The R4600 does not have them.
+void r5000MipsIvInstructions() {
+    const std::initializer_list<uint32_t> program = {
+        0x3C01'2440, // lui    $1, 0x2440        CU1 | FR | BEV
+        0x4081'6000, // mtc0   $1, $12
+        0x2402'0005, // addiu  $2, $zero, 5
+        0x2403'0000, // addiu  $3, $zero, 0
+        0x0043'200A, // movz   $4, $2, $3        $3 == 0: $4 = 5
+        0x0043'280B, // movn   $5, $2, $3        $3 == 0: no move
+        0x2406'0002, // addiu  $6, $zero, 2
+        0x4486'1000, // mtc1   $6, $f2
+        0x4680'10A1, // cvt.d.w $f2, $f2         2.0
+        0x2407'0003, // addiu  $7, $zero, 3
+        0x4487'2000, // mtc1   $7, $f4
+        0x4680'2121, // cvt.d.w $f4, $f4         3.0
+        0x2408'0001, // addiu  $8, $zero, 1
+        0x4488'3000, // mtc1   $8, $f6
+        0x4680'31A1, // cvt.d.w $f6, $f6         1.0
+        0x4CC4'1221, // madd.d  $f8, $f6, $f2, $f4    2*3 + 1 = 7
+        0x4CC4'12B9, // nmsub.d $f10, $f6, $f2, $f4   -(2*3 - 1) = -5
+        0x4624'133C, // c.lt.d  $fcc3, $f2, $f4       2 < 3
+        0x004D'4801, // movt   $9, $2, $fcc3     -> 5
+        0x004C'5001, // movf   $10, $2, $fcc3    -> no move
+        0x4620'2315, // recip.d $f12, $f4        1/3
+        0x3C0B'A800, // lui    $11, 0xa800       RAM through KSEG1
+        0x4D63'4009, // sdxc1  $f8, $3($11)
+        0x4D63'0381, // ldxc1  $f14, $3($11)
+        0x442C'7000, // dmfc1  $12, $f14
+        0x442D'5000, // dmfc1  $13, $f10
+        0x442E'6000, // dmfc1  $14, $f12
+    };
+    Harness h(program, CpuModel::R5000);
+    h.step(static_cast<int>(program.size()));
+    CHECK(h.cpu.cop0(R5000::kPRId) == 0x2321u);
+    CHECK(h.cpu.gpr(4) == 5u && h.cpu.gpr(5) == 0u);
+    CHECK(h.cpu.gpr(9) == 5u && h.cpu.gpr(10) == 0u);
+    CHECK((h.cpu.fcr31() & (1u << 27)) != 0 && (h.cpu.fcr31() & (1u << 23)) == 0); // cc3, not cc0
+    CHECK(h.cpu.gpr(12) == std::bit_cast<uint64_t>(7.0));
+    CHECK(h.cpu.gpr(13) == std::bit_cast<uint64_t>(-5.0));
+    CHECK(h.cpu.gpr(14) == std::bit_cast<uint64_t>(1.0 / 3.0));
+    CHECK(excCode(h.cpu) == 0 && (h.cpu.cop0(R5000::kStatus) & 2) == 0);
+
+    Harness old(program, CpuModel::R4600);                       // MIPS III: MOVZ is not an instruction
+    old.step(6);
+    CHECK(old.cpu.cop0(R5000::kPRId) == 0x2020u && old.cpu.gpr(4) == 0u);
 }
 
 void exceptionInDelaySlotSetsBD() {
@@ -515,8 +565,8 @@ void exceptionInDelaySlotSetsBD() {
     });
     h.step(4);
     CHECK(h.cpu.pc() == kBootRefillVector);
-    CHECK(h.cpu.cop0(R4600::kEPC) == 0xFFFF'FFFF'BFC0'0008u); // the jump, not the slot
-    CHECK((h.cpu.cop0(R4600::kCause) >> 31) == 1);           // BD
+    CHECK(h.cpu.cop0(R5000::kEPC) == 0xFFFF'FFFF'BFC0'0008u); // the jump, not the slot
+    CHECK((h.cpu.cop0(R5000::kCause) >> 31) == 1);           // BD
 }
 
 void eretReturnsToEpc() {
@@ -531,7 +581,7 @@ void eretReturnsToEpc() {
     });
     h.step(7);
     CHECK(h.cpu.pc() == 0xFFFF'FFFF'BFC0'0020u);
-    CHECK((h.cpu.cop0(R4600::kStatus) & 2) == 0);
+    CHECK((h.cpu.cop0(R5000::kStatus) & 2) == 0);
 }
 
 void syscallAndCoprocessorUnusable() {
@@ -539,12 +589,12 @@ void syscallAndCoprocessorUnusable() {
     sys.step(1);
     CHECK(sys.cpu.pc() == kBootGeneralVector);
     CHECK(excCode(sys.cpu) == 8);
-    CHECK(sys.cpu.cop0(R4600::kEPC) == mips::kResetVector);
+    CHECK(sys.cpu.cop0(R5000::kEPC) == mips::kResetVector);
 
     Harness cpu({0xC400'0000}); // lwc1 $f0, 0($zero) with CU1 = 0
     cpu.step(1);
     CHECK(excCode(cpu.cpu) == 11);
-    CHECK(((cpu.cpu.cop0(R4600::kCause) >> 28) & 3) == 1);
+    CHECK(((cpu.cpu.cop0(R5000::kCause) >> 28) & 3) == 1);
 }
 
 void timerInterrupt() {
@@ -564,7 +614,7 @@ void timerInterrupt() {
     }
     CHECK(taken);
     CHECK(excCode(h.cpu) == 0);                         // Int
-    CHECK((h.cpu.cop0(R4600::kCause) & 0x8000) != 0);   // IP7 (timer)
+    CHECK((h.cpu.cop0(R5000::kCause) & 0x8000) != 0);   // IP7 (timer)
 }
 
 // ---- Memory controller ---------------------------------------------------------
@@ -791,9 +841,9 @@ void fpuMovesWithFr0Pairing() {
     CHECK(h.cpu.fpr(0) == 0x8765'0000'0000'1234u);
     CHECK(h.cpu.gpr(4) == 0xFFFF'FFFF'8765'0000u); // MFC1 sign-extends
     CHECK(h.cpu.gpr(5) == 0x8765'0000'0000'1234u);
-    CHECK(h.cpu.gpr(6) == R4600::kFcr0);
+    CHECK(h.cpu.gpr(6) == R5000::kFcr0R5000);
     CHECK(h.cpu.gpr(8) == 0x0100'0003u);
-    CHECK(excCode(h.cpu) == 0 && (h.cpu.cop0(R4600::kStatus) & 2) == 0);
+    CHECK(excCode(h.cpu) == 0 && (h.cpu.cop0(R5000::kStatus) & 2) == 0);
 }
 
 void fpuMovesWithFr1() {
@@ -1071,7 +1121,7 @@ void exceptionVectorsTranslateAndFetch() {
 
 void haltRecordsInstructionHistory() {
     MemoryBus bus;
-    R4600 cpu(bus);
+    R5000 cpu(bus);
     cpu.reset();
     CHECK(cpu.history().empty());
 
@@ -1554,8 +1604,8 @@ void deviceInterruptReachesCpuVector() {
     h.step(1);
     CHECK(h.cpu.pc() == kBootGeneralVector);
     CHECK(excCode(h.cpu) == 0);                          // Int
-    CHECK((h.cpu.cop0(R4600::kCause) & (1u << 10)) != 0); // IP2
-    CHECK(h.cpu.cop0(R4600::kEPC) == mips::kResetVector + 16);
+    CHECK((h.cpu.cop0(R5000::kCause) & (1u << 10)) != 0); // IP2
+    CHECK(h.cpu.cop0(R5000::kEPC) == mips::kResetVector + 16);
 }
 
 void deviceIrqOutputs() {
@@ -1863,6 +1913,28 @@ void newportPopupPlanes() {
     h.np.onVBlank(0);
     (void)h.fb.acquire();
     CHECK(h.fb.frontBuffer()[2] == 0x808080u && h.fb.frontBuffer()[3] == 0xFF0000u);
+}
+
+// X plots points as I_LINE without STOPONX/STOPONY: one pixel per GO, even
+// with a stale end point left by an earlier span (it once drew a long streak
+// from every point of an icon outline). With the stop bits the line runs to
+// its end.
+void newportLineSingleStepAndFullLine() {
+    NewportHarness h;
+    h.w(Newport::kDrawMode1, 0x3000'0001);
+    h.w(Newport::kWrMask, 0xFF);
+    h.w(Newport::kColorI, 5);
+    h.w(Newport::kXYEndI, (122u << 16) | 0u);                    // stale span end
+    h.w(Newport::kDrawMode0, 0x000A);                             // I_LINE, no setup, no stop bits
+    h.w(Newport::kXYStartI | Newport::kGo, (60u << 16) | 55u);
+    h.w(Newport::kXYStartI | Newport::kGo, (57u << 16) | 55u);
+    CHECK(h.np.vramAt(60, 55) == 5u && h.np.vramAt(57, 55) == 5u);
+    CHECK(h.np.vramAt(61, 54) == 0u && h.np.vramAt(58, 54) == 0u);   // no streak towards (122,0)
+
+    h.w(Newport::kDrawMode0, 0x0B2A);                             // I_LINE, setup, STOPX|STOPY, skip last
+    h.w(Newport::kXYStartI, (10u << 16) | 10u);
+    h.w(Newport::kXYEndI | Newport::kGo, (14u << 16) | 10u);
+    CHECK(h.np.vramAt(10, 10) == 5u && h.np.vramAt(13, 10) == 5u && h.np.vramAt(14, 10) == 0u);
 }
 
 // ---- Phase 17: PS/2 mouse streaming, VC2 hardware cursor -------------------------------------
@@ -2183,13 +2255,14 @@ int main() {
         {"executesLoadsAndStores", executesLoadsAndStores},
         {"unimplementedInstructionIsSkipped", unimplementedInstructionIsSkipped},
         {"busErrorOnUndecodedAccess", busErrorOnUndecodedAccess},
-        {"cop0ConfigMatchesR4600", cop0ConfigMatchesR4600},
+        {"cop0ConfigMatchesR5000", cop0ConfigMatchesR5000},
         {"misalignedLoadRaisesAddressError", misalignedLoadRaisesAddressError},
         {"tlbTranslation", tlbTranslation},
         {"tlbRefillException", tlbRefillException},
         {"tlbWriteThenAccess", tlbWriteThenAccess},
         {"tlbRewriteInvalidatesMicroTlb", tlbRewriteInvalidatesMicroTlb},
         {"cp0TimersRandomCountCompare", cp0TimersRandomCountCompare},
+        {"r5000MipsIvInstructions", r5000MipsIvInstructions},
         {"exceptionInDelaySlotSetsBD", exceptionInDelaySlotSetsBD},
         {"eretReturnsToEpc", eretReturnsToEpc},
         {"syscallAndCoprocessorUnusable", syscallAndCoprocessorUnusable},
@@ -2246,6 +2319,7 @@ int main() {
         {"newportPackedHostDataPerGo", newportPackedHostDataPerGo},
         {"newportDisplayIdRuns", newportDisplayIdRuns},
         {"newportPopupPlanes", newportPopupPlanes},
+        {"newportLineSingleStepAndFullLine", newportLineSingleStepAndFullLine},
         {"unalignedLoadStorePairs", unalignedLoadStorePairs},
         {"scsiDiskCommandsAndPersistence", scsiDiskCommandsAndPersistence},
         {"chdDiskImageReadWrite", chdDiskImageReadWrite},

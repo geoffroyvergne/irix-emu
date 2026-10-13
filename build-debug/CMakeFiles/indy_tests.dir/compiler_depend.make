@@ -1033,7 +1033,7 @@ CMakeFiles/indy_tests.dir/tests/CoreTests.cpp.o: /Users/gv/dev/projects/irix-emu
   /Users/gv/dev/projects/irix-emu/include/indy/cpu/Cpu.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/cpu/Fpu.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/cpu/Instruction.hpp \
-  /Users/gv/dev/projects/irix-emu/include/indy/cpu/R4600.hpp \
+  /Users/gv/dev/projects/irix-emu/include/indy/cpu/R5000.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/cpu/Tlb.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/graphics/GraphicsSubsystem.hpp \
   /Users/gv/dev/projects/irix-emu/include/indy/graphics/Newport.hpp \
@@ -1099,7 +1099,7 @@ CMakeFiles/indy_tests.dir/tests/CoreTests.cpp.o: /Users/gv/dev/projects/irix-emu
 
 /Users/gv/dev/projects/irix-emu/include/indy/cpu/Tlb.hpp:
 
-/Users/gv/dev/projects/irix-emu/include/indy/cpu/R4600.hpp:
+/Users/gv/dev/projects/irix-emu/include/indy/cpu/R5000.hpp:
 
 /Users/gv/dev/projects/irix-emu/include/indy/cpu/Instruction.hpp:
 

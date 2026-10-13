@@ -5,11 +5,11 @@
 
 namespace indy::fpu {
 
-// R4600 COP1 arithmetic (MIPS III): .S/.D arithmetic, conversions between
+// R5000 COP1 arithmetic (MIPS III/IV base set): .S/.D arithmetic, conversions between
 // S/D/W/L, and C.cond compares, computed with host IEEE 754 arithmetic under
 // the guest's rounding mode.
 //
-// The R4600 hands some cases (denormal operands/results, invalid integer
+// The R5000 hands some cases (denormal operands/results, invalid integer
 // conversions) to the kernel as "unimplemented operation" traps, and the
 // kernel's software FPU emulator then produces the IEEE result. Computing
 // the IEEE result directly gives software the same answer without the trap.
@@ -45,7 +45,7 @@ struct Result {
 
 // Executes COP1 function `funct` (0x00..0x2F) on operands of format `fmt`.
 // `fs`/`ft` hold S/W operands in bits 31:0. `fcr31` supplies the rounding
-// mode (bits 1:0) and FS. Encodings the R4600 doesn't implement come back
+// mode (bits 1:0) and FS. Encodings the R5000 doesn't implement come back
 // with kUnimplemented as the cause.
 [[nodiscard]] Result operate(uint32_t funct, uint32_t fmt, uint64_t fs, uint64_t ft, uint32_t fcr31);
 

@@ -74,8 +74,8 @@ add_library(indy_core STATIC
     src/core/Scheduler.cpp
     src/core/System.cpp
     src/core/EmulationThread.cpp
-    src/cpu/R4600.cpp
-    src/cpu/R4600Execute.cpp
+    src/cpu/R5000.cpp
+    src/cpu/R5000Execute.cpp
     src/cpu/Fpu.cpp
     src/cpu/Tlb.cpp
     src/memory/MemoryBus.cpp

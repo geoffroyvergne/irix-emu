@@ -14,11 +14,15 @@
 
 namespace indy {
 
-// MIPS R4600 "Orion" (MIPS III, 64-bit, big-endian on the Indy).
+// MIPS R5000 (MIPS IV, 64-bit, big-endian on the Indy), as fitted to the
+// R5000PC Indy: 32 KiB primary caches, no secondary cache. It can also present
+// itself as the earlier R4600 "Orion" (CpuModel::R4600: MIPS III only, 16 KiB
+// caches, its own PRId/FCR0), the Indy's other processor.
 //
-// Implemented: MIPS III integer ISA, exact branch delay slots, COP0 (TLB,
-// exceptions, interrupts, Count/Compare timer), 32-bit compatibility address
-// space with full segment/mode checks, COP1 register file / moves / branches.
+// Implemented: MIPS III and MIPS IV integer ISA, exact branch delay slots,
+// COP0 (TLB, exceptions, interrupts, Count/Compare timer), 32-bit
+// compatibility address space with full segment/mode checks, COP1 (IEEE
+// arithmetic; MIPS IV: COP1X, multiply-add, RECIP/RSQRT, eight condition codes).
 // Not yet: caches, 64-bit address segments (KX/SX/UX).
 //
 // Fault policy:
@@ -28,11 +32,15 @@ namespace indy {
 //     Bus Error exception, posted writes complete; both are reported to the
 //     board (the MC latches them and interrupts on IP6 for writes)
 //   * unrecoverable states (handler itself unfetchable) -> halt
-class R4600 final : public Cpu {
+class R5000 final : public Cpu {
 public:
     // `traceInstructions`: log this many executed instructions after each reset.
-    explicit R4600(MemoryBus& bus, uint64_t traceInstructions = 0)
-        : bus_(bus), traceLimit_(traceInstructions) {}
+    explicit R5000(MemoryBus& bus, uint64_t traceInstructions = 0, CpuModel model = CpuModel::R4600)
+        : bus_(bus), model_(model), traceLimit_(traceInstructions) {}
+
+    [[nodiscard]] CpuModel model() const noexcept { return model_; }
+    [[nodiscard]] bool mipsIV() const noexcept { return model_ == CpuModel::R5000; }
+    [[nodiscard]] uint32_t fcr0() const noexcept { return mipsIV() ? kFcr0R5000 : kFcr0R4600; }
 
     void reset() override;
     [[nodiscard]] Cycles run(Cycles budget) override;
@@ -73,8 +81,10 @@ public:
 
     static constexpr unsigned kHardwareInterruptLines = 6;
 
-    // FCR0: FPU implementation 0x20 (R4600 on-chip FPU), revision 2.0.
-    static constexpr uint32_t kFcr0 = 0x2020;
+    // FCR0 in R4600 mode: FPU implementation 0x20, revision 2.0.
+    static constexpr uint32_t kFcr0R4600 = 0x2020;
+    // FCR0 on the R5000: implementation 0x23 (as its PRId), revision 2.1.
+    static constexpr uint32_t kFcr0R5000 = 0x2321;
 
     // Architectural COP0 register numbers (MIPS III / R4000 family).
     enum Cop0Reg : unsigned {
@@ -135,13 +145,18 @@ private:
         gpr_[0] = 0;
     }
 
-    // ---- Execution (R4600Execute.cpp) ---------------------------------------
+    // ---- Execution (R5000Execute.cpp) ---------------------------------------
     void execute(mips::Instruction insn);
     void executeSpecial(mips::Instruction insn);
     void executeRegImm(mips::Instruction insn);
     void executeCop0(mips::Instruction insn);
     void executeCop1(mips::Instruction insn);
-    void executeFpuOperation(mips::Instruction insn);  // .S/.D/.W/.L arithmetic, conversions, compares
+    void executeFpuOperation(mips::Instruction insn);
+    void executeCop1x(mips::Instruction insn);         // MIPS IV: indexed FP load/store, multiply-add
+    // FP condition codes: cc 0 is FCR31 bit 23 (MIPS III's C), cc 1-7 are
+    // bits 25-31 (MIPS IV).
+    [[nodiscard]] bool fpCondition(unsigned cc) const noexcept;
+    void setFpCondition(unsigned cc, bool value) noexcept;  // .S/.D/.W/.L arithmetic, conversions, compares
     bool completeFpuOperation(uint32_t cause);         // FCR31 cause/flags; false = trapped
 
     // ---- COP1 register file ----------------------------------------------------
@@ -176,13 +191,13 @@ private:
     template <BusWord T> [[nodiscard]] bool load(VirtAddr vaddr, T& out);
     template <BusWord T> [[nodiscard]] bool store(VirtAddr vaddr, T value);
 
-    // ---- MMU (R4600.cpp) -----------------------------------------------------
+    // ---- MMU (R5000.cpp) -----------------------------------------------------
     // Virtual -> physical for the current mode. On failure the appropriate
     // exception has already been raised and nullopt is returned.
     [[nodiscard]] std::optional<PhysAddr> translate(VirtAddr vaddr, Access access);
     [[nodiscard]] bool kernelMode() const noexcept;
 
-    // ---- Exceptions & COP0 (R4600.cpp) ---------------------------------------
+    // ---- Exceptions & COP0 (R5000.cpp) ---------------------------------------
     void raiseException(ExcCode code, unsigned coprocessor = 0, bool tlbRefill = false);
     void raiseAddressError(VirtAddr vaddr, Access access);
     void raiseTlbException(VirtAddr vaddr, Access access, Tlb::Outcome outcome);
@@ -216,6 +231,7 @@ private:
     void halt(std::string_view reason);
 
     MemoryBus& bus_;
+    CpuModel model_;
     Tlb tlb_;
     BusErrorHook busErrorHook_;
 

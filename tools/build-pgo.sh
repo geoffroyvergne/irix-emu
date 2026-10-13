@@ -46,5 +46,7 @@ echo "== 3/4 merging the profile"
 echo "== 4/4 optimised build (build-pgo)"
 cmake -S "$root" -B "$root/build-pgo" -DCMAKE_BUILD_TYPE=Release -DINDY_PGO_GENERATE=OFF \
       "-DINDY_PGO_PROFILE=$root/indy.profdata" > /dev/null
-cmake --build "$root/build-pgo" -j
+# A full rebuild: CMake does not track the profile as an input, and objects
+# compiled against different profiles cannot be linked together.
+cmake --build "$root/build-pgo" -j --clean-first
 echo "Done: $root/build-pgo/bin/indy"

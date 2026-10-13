@@ -59,6 +59,7 @@ namespace fn {
 enum : uint32_t {
     Sll    = 0x00, Srl    = 0x02, Sra    = 0x03,
     Sllv   = 0x04, Srlv   = 0x06, Srav   = 0x07,
+    Movci  = 0x01, Movz   = 0x0A, Movn    = 0x0B,           // MIPS IV (R5000)
     Jr     = 0x08, Jalr   = 0x09, Syscall = 0x0C, Break = 0x0D, Sync = 0x0F,
     Mfhi   = 0x10, Mthi   = 0x11, Mflo   = 0x12, Mtlo   = 0x13,
     Dsllv  = 0x14, Dsrlv  = 0x16, Dsrav  = 0x17,
