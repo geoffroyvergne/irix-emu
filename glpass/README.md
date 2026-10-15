@@ -48,8 +48,10 @@ IRIX then keeps its own OpenGL.
   emulated TLB maps are copied page by page.
 - **Version check:** a library built from other sources than the emulator is
   refused, with a message saying what to do.
-- **Test programs:** `gltri`, `glthreads`/`glthreads_pt`, `glmove` and
-  `glcheck`.
+- **X errors:** glpass's own X errors never reach the program. Windows the
+  program destroys are dropped at once.
+- **Test programs:** `gltri`, `glthreads`/`glthreads_pt`, `glmove`,
+  `glcheck` and `glgone`.
 
 ## Why it exists
 
@@ -191,6 +193,11 @@ SGI hardware:
 - at `glFlush` or `glFinish` while drawing into the front buffer;
 - at `glFlush` or `glFinish` in a window that has never been swapped, taken
   for single-buffered (every visual here is double-buffered underneath);
+- at `glFlush` or `glFinish` after drawing on top of the last swapped frame
+  without clearing it. Maya draws its selection rectangle so: into the back
+  buffer of its double-buffered view, erasing the previous rectangle, with
+  only a `glFlush` after each mouse move. A frame that starts with a colour
+  clear is still shown at its swap only.
 - at `glXMakeCurrent` leaving such a window, as GLX flushes the context it
   leaves (Maya's menus end so, without a `glFlush`).
 
@@ -319,6 +326,37 @@ several threads. It avoids waiting for X replies while presenting, because a
 program may hold a server grab then (Maya does during its marking menus):
 window positions come from X events, not from round trips.
 
+### X errors and destroyed windows
+
+The process has one X error handler. When a program destroys a window it
+still draws to, glpass's requests for it fail. Houdini's License
+Administrator does this: it leaves a context current on its destroyed splash
+window and keeps flushing. Those errors must not reach the program, because
+its handler would take them as its own, and Xt's default handler exits.
+
+**The handler.** glpass installs the process's handler. It keeps the errors
+glpass caused:
+
+- everything on glpass's own connection;
+- the few requests it sends on the program's connection (the overlay key
+  fill), recognised by their serial numbers.
+
+It logs those with `GLPASS_TRACE=1` and passes every other error to the
+program's handler unchanged. `libglpass_x` routes the program's
+`XSetErrorHandler` calls to glpass, so a handler the program installs later
+becomes the one glpass passes errors to, instead of replacing glpass's.
+
+**Destroyed windows** are recorded from any of three sources:
+
+- the program's `XDestroyWindow`, caught by `libglpass_x`;
+- the window's `DestroyNotify`;
+- a `BadWindow` or `BadDrawable` error from one of glpass's requests on it.
+
+After that, the window is no longer shown or queried. `glXMakeCurrent` on it
+returns `False`, as GLX does, and the current context stays current. A
+window that is only unmapped stays a valid target: GLX allows binding to
+unmapped windows.
+
 ### Window tracking
 
 The library tracks each GL window's place on screen from X events, so it
@@ -370,6 +408,7 @@ waiting for the grab to end.
 | [guest/gl_api.txt](guest/gl_api.txt) | The 886 IRIX `gl.h` prototypes the generator reads |
 | [guest/glrun](guest/glrun) | Launcher that sets the library path and the preload |
 | [guest/gltri.c](guest/gltri.c) | Test program: a spinning triangle with a frame-rate counter |
+| [guest/glgone.c](guest/glgone.c) | Test program: a context left current on a window the program destroys, then flushed; the program must receive no X errors |
 | [guest/glcheck.c](guest/glcheck.c) | Test program: selection, feedback and 3D textures, checked value by value in the program's memory |
 | [guest/glmove.c](guest/glmove.c) | Test program: moves, then unmaps, a GL window without redrawing it; its image should follow, then disappear |
 | [guest/glthreads.c](guest/glthreads.c) | Test program: two threads drawing at once, each with its own context and window, checking every frame (`glthreads`: sproc, `glthreads_pt`: POSIX threads) |
@@ -414,7 +453,7 @@ built for the n32 ABI, which Maya, Quake III and most IRIX 6.5 programs use.
 
 ```sh
 cd /usr/local/irix-emu/glpass
-make            # libGL.so, libglpass_x.so, gltri, glthreads, glthreads_pt, glmove, glcheck
+make            # libGL.so, libglpass_x.so, gltri, glthreads, glthreads_pt, glmove, glcheck, glgone
 ```
 
 The guest and the emulator must come from the same source tree: the command
@@ -532,6 +571,7 @@ own OpenGL, as before.
 | Where | Variable | Effect |
 |---|---|---|
 | IRIX | `GLPASS_TRACE=1` | Logs, to the program's stderr: the first call of every GL entry point; GLX calls; presents and palettes; and, from `libglpass_x`, the pixel values handed to X and any non-copy X line drawing |
+| IRIX | `GLPASS_TRACE=1` and the file `/tmp/glpass.dump` | While the file exists, every command sent is logged with its context and first arguments (integers and floats). Create it, do the action to study, delete it |
 | IRIX | `GLPASS_OVERLAY=1` | Offers the X server's overlay visual for overlay requests that its depth satisfies (see below) |
 | Emulator | `INDY_TRACE_GL=1` | Logs each composited image (size, position, key alignment, centre pixel) and the host time of each swap |
 | Emulator | `INDY_GL_DUMP=<dir>` | With `INDY_TRACE_GL`, writes each window's last host image to `<dir>/gl_<window>.ppm` |
@@ -549,11 +589,13 @@ Tested programs:
 | Program | State |
 |---|---|
 | `gltri` | Works: thousands of frames per second |
+| `glgone` | Pass: no X errors reach the program after it destroys a window its context is still current on (three before the fix) |
+| Houdini 6 License Administrator (`hkey`) | Renders its whole interface (drawn with GL; black with IRIX's own GL) and switches tabs, with no X errors. Its File menu does not open: holding the button produces no GL or GLX call at all, so the cause is not known yet. |
 | `glcheck` | Pass: selection (hits, names, depths), feedback (tokens, window coordinates, pass-through), 3D texture upload with skipped images |
 | `glmove` | Pass: the image follows the moved window and disappears when it is unmapped |
 | `glthreads`, `glthreads_pt` | Pass: two threads, 150 frames each, no frame drawn into the other thread's context (sproc and POSIX threads) |
 | Quake III Arena (IRIX build) | Runs: menus, intro, game; host cost about 1.2 ms per frame. Image quality has dropped since the visual changes made for Maya (under investigation), and fullscreen mode shows a normal window. |
-| Maya 6.5 | Usable: viewports in wireframe and smooth shade, tumbling, object creation and selection, manipulators, dropdown and panel menus, right-click marking menus, range slider; the same with `GLPASS_OVERLAY=1`. Gaps below. |
+| Maya 6.5 | Usable: viewports in wireframe and smooth shade, tumbling, object creation and selection (click and selection rectangle), manipulators, dropdown and panel menus, right-click marking menus, range slider; the same with `GLPASS_OVERLAY=1`. Gaps below. |
 
 Known limitations:
 
@@ -562,11 +604,11 @@ Known limitations:
   visual changes, for a reason not yet found. Its fullscreen mode
   (`r_fullscreen 1`) reports 640×480 fullscreen but draws a decorated
   window.
-- **No selection rectangle in Maya.** During a drag Maya draws the rectangle
-  with GL into the viewport's back buffer (`glLineStipple`) and calls only
-  `glFlush`, with no swap, no `glDrawBuffer(GL_FRONT)` and no X drawing. With
-  double-buffered windows nothing of it is shown. How Maya expects it to
-  appear is not known yet.
+- **Flushes over the last frame are shown.** A program that draws part of a
+  frame on top of the previous one without clearing it, and flushes midway,
+  shows that partial image. This rule exists for Maya's selection rectangle.
+  Programs that clear the colour buffer at the start of each frame are
+  unaffected.
 - **Overlay planes** (`GLPASS_OVERLAY=1`) are off by default:
   - **The XL8 overlay.** The XL8's only overlay visual is 2-bit (its popup
     planes). Since `GLX_BUFFER_SIZE` is now honoured as a minimum, Maya's

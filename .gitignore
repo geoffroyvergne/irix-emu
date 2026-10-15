@@ -30,6 +30,7 @@ glpass/guest/glthreads
 glpass/guest/glthreads_pt
 glpass/guest/glmove
 glpass/guest/glcheck
+glpass/guest/glgone
 
 # Compiled objects and libraries
 *.o

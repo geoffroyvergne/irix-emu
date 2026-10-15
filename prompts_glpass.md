@@ -64,3 +64,35 @@ Technical Constraints & Crucial Guardrails:
 3. 3D Textures: Implement a pipeline for `glTexImage3D` so it maps natively to the host GPU's 3D texturing capabilities within the legacy profile.
 
 Please provide the updated Python generator logic and the hand-written C/C++ implementation for the selection/feedback buffer transfer.
+
+# Prompt 5 : Final fix for invisible selection marquees in Maya
+
+Context: We successfully stabilized 'GLPASS_OVERLAY=1', but the selection rectangle (marquee select) in Maya remains completely invisible. 
+
+Root Cause Analysis: 
+Maya draws the selection marquee using a specific blend mode, usually via `glLogicOp(GL_XOR)` or by disabling depth testing (`glDisable(GL_DEPTH_TEST)`) inside the overlay visual context. However, because our host-side FBO composites the overlay using key-colour matching, the host-side OpenGL state machine might be discarding these lines, or the bounding box is being drawn *behind* the geometry because the host stencil/depth state for the overlay context isn't properly isolated.
+
+Task: Fix the invisible selection rectangle in 'guest/glpass.c' and 'host/GlBridgeMac.cpp'.
+
+Requirements:
+1. Verify how `glLogicOp`, `glEnable(GL_COLOR_INDEX_LOGIC_OP)`, and `glIndexMask` are mapped on the Host. If the host GPU or profile ignores `GL_INDEX_LOGIC_OP` in RGBA mode, we must emulate the XOR operation via a fragment shader or by forcing a software-readback/texture-update cycle for the bounding box coords.
+2. Ensure that when drawing occurs in the Overlay Context (Layer 1), the host-side `glDepthMask(GL_FALSE)` and `glDisable(GL_DEPTH_TEST)` are strictly enforced, so overlay pixels always overwrite the back buffer regardless of previous 3D geometry depth values.
+3. Check the alpha channel handling during the compositing phase: if the selection rectangle pixels don't trigger the exact key-colour `0xC7` (or whatever Alpha/Key value is expected by `Newport.cpp`), the emulator core will skip compositing them onto the screen.
+
+Please provide the code adjustments for both the guest encoder and host replay logic.
+
+# Prompt 6 : Resolving the "Bad Window" error in Houdini 6
+
+Context: The "License Administrator" tool in Houdini 6 triggers X11 protocol errors of type "BadWindow (invalid Window parameter)" and crashes or fails to render its UI.
+
+Root Cause Analysis:
+Houdini creates and destroys short-lived sub-windows, dialogs, and tooltips very rapidly. Because we transitioned to an asynchronous window-tracking loop and our GLX layer runs across multiple threads, a race condition occurs: Houdini calls `glXMakeCurrent` or `glXSwapBuffers` on a Window XID that the X server has just destroyed (or not yet fully mapped), throwing a fatal async X11 error before our cache can reflect the change.
+
+Task: Add strict safety checks and error trapping in 'guest/glpass.c' and 'guest/xstore.c'.
+
+Requirements:
+1. Implement a custom X11 Error Handler (`XSetErrorHandler`) inside `glpass` to catch and safely suppress `BadWindow` and `BadDrawable` errors specifically generated during GLX calls. Instead of letting the application crash, the handler should log the error and allow glpass to gracefully skip the current frame or `SUBMIT` call.
+2. In `glXMakeCurrent` and `glXSwapBuffers`, validate the `Window` or `GLXDrawable` handle using a fast, non-blocking check (like a thread-safe hash map of active windows populated by our `ConfigureNotify` loop). If the window ID is known to be dead or unmapped, return `False` immediately instead of performing the hypercall.
+3. Ensure that when `XDestroyWindow` is intercepted in `libglpass_x.so`, we immediately invalidate that XID in our local tracking system so that no subsequent OpenGL commands can be dispatched to the host for that specific surface.
+
+Please provide the X11 error handler setup and the validation logic to inject into 'guest/glpass.c'.

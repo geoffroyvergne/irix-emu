@@ -22,6 +22,10 @@
  *   _RLDN32_LIST=/usr/local/irix-emu/glpass/libglpass_x.so:DEFAULT
  * It links nothing but libc, so the programs that do not use X (every
  * process inherits the variable) load it harmlessly.
+ *
+ * It also passes XSetErrorHandler and XDestroyWindow to glpass, when the
+ * program uses it: glpass keeps the X errors its own requests cause, and
+ * forgets a window the moment it is destroyed.
  */
 #include <X11/Xlib.h>
 
@@ -53,6 +57,41 @@ static void *x11_function(const char *name)
     if (!x11) x11 = dlopen("libX11.so.1", RTLD_LAZY);
     if (!x11) x11 = dlopen("libX11.so", RTLD_LAZY);
     return x11 ? dlsym(x11, name) : 0;
+}
+
+/* glpass's (libGL.so) function `name`, when the program loaded it. */
+static void *glpass_function(const char *name)
+{
+    static void *program;
+    if (!program) program = dlopen(0, RTLD_LAZY);
+    return program ? dlsym(program, name) : 0;
+}
+
+/* ---- Errors and destroyed windows --------------------------------------------- */
+
+/* The process's X error handler is glpass's, which keeps the errors its own
+   requests cause and passes the others on: a handler the program installs
+   becomes the one glpass passes them to (see glpass.c, "X errors"). */
+typedef int (*x_error_handler)(Display *, XErrorEvent *);
+
+x_error_handler XSetErrorHandler(x_error_handler handler)
+{
+    x_error_handler (*glpass)(x_error_handler) =
+        (x_error_handler (*)(x_error_handler))glpass_function("glpass_set_error_handler");
+    x_error_handler (*real)(x_error_handler);
+    if (glpass) return glpass(handler);
+    real = (x_error_handler (*)(x_error_handler))x11_function("XSetErrorHandler");
+    return real ? real(handler) : 0;
+}
+
+/* glpass stops showing, and asking the server about, a window as soon as the
+   program destroys it, before the server's DestroyNotify reaches it. */
+int XDestroyWindow(Display *dpy, Window w)
+{
+    void (*destroyed)(unsigned long) = (void (*)(unsigned long))glpass_function("glpass_window_destroyed");
+    int (*real)(Display *, Window) = (int (*)(Display *, Window))x11_function("XDestroyWindow");
+    if (destroyed) destroyed((unsigned long)w);
+    return real ? real(dpy, w) : 0;
 }
 
 /* ---- 8-bit cells for 12-bit pixels ------------------------------------------ */

@@ -3,14 +3,15 @@
 #            notes for colour-index programs, preloaded), and the tests gltri
 #            glthreads/glthreads_pt (two GL threads, sproc and pthreads) and
 #            glmove (the image follows a moved or unmapped window) and glcheck
-#            (selection, feedback and 3D textures, checked value by value)
+#            (selection, feedback and 3D textures, checked value by value) and
+#            glgone (a context left current on a destroyed window)
 # glpass_gen.c and glpass_fn.h come from glpass/tools/glpass-gen.py on the host.
 CC      = /usr/freeware/bin/gcc
 CFLAGS  = -mabi=n32 -O2 -fPIC -Wall
 HEADERS = glpass_protocol.h glpass_fn.h glpass_internal.h glpass_xstore.h
 OBJS    = glpass.o glpass_gen.o
 
-all: libGL.so libglpass_x.so gltri glthreads glthreads_pt glmove glcheck
+all: libGL.so libglpass_x.so gltri glthreads glthreads_pt glmove glcheck glgone
 
 glpass.o: glpass.c $(HEADERS)
 	$(CC) $(CFLAGS) -c glpass.c
@@ -43,5 +44,8 @@ glmove: glmove.c libGL.so
 glcheck: glcheck.c libGL.so
 	$(CC) -mabi=n32 -O2 -o glcheck glcheck.c -L. -lGL -lX11
 
+glgone: glgone.c libGL.so
+	$(CC) -mabi=n32 -O2 -o glgone glgone.c -L. -lGL -lX11
+
 clean:
-	rm -f *.o libGL.so libglpass_x.so gltri glthreads glthreads_pt glmove glcheck
+	rm -f *.o libGL.so libglpass_x.so gltri glthreads glthreads_pt glmove glcheck glgone

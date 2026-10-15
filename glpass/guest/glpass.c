@@ -85,6 +85,7 @@ static int glp_available(void)
 
 int glp_trace = -1;
 static unsigned char traced[GLP_FN_END];
+static const char *fn_names[GLP_FN_END]; /* entry points seen, for the command dump */
 
 void glp_trace_first(unsigned int fn, const char *name)
 {
@@ -92,7 +93,9 @@ void glp_trace_first(unsigned int fn, const char *name)
         const char *v = getenv("GLPASS_TRACE");
         glp_trace = v && *v && *v != '0';
     }
-    if (!glp_trace || fn >= GLP_FN_END || traced[fn]) return;
+    if (!glp_trace || fn >= GLP_FN_END) return;
+    fn_names[fn] = name;
+    if (traced[fn]) return;
     traced[fn] = 1;
     fprintf(stderr, "glpass: %s\n", name);
 }
@@ -264,6 +267,8 @@ struct __GLXcontextRec {
     int index_mode;                  /* colour index (else RGBA) */
     int pseudo;                      /* on a PseudoColor visual: the mode follows the window */
     int overlay;                     /* created for the overlay planes' visual */
+    int frame_cleared;               /* a colour clear since the drawable's last swap */
+    unsigned long shown_words;       /* commands sent when its image was last shown */
     struct glp_index ix;             /* colour index writes */
     GLuint list_base;                /* glListBase */
 };
@@ -449,8 +454,44 @@ static GLXContext ctx(void)
 
 /* ---- Command buffer ----------------------------------------------------------- */
 
+/* GLPASS_TRACE=1 and the file /tmp/glpass.dump present: every command
+   submitted is logged with its first payload words (as integers and
+   floats), to see a program's exact GL state at a moment of interest:
+   touch the file, act, remove it. */
+static void dump_commands(const struct glp_thread *t)
+{
+    static int checks;
+    static int on;
+    unsigned int at = 0;
+    if (glp_trace <= 0) return;
+    if ((checks++ & 15) == 0) on = access("/tmp/glpass.dump", F_OK) == 0;
+    if (!on) return;
+    while (at < t->cmdlen) {
+        const unsigned int header = t->cmdbuf[at];
+        const unsigned int cmd = header >> 16;
+        unsigned int n = header & 0xFFFFu, p = at + 1, k;
+        char text[400];
+        size_t len;
+        if (n == GLP_LONG_RECORD) n = t->cmdbuf[p++];
+        len = (size_t)sprintf(text, "glpass: [%u] %s", t->current ? t->current->id : 0u,
+                              cmd < GLP_FN_END && fn_names[cmd] ? fn_names[cmd]
+                              : cmd == GLP_FN_CLIENT_DRAW ? "(client draw)"
+                              : cmd == GLP_FN_PALETTE ? "(palette)" : "?");
+        if (!(cmd < GLP_FN_END && fn_names[cmd])) len += (size_t)sprintf(text + len, " %#x", cmd);
+        for (k = 0; k < n && k < 6; ++k) {
+            float f;
+            memcpy(&f, &t->cmdbuf[p + k], 4);
+            len += (size_t)sprintf(text + len, " %#x(%g)", t->cmdbuf[p + k], f);
+        }
+        if (n > 6) sprintf(text + len, " ... [%u words]", n);
+        fprintf(stderr, "%s\n", text);
+        at = p + n;
+    }
+}
+
 static void thread_flush(struct glp_thread *t)
 {
+    dump_commands(t);
     if (t->cmdlen > 0) ++t->flushes;
     if (t->cmdlen > 0 && t->current) {
         t->submitted += t->cmdlen;
@@ -1777,18 +1818,21 @@ void glp_unlock(void)
 }
 
 /* The library's connection to the server `app` is connected to. */
+static Display *own_display; /* this library's connection, once open */
+static void install_error_handler(void);
+
 static Display *xconn(Display *app)
 {
-    static Display *own;
     static int failed;
-    if (!own && !failed && app) {
-        own = XOpenDisplay(DisplayString(app));
-        if (!own) {
+    if (!own_display && !failed && app) {
+        install_error_handler(); /* before any request: its errors are this library's */
+        own_display = XOpenDisplay(DisplayString(app));
+        if (!own_display) {
             failed = 1;
             fprintf(stderr, "glpass: cannot open a second X connection; using the program's\n");
         }
     }
-    return own ? own : app;
+    return own_display ? own_display : app;
 }
 
 /* ---- Colour index mode ------------------------------------------------------------------ */
@@ -2337,6 +2381,7 @@ void glClear(GLbitfield mask)
     unsigned int *p;
     int n, k;
     TRACE(glClear);
+    if (c && (mask & GL_COLOR_BUFFER_BIT) && !index_compiling(&c->ix)) c->frame_cleared = 1;
     if (!c || !c->index_mode || !(mask & GL_COLOR_BUFFER_BIT) || c->ix.list) {
         put_word(GLP_FN_glClear, mask);
         return;
@@ -2600,8 +2645,138 @@ static void remove_drawable(XID id)
     glp_unlock();
 }
 
-static int x_error_code;
+/* ---- X errors ---------------------------------------------------------------------------- */
 
+/* The X error handler is one per process. This library's requests fail when
+   a program destroys a window it still draws to (Houdini's License
+   Administrator leaves a context current on its destroyed splash window),
+   and those errors must not reach the program: its handler would take them
+   for its own, and Xt's default one exits. So the process's handler is
+   glp_x_error, which keeps the errors this library caused, everything on its
+   own connection and the few requests it sends on the program's, and passes
+   the rest to the program's handler. libglpass_x routes the program's
+   XSetErrorHandler calls to glpass_set_error_handler, so a handler the
+   program installs later does not displace this one. A failed request on a
+   window marks the window destroyed (see note_dead). */
+typedef int (*x_error_handler)(Display *, XErrorEvent *);
+
+static x_error_handler program_handler; /* the program's (Xlib's default when it set none) */
+static x_error_handler xlib_default;
+static int handler_installed;
+static int x_error_code;                /* the last error on this library's connection */
+
+/* Requests this library sent on the program's connection (the overlay key
+   fill), by serial: their errors are this library's too. */
+#define APP_REQUESTS 8
+static struct {
+    Display *dpy;
+    unsigned long first, last;
+} app_requests[APP_REQUESTS];
+static int next_app_request;
+
+static void note_app_requests(Display *dpy, unsigned long first, unsigned long last)
+{
+    const int k = next_app_request;
+    app_requests[k].dpy = 0;
+    app_requests[k].first = first;
+    app_requests[k].last = last;
+    app_requests[k].dpy = dpy;
+    next_app_request = (k + 1) % APP_REQUESTS;
+}
+
+/* Destroyed windows, written without a lock (the handler runs inside Xlib,
+   possibly in a thread holding the program's display lock while another
+   holds the library lock): a ring the readers scan. */
+#define DEAD_MAX 64
+static volatile unsigned long dead_windows[DEAD_MAX];
+static volatile int next_dead;
+
+static void note_dead(unsigned long w)
+{
+    int k;
+    if (!w) return;
+    for (k = 0; k < DEAD_MAX; ++k) {
+        if (dead_windows[k] == w) return;
+    }
+    k = next_dead;
+    next_dead = (k + 1) % DEAD_MAX;
+    dead_windows[k] = w;
+}
+
+static int window_dead(unsigned long w)
+{
+    int k;
+    for (k = 0; w && k < DEAD_MAX; ++k) {
+        if (dead_windows[k] == w) return 1;
+    }
+    return 0;
+}
+
+/* libX11's XSetErrorHandler, past libglpass_x's. */
+static x_error_handler x11_set_error_handler(x_error_handler handler)
+{
+    static x_error_handler (*real)(x_error_handler);
+    if (!real) {
+        void *x11 = dlopen("libX11.so.1", RTLD_LAZY);
+        if (!x11) x11 = dlopen("libX11.so", RTLD_LAZY);
+        if (x11) real = (x_error_handler (*)(x_error_handler))dlsym(x11, "XSetErrorHandler");
+        if (!real) real = XSetErrorHandler;
+    }
+    return real(handler);
+}
+
+static int ours(Display *dpy, const XErrorEvent *e)
+{
+    int k;
+    if (own_display && dpy == own_display) return 1;
+    for (k = 0; k < APP_REQUESTS; ++k) {
+        if (app_requests[k].dpy == dpy && e->serial >= app_requests[k].first && e->serial <= app_requests[k].last) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int glp_x_error(Display *dpy, XErrorEvent *e)
+{
+    if (ours(dpy, e)) {
+        if (dpy == own_display) x_error_code = e->error_code;
+        if (e->error_code == BadWindow || e->error_code == BadDrawable) note_dead(e->resourceid);
+        glx_log("X error %d (request %d.%d) on %#lx, from this library: ignored", (int)e->error_code,
+                (int)e->request_code, (int)e->minor_code, (unsigned long)e->resourceid);
+        return 0;
+    }
+    return (program_handler ? program_handler : xlib_default)(dpy, e);
+}
+
+static void install_error_handler(void)
+{
+    x_error_handler previous;
+    if (handler_installed) return;
+    handler_installed = 1;
+    previous = x11_set_error_handler(0);           /* the program's, and Xlib's default in its place */
+    xlib_default = x11_set_error_handler(glp_x_error);
+    if (!program_handler && previous != glp_x_error) program_handler = previous;
+    if (!program_handler) program_handler = xlib_default;
+}
+
+/* The program's XSetErrorHandler (through libglpass_x): its handler gets
+   the errors that are not this library's. */
+x_error_handler glpass_set_error_handler(x_error_handler handler)
+{
+    x_error_handler old;
+    install_error_handler();
+    old = program_handler;
+    program_handler = handler ? handler : xlib_default;
+    return old;
+}
+
+/* libglpass_x's XDestroyWindow: nothing more is shown in, or asked of, the window. */
+void glpass_window_destroyed(unsigned long w) { note_dead(w); }
+
+/* Requests whose errors are reported, not raised: on this library's
+   connection, the handler keeps them; on the program's (no second
+   connection), a handler of the moment does. */
 static int note_x_error(Display *dpy, XErrorEvent *event)
 {
     (void)dpy;
@@ -2609,18 +2784,28 @@ static int note_x_error(Display *dpy, XErrorEvent *event)
     return 0;
 }
 
+static x_error_handler errors_begin(Display *dpy)
+{
+    XSync(dpy, False);
+    x_error_code = 0;
+    return dpy == own_display ? 0 : x11_set_error_handler(note_x_error);
+}
+
+static void errors_end(Display *dpy, x_error_handler previous)
+{
+    XSync(dpy, False);
+    if (dpy != own_display) x11_set_error_handler(previous);
+}
+
 /* XGetGeometry that reports, rather than raises, an X error. */
 static Status checked_geometry(Display *dpy, Drawable d, Window *root, int *x, int *y, unsigned int *w,
                                unsigned int *h, unsigned int *border, unsigned int *depth)
 {
-    int (*previous)(Display *, XErrorEvent *);
+    x_error_handler previous;
     Status ok;
-    XSync(dpy, False);
-    x_error_code = 0;
-    previous = XSetErrorHandler(note_x_error);
+    previous = errors_begin(dpy);
     ok = XGetGeometry(dpy, d, root, x, y, w, h, border, depth);
-    XSync(dpy, False);
-    XSetErrorHandler(previous);
+    errors_end(dpy, previous);
     if (!ok || x_error_code) {
         glx_log("XGetGeometry(%#lx) failed: status %d, X error %d", (unsigned long)d, (int)ok, x_error_code);
         return 0;
@@ -2781,7 +2966,7 @@ static struct tracked *find_tracked(Window w)
 static struct tracked *track_window(Display *dpy, Window w)
 {
     struct tracked *t = find_tracked(w);
-    int (*previous)(Display *, XErrorEvent *);
+    x_error_handler previous;
     Window cur = w, root = 0, parent = 0, *children = 0;
     unsigned int nchildren;
     int n = 0;
@@ -2790,9 +2975,7 @@ static struct tracked *track_window(Display *dpy, Window w)
         next_tracked = (next_tracked + 1) % TRACKED_MAX; /* full: the oldest one goes */
         memset(t, 0, sizeof *t);
     }
-    XSync(dpy, False);
-    x_error_code = 0;
-    previous = XSetErrorHandler(note_x_error);
+    previous = errors_begin(dpy);
     t->since = NextRequest(dpy);
     while (n < CHAIN_MAX) {
         struct link *l = &t->chain[n];
@@ -2815,8 +2998,7 @@ static struct tracked *track_window(Display *dpy, Window w)
         if (!parent || parent == root) break;
         cur = parent;
     }
-    XSync(dpy, False);
-    XSetErrorHandler(previous);
+    errors_end(dpy, previous);
     if (x_error_code || n == 0 || (parent != root && n == CHAIN_MAX)) {
         glx_log("window %#lx: cannot track (X error %d, %d ancestors)", (unsigned long)w, x_error_code, n);
         t->window = 0;
@@ -2893,6 +3075,7 @@ static void track_event(const XEvent *e)
             case DestroyNotify:
                 t->valid = 0;
                 l->mapped = 0;
+                if (k == 0) note_dead(w);
                 break;
             }
             t->moved = 1;
@@ -2932,6 +3115,14 @@ static void track_events(Display *dpy, unsigned int context)
         XNextEvent(dpy, &e);
         track_event(&e);
     }
+    for (i = 0; i < TRACKED_MAX; ++i) { /* destroyed without an event read yet */
+        struct tracked *t = &tracked[i];
+        if (t->window && t->valid && window_dead(t->window)) {
+            t->valid = 0;
+            t->chain[0].mapped = 0;
+            t->moved = 1;
+        }
+    }
     for (i = 0; i < TRACKED_MAX; ++i) {
         struct tracked *t = &tracked[i];
         if (!t->window || !t->moved) continue;
@@ -2965,6 +3156,10 @@ static int window_geometry(Display *dpy, GLXDrawable d, int trust_stale, int *sx
 {
     struct tracked *t = find_tracked(d);
     *sx = *sy = 0;
+    if (window_dead(d)) { /* destroyed: no request for it */
+        *w = *h = 1;
+        return -1;
+    }
     if (!t || !(t->valid || (trust_stale && t->nchain > 0))) t = track_window(dpy, d);
     if (!t) {
         *w = *h = 1;
@@ -3024,12 +3219,15 @@ static void present_unlocked(Display *dpy, Display *app, GLXDrawable drawable, i
            the program draws from the thread that uses its connection. */
         XGCValues values;
         GC gc;
+        unsigned long first;
         values.foreground = GLP_OVERLAY_KEY;
         values.plane_mask = AllPlanes;
         values.function = GXcopy;
+        first = NextRequest(app);
         gc = XCreateGC(app, drawable, GCForeground | GCPlaneMask | GCFunction, &values);
         XFillRectangle(app, drawable, gc, 0, 0, w, h);
         XFreeGC(app, gc);
+        note_app_requests(app, first, NextRequest(app) - 1); /* their errors are this library's */
         XFlush(app);
     } else {
         /* A GC made for this drawable: the server may tie a GC to the visual
@@ -3122,16 +3320,25 @@ static void note_overlay_window(GLXDrawable d)
 
 /* glFlush and glFinish show what was drawn when it is meant to be seen now:
    drawing into the front buffer, or into a never-swapped drawable. */
+/* A flush also shows drawing done on top of the last swapped frame without
+   clearing it: Maya's selection rectangle is drawn so, into the back buffer
+   of its double-buffered view, with only a glFlush after each mouse move.
+   A frame that starts with a clear is shown at its swap only. */
 static void present_flushed(void)
 {
-    GLXContext current = current_context();
+    struct glp_thread *t = glp_self();
+    GLXContext current = t->current;
     if (!current || !current->drawable) return;
     load_palette(current->dpy, current, current->drawable);
     if (draws_front(current->draw_buffer)) {
         present(current->dpy, current->drawable, 0);
     } else if (!has_swapped(current->drawable)) {
         present(current->dpy, current->drawable, 1);
+    } else if (!current->frame_cleared && t->submitted > current->shown_words) {
+        glx_log("present(%#lx): drawn over the last frame", (unsigned long)current->drawable);
+        present(current->dpy, current->drawable, 1);
     }
+    current->shown_words = t->submitted;
 }
 
 void glFlush(void)
@@ -3662,6 +3869,11 @@ Bool glXMakeCurrent(Display *dpy, GLXDrawable drawable, GLXContext c)
     unsigned int req[4];
     int sx, sy;
     struct glp_drawable *pd;
+    if (c && drawable && window_dead(drawable) && !find_drawable(drawable)) {
+        /* Destroyed: GLX fails with GLXBadDrawable; the current context stays. */
+        glx_log("glXMakeCurrent(%#lx, context %u): the window was destroyed", (unsigned long)drawable, c->id);
+        return False;
+    }
     glx_log("glXMakeCurrent(%#lx, context %u) [context %u drew %lu words]", (unsigned long)drawable,
             c ? c->id : 0u, current ? current->id : 0u, (thread_flush(t), t->submitted));
     t->submitted = 0;
@@ -3708,6 +3920,8 @@ Bool glXMakeCurrent(Display *dpy, GLXDrawable drawable, GLXContext c)
         t->current = 0;
         return False;
     }
+    if (c->drawable != drawable) c->frame_cleared = 0; /* another drawable: its frame is not known */
+    c->shown_words = 0;
     c->dpy = dpy;
     c->drawable = drawable;
     t->current = c;
@@ -3744,6 +3958,10 @@ void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
     glx_log("glXSwapBuffers(%p, %#lx) [%lu words]", (void *)dpy, (unsigned long)drawable, t->submitted);
     note_swapped(drawable);
     t->submitted = 0;
+    if (current && current->drawable == drawable) {
+        current->frame_cleared = 0;
+        current->shown_words = 0;
+    }
     if (current && current->drawable == drawable) load_palette(current->dpy, current, drawable);
     present(dpy ? dpy : (current ? current->dpy : 0), drawable, 1);
 }
