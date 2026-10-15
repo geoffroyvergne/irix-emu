@@ -410,6 +410,10 @@ Don't copy or edit the image while the emulator is running: writes go straight t
 
 The title bar shows emulation speed and whether the mouse is captured.
 
+### Host-GPU OpenGL (glpass)
+
+IRIX's own OpenGL renders in software on the emulated CPU, too slow for 3D applications. [glpass/](glpass/) is a separate component in this repository: a replacement `libGL.so` for IRIX that sends a program's OpenGL calls to the emulator, which draws them with the host GPU (macOS) and shows them in the program's window. Quake III and Maya 6.5 run with it. See [glpass/README.md](glpass/README.md) for its design, building, installing in IRIX and use.
+
 ### Copy and paste
 
 - **Into the graphics window** (PROM console, IRIX): copy text on the host, click the emulator window and press **Ctrl+Alt+V** (or **Cmd+V** on macOS). The text is *typed* through the emulated PS/2 keyboard, the only way it can reach the Indy, as if from a US keyboard. Capitals and symbols use Shift; line breaks (`\n`, `\r` or `\r\n`) become Enter; tabs become Tab.

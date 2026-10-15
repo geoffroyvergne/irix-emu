@@ -556,6 +556,76 @@ void r5000MipsIvInstructions() {
     CHECK(old.cpu.cop0(R5000::kPRId) == 0x2020u && old.cpu.gpr(4) == 0u);
 }
 
+// The hypercall word calls the handler; guest buffers are validated first,
+// and an unmapped one raises the TLB miss a load would (EPC = the hypercall),
+// so IRIX can map it and the instruction runs again.
+void hypercallReadsGuestMemoryOrFaults() {
+    Harness h({
+        0x3C01'0040, // lui   $1, 0x0040     Status = BEV
+        0x4081'6000, // mtc0  $1, $12
+        0x3C06'A800, // lui   $6, 0xa800     a2 = buffer in RAM (KSEG1)
+        0x3C07'0000, // lui   $7, 0          a3 = length (set below)
+        0x2407'0008, // addiu $7, $zero, 8
+        0x2404'0005, // addiu $4, $zero, 5   a0 = service
+        0x0000'0668, // hypercall
+        0x3C06'0040, // lui   $6, 0x0040     a2 = unmapped user address
+        0x0000'0668, // hypercall -> TLB miss
+    });
+    std::vector<uint8_t> seen;
+    int calls = 0;
+    h.cpu.setHypercallHandler([&](R5000& cpu) {
+        ++calls;
+        const VirtAddr buf = cpu.gpr(6);
+        const size_t len = static_cast<size_t>(cpu.gpr(7));
+        if (!cpu.guestAccessible(buf, len, false)) return;
+        seen.resize(len);
+        cpu.guestRead(buf, seen);
+        cpu.setHypercallResult(cpu.gpr(4) + 1, 0x1234);
+    });
+    for (uint8_t i = 0; i < 8; ++i) h.bus.ram()[i] = static_cast<uint8_t>(0xA0 + i);
+    h.step(7);
+    CHECK(calls == 1 && h.cpu.gpr(2) == 6u && h.cpu.gpr(3) == 0x1234u);
+    CHECK(seen.size() == 8 && seen[0] == 0xA0 && seen[7] == 0xA7);
+    h.step(2);
+    CHECK(calls == 2 && excCode(h.cpu) == 2);                     // TLBL from the hypercall
+    CHECK(h.cpu.cop0(R5000::kEPC) == 0xFFFF'FFFF'BFC0'0020u);     // restarts the hypercall
+    CHECK(h.cpu.gpr(2) == 6u);                                    // no result written
+}
+
+// Buffers larger than the TLB maps are copied page by page; a fault stops the
+// copy with the progress kept, and the re-executed hypercall resumes there.
+void hypercallCopiesResumeAcrossFaults() {
+    Harness h({
+        0x3C01'0040, // lui   $1, 0x0040     Status = BEV
+        0x4081'6000, // mtc0  $1, $12
+        0x0000'0668, // hypercall: copy from RAM (KSEG1)
+        0x0000'0668, // hypercall: copy from an unmapped user address
+    });
+    std::vector<uint8_t> in(3 * 4096 + 100);
+    size_t done = 0;
+    bool first = true, faulted = false;
+    h.cpu.setHypercallHandler([&](R5000& cpu) {
+        if (first) {
+            first = false;
+            done = 4096; // as if a fault had stopped the copy after one page
+            CHECK(cpu.guestCopyIn(0xFFFF'FFFF'A800'0000u, in, done));
+            CHECK(done == in.size());
+            std::vector<uint8_t> out(5000, 0x5A);
+            size_t written = 0;
+            CHECK(cpu.guestCopyOut(0xFFFF'FFFF'A800'4000u, out, written) && written == out.size());
+            return;
+        }
+        size_t progress = 0;
+        faulted = !cpu.guestCopyIn(0x0040'0000u, in, progress) && progress == 0;
+    });
+    for (size_t i = 0; i < in.size(); ++i) h.bus.ram()[i] = static_cast<uint8_t>(i * 7);
+    h.step(3);
+    CHECK(in[4095] == 0 && in[4096] == static_cast<uint8_t>(4096 * 7) && in.back() == static_cast<uint8_t>((in.size() - 1) * 7));
+    CHECK(h.bus.ram()[0x4000] == 0x5A && h.bus.ram()[0x4000 + 4999] == 0x5A);
+    h.step(1);
+    CHECK(faulted && excCode(h.cpu) == 2); // TLBL raised, nothing copied
+}
+
 void exceptionInDelaySlotSetsBD() {
     Harness h({
         0x3C01'0040, // lui  $1, 0x0040
@@ -1937,6 +2007,123 @@ void newportLineSingleStepAndFullLine() {
     CHECK(h.np.vramAt(10, 10) == 5u && h.np.vramAt(13, 10) == 5u && h.np.vramAt(14, 10) == 0u);
 }
 
+// GL pass-through images are composited where the window shows the key
+// colour, aligned with those pixels (X's 2-pixel origin offset), and pixels
+// covered by other windows keep the framebuffer.
+void newportOverlayFollowsKeyPixels() {
+    NewportHarness h;
+    h.dcb((0u << 7) | 3u, (0x10u << 24) | (0x0002u << 8));       // display enable
+    h.dcb((4u << 7) | (5u << 4), (0u << 24) | 0x000400);          // mode 0: CI 8 bpp
+    h.w(Newport::kDrawMode1, 0x3000'0001);
+    h.w(Newport::kWrMask, 0xFF);
+    h.w(Newport::kColorI, 0xC7);                                  // key colour: window at x 12..19, y 10..15
+    h.w(Newport::kDrawMode0, 0x0326);
+    h.w(Newport::kXYStartI, (12u << 16) | 10u);
+    h.w(Newport::kXYEndI | Newport::kGo, (19u << 16) | 15u);
+    h.w(Newport::kColorI, 0x05);                                  // "another window" over (18..19, 10..15)
+    h.w(Newport::kXYStartI, (18u << 16) | 10u);
+    h.w(Newport::kXYEndI | Newport::kGo, (19u << 16) | 15u);
+
+    DisplayOverlay ov;
+    ov.x = 10;                                                    // reported 2 pixels left of the key area
+    ov.y = 10;
+    ov.width = 8;
+    ov.height = 6;
+    ov.key = 0xC7;
+    ov.pixels.assign(8 * 6, 0x00AB'CDEFu);
+    h.np.setOverlay(7, &ov);
+    h.np.onVBlank(0);
+    (void)h.fb.acquire();
+    const auto px = [&](uint32_t x, uint32_t y) { return h.fb.frontBuffer()[y * Newport::kVisibleWidth + x]; };
+    CHECK(px(12, 10) == 0xABCDEFu && px(17, 15) == 0xABCDEFu);     // aligned onto the key pixels
+    CHECK(px(11, 12) != 0xABCDEFu);                                // left of the window: untouched
+    CHECK(px(18, 12) != 0xABCDEFu);                                // covered by the other window
+
+    h.np.setOverlay(7, nullptr);                                  // window gone
+    h.np.onVBlank(0);
+    (void)h.fb.acquire();
+    CHECK(px(12, 10) != 0xABCDEFu);
+}
+
+// Two GL windows at the same place (Maya switches its view between a colour
+// index and an RGBA window): the image presented last is the one shown.
+void newportOverlayNewestWins() {
+    NewportHarness h;
+    h.dcb((0u << 7) | 3u, (0x10u << 24) | (0x0002u << 8));       // display enable
+    h.dcb((4u << 7) | (5u << 4), (0u << 24) | 0x000400);          // mode 0: CI 8 bpp
+    h.w(Newport::kDrawMode1, 0x3000'0001);
+    h.w(Newport::kWrMask, 0xFF);
+    h.w(Newport::kColorI, 0xC7);                                  // key over x 10..17, y 10..15
+    h.w(Newport::kDrawMode0, 0x0326);
+    h.w(Newport::kXYStartI, (10u << 16) | 10u);
+    h.w(Newport::kXYEndI | Newport::kGo, (17u << 16) | 15u);
+
+    auto image = [](uint32_t colour) {
+        DisplayOverlay ov;
+        ov.x = 10;
+        ov.y = 10;
+        ov.width = 8;
+        ov.height = 6;
+        ov.key = 0xC7;
+        ov.pixels.assign(8 * 6, colour);
+        return ov;
+    };
+    const auto px = [&](uint32_t x, uint32_t y) { return h.fb.frontBuffer()[y * Newport::kVisibleWidth + x]; };
+    const DisplayOverlay high = image(0x0011'1111u), low = image(0x0022'2222u);
+    h.np.setOverlay(0x503, &high);                                // the higher window id first...
+    h.np.setOverlay(0x502, &low);                                 // ...then the lower one presents
+    h.np.onVBlank(0);
+    (void)h.fb.acquire();
+    CHECK(px(12, 12) == 0x222222u);
+    h.np.setOverlay(0x503, &high);                                // and back
+    h.np.onVBlank(0);
+    (void)h.fb.acquire();
+    CHECK(px(12, 12) == 0x111111u);
+}
+
+// An overlay-plane GL window (layer 1) shows where the popup planes hold its
+// key: opaque pixels replace the popup colour, transparent ones show the main
+// planes; once the X server clears the popup planes (window gone), nothing.
+void newportOverlayLayerUsesPopupKey() {
+    NewportHarness h;
+    h.dcb((0u << 7) | 3u, (0x10u << 24) | (0x0002u << 8));       // display enable
+    h.dcb((4u << 7) | (5u << 4), (0u << 24) | 0x000400);          // mode 0: CI 8 bpp
+    h.w(Newport::kWrMask, 0xFF);
+    h.w(Newport::kDrawMode1, 0x3000'0001);                        // main planes: index 0x05
+    h.w(Newport::kColorI, 0x05);
+    h.w(Newport::kDrawMode0, 0x0326);
+    h.w(Newport::kXYStartI, (10u << 16) | 10u);
+    h.w(Newport::kXYEndI | Newport::kGo, (17u << 16) | 15u);
+    h.w(Newport::kDrawMode1, 0x3000'0005);                        // popup planes: the overlay key 3
+    h.w(Newport::kColorI, 3);
+    h.w(Newport::kXYStartI, (10u << 16) | 10u);
+    h.w(Newport::kXYEndI | Newport::kGo, (17u << 16) | 15u);
+
+    DisplayOverlay ov;
+    ov.x = 10;
+    ov.y = 10;
+    ov.width = 8;
+    ov.height = 6;
+    ov.key = 3;
+    ov.layer = 1;
+    ov.pixels.assign(8 * 6, 0);                                   // transparent...
+    for (uint32_t row = 0; row < 6; ++row) ov.pixels[row * 8] = DisplayOverlay::kOpaque | 0x00AB'CDEFu; // ...but column 0
+    h.np.setOverlay(9, &ov);
+    h.np.onVBlank(0);
+    (void)h.fb.acquire();
+    const auto px = [&](uint32_t x, uint32_t y) { return h.fb.frontBuffer()[y * Newport::kVisibleWidth + x]; };
+    CHECK(px(10, 12) == 0xABCDEFu);                               // opaque overlay pixel
+    const uint32_t underneath = px(12, 12);                       // transparent: the main planes' index 5
+    h.w(Newport::kDrawMode1, 0x3000'0005);                        // the window goes: popup planes cleared
+    h.w(Newport::kColorI, 0);
+    h.w(Newport::kXYStartI, (10u << 16) | 10u);
+    h.w(Newport::kXYEndI | Newport::kGo, (17u << 16) | 15u);
+    h.np.onVBlank(0);
+    (void)h.fb.acquire();
+    CHECK(px(10, 12) != 0xABCDEFu);                               // no key: no image
+    CHECK(px(12, 12) == underneath);                              // main planes as before
+}
+
 // ---- Phase 17: PS/2 mouse streaming, VC2 hardware cursor -------------------------------------
 
 void kbcMouseStreamPackets() {
@@ -2263,6 +2450,7 @@ int main() {
         {"tlbRewriteInvalidatesMicroTlb", tlbRewriteInvalidatesMicroTlb},
         {"cp0TimersRandomCountCompare", cp0TimersRandomCountCompare},
         {"r5000MipsIvInstructions", r5000MipsIvInstructions},
+        {"hypercallReadsGuestMemoryOrFaults", hypercallReadsGuestMemoryOrFaults},
         {"exceptionInDelaySlotSetsBD", exceptionInDelaySlotSetsBD},
         {"eretReturnsToEpc", eretReturnsToEpc},
         {"syscallAndCoprocessorUnusable", syscallAndCoprocessorUnusable},
@@ -2320,6 +2508,10 @@ int main() {
         {"newportDisplayIdRuns", newportDisplayIdRuns},
         {"newportPopupPlanes", newportPopupPlanes},
         {"newportLineSingleStepAndFullLine", newportLineSingleStepAndFullLine},
+        {"newportOverlayFollowsKeyPixels", newportOverlayFollowsKeyPixels},
+        {"newportOverlayNewestWins", newportOverlayNewestWins},
+        {"newportOverlayLayerUsesPopupKey", newportOverlayLayerUsesPopupKey},
+        {"hypercallCopiesResumeAcrossFaults", hypercallCopiesResumeAcrossFaults},
         {"unalignedLoadStorePairs", unalignedLoadStorePairs},
         {"scsiDiskCommandsAndPersistence", scsiDiskCommandsAndPersistence},
         {"chdDiskImageReadWrite", chdDiskImageReadWrite},

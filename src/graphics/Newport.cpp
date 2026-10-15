@@ -3,7 +3,9 @@
 #include "indy/core/Log.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
+#include <format>
 
 namespace indy {
 
@@ -883,11 +885,37 @@ void Newport::compose() {
                 }
                 dst[x] = displayColor(mode, src[x] & kGlobalMask);
             }
+            // Host-rendered overlays (GL pass-through) where the window still
+            // shows its key colour, i.e. is not covered by another window.
+            bool overlayRow = false; // a layer-1 image crosses this row
+            for (const auto& [id, ov] : overlays_) {
+                const int32_t row = static_cast<int32_t>(y) - ov.y;
+                if (row < 0 || row >= static_cast<int32_t>(ov.height)) continue;
+                if (ov.layer != 0) {
+                    overlayRow = true;
+                    continue;
+                }
+                const uint32_t* image = &ov.pixels[static_cast<size_t>(row) * ov.width];
+                const int32_t x0 = std::max(0, ov.x);
+                const int32_t x1 = std::min(static_cast<int32_t>(width), ov.x + static_cast<int32_t>(ov.width));
+                for (int32_t x = x0; x < x1; ++x) {
+                    if ((src[x] & 0xFF) == ov.key) dst[x] = image[x - ov.x] & 0x00FF'FFFFu;
+                }
+            }
             // Popup planes on top: value 0 is transparent, 1-3 come from the
             // popup colour map (XMAP9 popup MSBs), like the cursor's.
+            // Overlay-plane GL windows (layer 1) live in the popup planes and
+            // hold their key value there: their host image shows instead, its
+            // transparent pixels letting the main planes through.
             const uint8_t* aux = &auxPlanes_[size_t{y} * kVramWidth];
             for (uint32_t x = 0; x < width; ++x) {
                 if (const uint32_t popup = (aux[x] >> 2) & 3; popup != 0) [[unlikely]] {
+                    if (overlayRow) {
+                        if (const uint32_t* pixel = overlayPixel(static_cast<int32_t>(x), static_cast<int32_t>(y), popup)) {
+                            if ((*pixel & DisplayOverlay::kOpaque) != 0) dst[x] = *pixel & 0x00FF'FFFFu;
+                            continue;
+                        }
+                    }
                     dst[x] = cmap_[(popupBase | popup) & (kCmapEntries - 1)];
                 }
             }
@@ -916,6 +944,100 @@ void Newport::compose() {
         }
     }
     output_.publish();
+}
+
+const uint32_t* Newport::overlayPixel(int32_t x, int32_t y, uint32_t popup) const {
+    for (auto it = overlays_.rbegin(); it != overlays_.rend(); ++it) { // newest first
+        const DisplayOverlay& ov = it->second;
+        if (ov.layer == 0 || ov.key != popup) continue;
+        const int32_t col = x - ov.x, row = y - ov.y;
+        if (col < 0 || row < 0 || col >= static_cast<int32_t>(ov.width) || row >= static_cast<int32_t>(ov.height)) continue;
+        return &ov.pixels[static_cast<size_t>(row) * ov.width + static_cast<size_t>(col)];
+    }
+    return nullptr;
+}
+
+void Newport::setOverlay(uint32_t id, const DisplayOverlay* overlay) {
+    if (overlay == nullptr || overlay->pixels.size() < size_t{overlay->width} * overlay->height) {
+        std::erase_if(overlays_, [id](const auto& entry) { return entry.first == id; });
+        overlayShift_.erase(id);
+        dirty_ = true;
+        return;
+    }
+    // The guest reports X screen coordinates; the X server draws with a small
+    // window-origin offset (XYWIN 0x1002 seen for the root), so align the
+    // image with the window's key-coloured pixels: try nearby shifts and keep
+    // the one where most sample points hold the key. Until the key fill has
+    // been drawn, the previous shift stays.
+    auto keyAt = [&](int32_t x, int32_t y) {
+        if (x < 0 || y < 0 || x >= static_cast<int32_t>(kVramWidth) || y >= static_cast<int32_t>(kVramHeight)) {
+            return false;
+        }
+        const size_t at = static_cast<size_t>(y) * kVramWidth + static_cast<size_t>(x);
+        if (overlay->layer != 0) return ((auxPlanes_[at] >> 2) & 3) == overlay->key; // popup planes
+        return (vram_[at] & 0xFF) == overlay->key;
+    };
+    const auto w = static_cast<int32_t>(overlay->width), h = static_cast<int32_t>(overlay->height);
+    int best = 0;
+    std::pair<int32_t, int32_t> shift = overlayShift_.contains(id) ? overlayShift_[id] : std::pair<int32_t, int32_t>{0, 0};
+    for (int32_t dy = -4; dy <= 4; ++dy) {
+        for (int32_t dx = -4; dx <= 4; ++dx) {
+            int hits = 0;
+            for (int32_t sy = 0; sy < 4; ++sy) {
+                for (int32_t sx = 0; sx < 4; ++sx) {
+                    // Edges and interior: the first/last row and column matter most.
+                    const int32_t px = overlay->x + dx + (sx == 3 ? w - 1 : sx * (w - 1) / 3);
+                    const int32_t py = overlay->y + dy + (sy == 3 ? h - 1 : sy * (h - 1) / 3);
+                    hits += keyAt(px, py) ? 1 : 0;
+                }
+            }
+            // Penalise shifts whose rectangle would include non-key pixels just outside.
+            hits -= keyAt(overlay->x + dx - 1, overlay->y + dy + h / 2) ? 1 : 0;
+            hits -= keyAt(overlay->x + dx + w, overlay->y + dy + h / 2) ? 1 : 0;
+            hits -= keyAt(overlay->x + dx + w / 2, overlay->y + dy - 1) ? 1 : 0;
+            hits -= keyAt(overlay->x + dx + w / 2, overlay->y + dy + h) ? 1 : 0;
+            if (hits > best) {
+                best = hits;
+                shift = {dx, dy};
+            }
+        }
+    }
+    overlayShift_[id] = shift;
+    static const bool trace = std::getenv("INDY_TRACE_GL") != nullptr;
+    if (trace) {
+        const uint32_t centre = overlay->pixels[size_t{overlay->height / 2} * overlay->width + overlay->width / 2];
+        const int32_t cx = std::clamp(overlay->x + w / 2, 0, static_cast<int32_t>(kVramWidth) - 1);
+        const int32_t cy = std::clamp(overlay->y + h / 2, 0, static_cast<int32_t>(kVramHeight) - 1);
+        log::info("GL overlay {:#x}: {}x{} at {},{} key {:#x}, best key hits {} at shift {},{}, centre pixel {:#08x}, "
+                  "framebuffer there {:#x}",
+                  id, overlay->width, overlay->height, overlay->x, overlay->y, overlay->key, best, shift.first,
+                  shift.second, centre, vram_[static_cast<size_t>(cy) * kVramWidth + static_cast<size_t>(cx)]);
+        if (const char* dir = std::getenv("INDY_GL_DUMP")) { // the host image, as a PPM per drawable
+            if (std::FILE* f = std::fopen(std::format("{}/gl_{:x}.ppm", dir, id).c_str(), "wb")) {
+                std::fprintf(f, "P6\n%u %u\n255\n", overlay->width, overlay->height);
+                for (const uint32_t px : overlay->pixels) {
+                    const uint8_t rgb[3] = {static_cast<uint8_t>(px >> 16), static_cast<uint8_t>(px >> 8),
+                                            static_cast<uint8_t>(px)};
+                    std::fwrite(rgb, 1, 3, f);
+                }
+                std::fclose(f);
+            }
+        }
+    }
+    DisplayOverlay placed = *overlay;
+    placed.x += shift.first;
+    placed.y += shift.second;
+    // Re-presented images move to the end; older ones it covers entirely are
+    // dropped (their windows show nothing of them any more).
+    std::erase_if(overlays_, [&](const auto& entry) {
+        const DisplayOverlay& o = entry.second;
+        return entry.first == id ||
+               (o.layer == placed.layer && o.x >= placed.x && o.y >= placed.y &&
+                o.x + static_cast<int32_t>(o.width) <= placed.x + static_cast<int32_t>(placed.width) &&
+                o.y + static_cast<int32_t>(o.height) <= placed.y + static_cast<int32_t>(placed.height));
+    });
+    overlays_.emplace_back(id, std::move(placed));
+    dirty_ = true;
 }
 
 uint32_t Newport::displayColor(uint32_t mode, uint32_t v) const {

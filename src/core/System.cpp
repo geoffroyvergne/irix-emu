@@ -9,6 +9,10 @@
 #include "indy/scsi/CdRomDrive.hpp"
 #include "indy/scsi/ScsiDisk.hpp"
 
+extern "C" {
+#include "../../glpass/guest/glpass_protocol.h" // hypercall services
+}
+
 #include <algorithm>
 #include <format>
 #include <cassert>
@@ -96,6 +100,10 @@ System::System(SystemConfig config, FrameBuffer& display)
     // interrupt the CPU directly on Int4 (Cause.IP6).
     mc_->setDmaIrqCallback([this](bool level) { ioc2_.int3().setLocal0(Int3::kL0McDma, level); });
     mc_->setBusErrorCallback([this](bool level) { cpu_->setInterruptLine(kBusErrorLine, level); });
+    glBridge_ = GlBridge::create([this](uint32_t drawable, const DisplayOverlay* overlay) {
+        if (auto* newport = dynamic_cast<Newport*>(graphics_.get())) newport->setOverlay(drawable, overlay);
+    });
+    static_cast<R5000&>(*cpu_).setHypercallHandler([this](R5000& cpu) { handleHypercall(cpu); });
     static_cast<R5000&>(*cpu_).setBusErrorHook(
         [this](PhysAddr addr, bool isWrite) { mc_->reportCpuBusError(addr, isWrite); });
     hpc3_.setScsiIrqCallback([this, updateScsiIrq](unsigned channel, bool level) {
@@ -172,6 +180,20 @@ void System::runFor(Cycles budget) {
             now_ += ran;
         }
         scheduler_.runDue(now_);
+    }
+}
+
+void System::handleHypercall(R5000& cpu) {
+    switch (static_cast<uint32_t>(cpu.gpr(4))) {
+    case GLP_SERVICE_PING:
+        cpu.setHypercallResult(GLP_PING_MAGIC, GLP_VERSION);
+        return;
+    case GLP_SERVICE_GL:
+        glBridge_->hypercall(cpu);
+        return;
+    default:
+        cpu.setHypercallResult(static_cast<uint64_t>(-1));
+        return;
     }
 }
 

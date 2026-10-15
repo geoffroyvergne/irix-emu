@@ -99,6 +99,15 @@ add_library(indy_core STATIC
     src/serial/Z8530.cpp
 )
 add_library(indy::core ALIAS indy_core)
+# GL pass-through (glpass/, see glpass/README.md): the host GPU through legacy
+# OpenGL on macOS; a bridge that reports itself unavailable elsewhere.
+target_include_directories(indy_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/glpass/host)
+if(APPLE)
+    target_sources(indy_core PRIVATE glpass/host/GlBridgeMac.cpp)
+    target_link_libraries(indy_core PUBLIC "-framework OpenGL")
+else()
+    target_sources(indy_core PRIVATE glpass/host/GlBridgeStub.cpp)
+endif()
 # The guest FPU runs on host IEEE arithmetic under the guest's rounding mode:
 # keep the compiler from folding or reordering it across fenv calls.
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")

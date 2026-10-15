@@ -566,6 +566,78 @@ void R5000::setInterruptLine(unsigned line, bool asserted) {
 // Diagnostics
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Hypercall guest-memory access
+// ---------------------------------------------------------------------------
+
+bool R5000::guestAccessible(VirtAddr vaddr, size_t length, bool forWrite) {
+    // Translate every page as the guest would access it; a miss raises the
+    // exception (EPC = the hypercall), and the handler must return at once.
+    const Access access = forWrite ? Access::Store : Access::Load;
+    const VirtAddr end = vaddr + length;
+    for (VirtAddr page = vaddr & ~VirtAddr{0xFFF}; page < end; page += 0x1000) {
+        const VirtAddr probe = page < vaddr ? vaddr : page;
+        if (!translate(probe, access)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void R5000::guestRead(VirtAddr vaddr, std::span<uint8_t> out) {
+    for (size_t done = 0; done < out.size();) {
+        const VirtAddr va = vaddr + done;
+        const size_t n = std::min<size_t>(out.size() - done, 0x1000 - (va & 0xFFF));
+        const auto phys = translate(va, Access::Load); // already validated
+        for (size_t i = 0; phys && i < n; ++i) {
+            uint8_t b = 0;
+            (void)bus_.read<uint8_t>(*phys + i, b);
+            out[done + i] = b;
+        }
+        done += n;
+    }
+}
+
+void R5000::guestWrite(VirtAddr vaddr, std::span<const uint8_t> data) {
+    for (size_t done = 0; done < data.size();) {
+        const VirtAddr va = vaddr + done;
+        const size_t n = std::min<size_t>(data.size() - done, 0x1000 - (va & 0xFFF));
+        const auto phys = translate(va, Access::Store); // already validated
+        for (size_t i = 0; phys && i < n; ++i) {
+            (void)bus_.write<uint8_t>(*phys + i, data[done + i]);
+        }
+        done += n;
+    }
+}
+
+bool R5000::guestCopyIn(VirtAddr vaddr, std::span<uint8_t> out, size_t& done) {
+    while (done < out.size()) {
+        const VirtAddr va = vaddr + done;
+        const size_t n = std::min<size_t>(out.size() - done, 0x1000 - (va & 0xFFF));
+        const auto phys = translate(va, Access::Load);
+        if (!phys) return false; // exception raised: resume after IRIX maps the page
+        for (size_t i = 0; i < n; ++i) {
+            uint8_t b = 0;
+            (void)bus_.read<uint8_t>(*phys + i, b);
+            out[done + i] = b;
+        }
+        done += n;
+    }
+    return true;
+}
+
+bool R5000::guestCopyOut(VirtAddr vaddr, std::span<const uint8_t> data, size_t& done) {
+    while (done < data.size()) {
+        const VirtAddr va = vaddr + done;
+        const size_t n = std::min<size_t>(data.size() - done, 0x1000 - (va & 0xFFF));
+        const auto phys = translate(va, Access::Store);
+        if (!phys) return false;
+        for (size_t i = 0; i < n; ++i) (void)bus_.write<uint8_t>(*phys + i, data[done + i]);
+        done += n;
+    }
+    return true;
+}
+
 void R5000::unimplemented(mips::Instruction insn) {
     // pc_ has already advanced past this instruction, so execution simply
     // continues with the next one.

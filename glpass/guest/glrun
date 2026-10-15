@@ -1,0 +1,11 @@
+#!/bin/sh
+# Runs a program with the host-GPU OpenGL (glpass) instead of IRIX's own:
+#   /usr/local/irix-emu/glpass/glrun maya
+# libGL.so comes first in the library path; libglpass_x.so is preloaded to
+# note the colours colour-index programs (Maya's 3D views) store.
+dir=`dirname $0`
+dir=`cd $dir && pwd`
+LD_LIBRARYN32_PATH=$dir${LD_LIBRARYN32_PATH:+:$LD_LIBRARYN32_PATH}
+_RLDN32_LIST=$dir/libglpass_x.so:DEFAULT
+export LD_LIBRARYN32_PATH _RLDN32_LIST
+exec "$@"

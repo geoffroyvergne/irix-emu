@@ -573,6 +573,10 @@ void R5000::executeSpecial(Instruction insn) {
         if (!mipsIV()) { unimplemented(insn); break; }
         if (rt != 0) setGpr(rd, rs);
         break;
+    case 0x28: // reserved function: the emulator's hypercall word, if it is exactly that
+        if (insn.raw == kHypercall && hypercall_) hypercall_(*this);
+        else unimplemented(insn);
+        break;
     case mips::fn::Movci: // MOVF / MOVT rd, rs, cc: rt field = cc << 2 | tf
         if (!mipsIV()) { unimplemented(insn); break; }
         if (!coprocessorUsable(1)) { raiseException(ExcCode::CpU, 1); break; }

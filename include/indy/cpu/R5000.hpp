@@ -9,6 +9,7 @@
 #include <array>
 #include <functional>
 #include <optional>
+#include <span>
 #include <string_view>
 #include <vector>
 
@@ -50,6 +51,31 @@ public:
     // Board hook for bus errors on data accesses (physical address, write?).
     using BusErrorHook = std::function<void(PhysAddr, bool isWrite)>;
     void setBusErrorHook(BusErrorHook hook) { busErrorHook_ = std::move(hook); }
+
+    // ---- Hypercalls (emulator services for guest software) -------------------
+    // The reserved SPECIAL word kHypercall (function 0x28, shift 0x1A) calls the
+    // handler instead of being skipped. Convention: a0 = service, a1 = operation,
+    // a2 = guest buffer, a3 = length; the handler sets v0/v1. Guest memory is
+    // reached with guestAccessible() first (it raises the TLB/address exception
+    // a load or store would, so the instruction re-executes once IRIX has mapped
+    // the page) and then guestRead()/guestWrite(), which cannot fail afterwards.
+    static constexpr uint32_t kHypercall = 0x0000'0668;
+    using HypercallHandler = std::function<void(R5000&)>;
+    void setHypercallHandler(HypercallHandler handler) { hypercall_ = std::move(handler); }
+    [[nodiscard]] bool guestAccessible(VirtAddr vaddr, size_t length, bool forWrite);
+    void guestRead(VirtAddr vaddr, std::span<uint8_t> out);
+    void guestWrite(VirtAddr vaddr, std::span<const uint8_t> data);
+    // Resumable copies for buffers larger than the TLB maps at once (48 entry
+    // pairs): they copy page by page from `done` on and return false at the
+    // first page not mapped, having raised its exception. The caller keeps
+    // `done` and calls again when the hypercall re-executes; true once all
+    // bytes are copied.
+    [[nodiscard]] bool guestCopyIn(VirtAddr vaddr, std::span<uint8_t> out, size_t& done);
+    [[nodiscard]] bool guestCopyOut(VirtAddr vaddr, std::span<const uint8_t> data, size_t& done);
+    void setHypercallResult(uint64_t v0, uint64_t v1 = 0) noexcept {
+        setGpr(2, v0);
+        setGpr(3, v1);
+    }
 
     // Address of the next instruction to execute.
     [[nodiscard]] uint64_t pc() const noexcept override { return pc_; }
@@ -234,6 +260,7 @@ private:
     CpuModel model_;
     Tlb tlb_;
     BusErrorHook busErrorHook_;
+    HypercallHandler hypercall_;
 
     std::array<uint64_t, 32> gpr_{};
     uint64_t hi_ = 0;

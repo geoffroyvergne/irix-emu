@@ -1,0 +1,32 @@
+# Built inside IRIX with the freeware gcc (MIPSpro cc needs a licence).
+#   make  -> libGL.so (the pass-through library), libglpass_x.so (colormap
+#            notes for colour-index programs, preloaded) and gltri (a test)
+# glpass_gen.c and glpass_fn.h come from glpass/tools/glpass-gen.py on the host.
+CC      = /usr/freeware/bin/gcc
+CFLAGS  = -mabi=n32 -O2 -fPIC -Wall
+HEADERS = glpass_protocol.h glpass_fn.h glpass_internal.h glpass_xstore.h
+OBJS    = glpass.o glpass_gen.o
+
+all: libGL.so libglpass_x.so gltri
+
+glpass.o: glpass.c $(HEADERS)
+	$(CC) $(CFLAGS) -c glpass.c
+
+glpass_gen.o: glpass_gen.c $(HEADERS)
+	$(CC) $(CFLAGS) -c glpass_gen.c
+
+xstore.o: xstore.c glpass_xstore.h
+	$(CC) $(CFLAGS) -c xstore.c
+
+libGL.so: $(OBJS)
+	$(CC) -mabi=n32 -shared -Wl,-soname,libGL.so -o libGL.so $(OBJS) -lX11
+
+# Only libc: every process started with _RLDN32_LIST loads it.
+libglpass_x.so: xstore.o
+	$(CC) -mabi=n32 -shared -Wl,-soname,libglpass_x.so -o libglpass_x.so xstore.o
+
+gltri: gltri.c libGL.so
+	$(CC) -mabi=n32 -O2 -o gltri gltri.c -L. -lGL -lX11
+
+clean:
+	rm -f *.o libGL.so libglpass_x.so gltri

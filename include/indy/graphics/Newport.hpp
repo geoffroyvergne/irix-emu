@@ -1,9 +1,12 @@
 #pragma once
 
+#include "indy/core/DisplayOverlay.hpp"
+
 #include "indy/core/WarnOnce.hpp"
 #include "indy/graphics/GraphicsSubsystem.hpp"
 
 #include <array>
+#include <map>
 #include <functional>
 #include <vector>
 
@@ -88,6 +91,10 @@ public:
 
     // Inspection/tests.
     [[nodiscard]] uint32_t vramAt(uint32_t x, uint32_t y) const { return vram_[y * kVramWidth + x]; }
+
+    // Host-rendered images shown over the display (GL pass-through), keyed by
+    // guest window; nullptr removes one. See DisplayOverlay.
+    void setOverlay(uint32_t id, const DisplayOverlay* overlay);
     [[nodiscard]] uint32_t paletteAt(uint32_t index) const { return cmap_[index & 0x1FFF]; }
     [[nodiscard]] uint16_t vc2Register(unsigned index) const { return vc2Regs_[index & 0x1F]; }
 
@@ -137,6 +144,13 @@ private:
     // them; values are replicated into both pairs). The XL8 has no overlay
     // planes. Popup pixels show on top of the main planes.
     std::vector<uint8_t> auxPlanes_;
+    // Most recently presented last: where windows' images overlap (a program
+    // switching between two windows at the same place), the newest shows.
+    std::vector<std::pair<uint32_t, DisplayOverlay>> overlays_;
+    // The layer-1 (overlay planes) image pixel shown at (x, y) where the
+    // popup planes hold `popup`, or nullptr.
+    [[nodiscard]] const uint32_t* overlayPixel(int32_t x, int32_t y, uint32_t popup) const;
+    std::map<uint32_t, std::pair<int32_t, int32_t>> overlayShift_; // per overlay: alignment with its key pixels
     bool dirty_ = true;
 
     // REX3 state.

@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <csignal>
 #include <cstdlib>
 #include <chrono>
 #include <exception>
@@ -45,6 +46,12 @@ struct Options {
     // --mouse (repeatable): at <seconds>, PS/2 deltas (+y up) and buttons.
     std::vector<std::pair<double, cmd::MouseEvent>> mouseEvents;
 };
+
+// SIGUSR1 asks for a screenshot of the running emulator ($INDY_SNAPSHOT, or
+// indy-snapshot.ppm in the current directory): kill -USR1 <pid>.
+volatile std::sig_atomic_t g_snapshotRequested = 0;
+
+void requestSnapshot(int) { g_snapshotRequested = 1; }
 
 // Save the newest frame as a binary PPM (handy for headless checks).
 void writeScreenshot(FrameBuffer& frame, const std::string& path) {
@@ -248,8 +255,14 @@ int run(const Options& options) {
     uint64_t lastCycles = 0;
     size_t nextShot = 0;
 
+    std::signal(SIGUSR1, requestSnapshot);
     while (ui.pumpEvents(commands) && emulator.running()) {
         ui.present(display);
+        if (g_snapshotRequested != 0) {
+            g_snapshotRequested = 0;
+            const char* path = std::getenv("INDY_SNAPSHOT");
+            writeScreenshot(display, path != nullptr ? path : "indy-snapshot.ppm");
+        }
 
         const double elapsed = std::chrono::duration<double>(Clock::now() - start).count();
         while (nextShot < options.timedScreenshots.size() && elapsed >= options.timedScreenshots[nextShot].first) {

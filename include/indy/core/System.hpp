@@ -6,6 +6,7 @@
 #include "indy/core/Types.hpp"
 #include "indy/cpu/Cpu.hpp"
 #include "indy/graphics/GraphicsSubsystem.hpp"
+#include "GlBridge.hpp" // glpass/host
 #include "indy/hpc/Ds1386.hpp"
 #include "indy/hpc/Hpc3.hpp"
 #include "indy/hpc/Ioc2.hpp"
@@ -20,6 +21,8 @@
 #include <memory>
 
 namespace indy {
+
+class R5000;
 
 class CdRomDrive;
 
@@ -92,6 +95,8 @@ private:
     bool scsiDmaIrq_ = false;  // HPC3 SCSI channel 0 DMA interrupt
     Ioc2 ioc2_; // before hpc3_, which routes PBUS channel 6 to it
     std::unique_ptr<Ds1386> rtc_;
+    std::unique_ptr<GlBridge> glBridge_; // GL pass-through (glpass/)
+    void handleHypercall(R5000& cpu);
     Hpc3 hpc3_{bus_};
 
     std::unique_ptr<Cpu> cpu_;
