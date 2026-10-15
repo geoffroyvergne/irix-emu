@@ -105,6 +105,7 @@ struct Framebuffer {
 
 struct Context {
     CGLContextObj cgl = nullptr;
+    uint32_t drawable = 0;                     // bound to (GLP_OP_MAKE_CURRENT); 0: none
     std::map<uint32_t, Framebuffer> drawables; // by guest X drawable
     GLenum drawBuffer = GL_BACK;               // as the guest named them
     GLenum readBuffer = GL_BACK;
@@ -203,24 +204,32 @@ public:
     [[nodiscard]] bool available() const noexcept override { return pixelFormat_ != nullptr; }
 
     void hypercall(R5000& cpu) override {
-        const auto op = static_cast<uint32_t>(cpu.gpr(5));
+        // The operation word names the guest context the operation is for:
+        // guest threads each have their own current context (sprocs and
+        // POSIX threads alike), and their calls interleave.
+        const auto word = static_cast<uint32_t>(cpu.gpr(5));
+        const uint32_t op = GLP_OP_OF(word);
+        const uint32_t context = GLP_CONTEXT_OF(word);
         const VirtAddr buffer = cpu.gpr(6);
         const auto arg = static_cast<uint32_t>(cpu.gpr(7));
         if (!available()) {
             cpu.setHypercallResult(static_cast<uint64_t>(-1));
             return;
         }
-        std::vector<uint8_t>& data = in_.data;
+        // Copies interrupted by a page fault are kept per context: another
+        // guest thread may call in before the faulting one re-executes.
+        Transfers& io = transfers_[context];
+        std::vector<uint8_t>& data = io.in.data;
         // Reads the request buffer. Large buffers span more pages than the TLB
         // maps at once, so the copy resumes where a page fault stopped it when
         // the hypercall re-executes (same operation, buffer and length).
         auto read = [&](size_t bytes) {
-            if (!in_.active || in_.op != op || in_.buffer != buffer || in_.arg != arg) {
-                in_ = Transfer{op, buffer, arg, 0, {}, true};
-                in_.data.resize(bytes);
+            if (!io.in.active || io.in.op != word || io.in.buffer != buffer || io.in.arg != arg) {
+                io.in = Transfer{word, buffer, arg, 0, {}, true};
+                io.in.data.resize(bytes);
             }
-            if (!cpu.guestCopyIn(buffer, in_.data, in_.done)) return false; // page fault: retried
-            in_.active = false;
+            if (!cpu.guestCopyIn(buffer, io.in.data, io.in.done)) return false; // page fault: retried
+            io.in.active = false;
             return true;
         };
         switch (op) {
@@ -242,17 +251,21 @@ public:
             return;
         case GLP_OP_DESTROY_CONTEXT:
             if (auto it = contexts_.find(arg); it != contexts_.end()) {
-                if (current_ == arg) release();
                 destroy(it->second);
                 contexts_.erase(it);
+                if (active_ == arg) active_ = 0;
+                if (arg != context) transfers_.erase(arg);
             }
+            transfers_.erase(context);
             cpu.setHypercallResult(0);
             return;
         case GLP_OP_MAKE_CURRENT:
             if (!read(16)) return;
             {
                 const Words w(data);
-                cpu.setHypercallResult(makeCurrent(w.u(0), w.u(1), w.i(2), w.i(3)) ? 0 : static_cast<uint64_t>(-1));
+                // The payload repeats the context: both must name the same one.
+                const bool ok = w.u(0) == context && makeCurrent(w.u(0), w.u(1), w.i(2), w.i(3));
+                cpu.setHypercallResult(ok ? 0 : static_cast<uint64_t>(-1));
             }
             return;
         case GLP_OP_SUBMIT:
@@ -261,7 +274,7 @@ public:
                 return;
             }
             if (!read(arg)) return;
-            execute(Words(data));
+            if (Context* ctx = activate(context)) execute(*ctx, Words(data));
             cpu.setHypercallResult(0);
             return;
         case GLP_OP_SWAP:
@@ -270,7 +283,7 @@ public:
                 const Words w(data);
                 static const bool trace = std::getenv("INDY_TRACE_GL") != nullptr;
                 const auto start = std::chrono::steady_clock::now();
-                swap(w.u(0), w.i(1), w.i(2), w.i(3), w.i(4), static_cast<uint8_t>(w.u(5)), w.u(6));
+                swap(context, w.u(0), w.i(1), w.i(2), w.i(3), w.i(4), static_cast<uint8_t>(w.u(5)), w.u(6));
                 if (trace) {
                     log::info("GL swap {:#x} flags {}: {} us", w.u(0), w.u(6),
                               std::chrono::duration_cast<std::chrono::microseconds>(
@@ -280,7 +293,7 @@ public:
             cpu.setHypercallResult(0);
             return;
         case GLP_OP_FINISH:
-            if (current_ != 0) glFinish();
+            if (activate(context) != nullptr) glFinish();
             cpu.setHypercallResult(0);
             return;
         case GLP_OP_QUERY:
@@ -289,7 +302,7 @@ public:
                 return;
             }
             if (!read(arg)) return;
-            query(cpu, Words(data));
+            query(cpu, context, io, Words(data));
             return;
         default:
             cpu.setHypercallResult(static_cast<uint64_t>(-1));
@@ -299,6 +312,27 @@ public:
 
 private:
     static constexpr uint32_t kMaxRequest = 64u << 20;
+
+    // Hypercall transfers in progress across page faults.
+    struct Transfer {
+        uint32_t op = 0;
+        VirtAddr buffer = 0;
+        uint32_t arg = 0;
+        size_t done = 0;
+        std::vector<uint8_t> data;
+        bool active = false;
+    };
+    struct Preread {
+        VirtAddr at = 0;
+        size_t done = 0;
+        std::vector<uint8_t> data;
+        bool active = false;
+    };
+    struct Transfers {
+        Transfer in;
+        Preread preread;
+        Reply::Pending out;
+    };
 
     uint64_t createContext(uint32_t share) {
         CGLContextObj shareWith = nullptr;
@@ -343,29 +377,47 @@ private:
         }
         CGLSetCurrentContext(nullptr);
         CGLDestroyContext(ctx.cgl);
-        if (current_ != 0) {
-            if (auto it = contexts_.find(current_); it != contexts_.end() && &it->second != &ctx) {
-                CGLSetCurrentContext(it->second.cgl);
-            }
+        active_ = 0; // no host context is current now
+    }
+
+    // Makes guest context `id` the host's current one, with the framebuffer
+    // of the drawable it is bound to and its draw and read buffers; nullptr
+    // when it does not exist or is bound to no drawable. Host state changes
+    // only when another context ran since.
+    Context* activate(uint32_t id) {
+        auto it = contexts_.find(id);
+        if (it == contexts_.end() || it->second.drawable == 0) return nullptr;
+        Context& ctx = it->second;
+        if (active_ != id) {
+            auto fb = ctx.drawables.find(ctx.drawable);
+            if (fb == ctx.drawables.end()) return nullptr;
+            CGLSetCurrentContext(ctx.cgl);
+            glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fb->second.fbo);
+            applyDrawBuffer(ctx.drawBuffer);
+            applyReadBuffer(ctx.readBuffer);
+            active_ = id;
         }
+        return &ctx;
     }
 
-    void release() {
-        CGLSetCurrentContext(nullptr);
-        current_ = 0;
-        drawable_ = 0;
-    }
-
+    // Binds `context` to `drawable` (sized width x height); drawable 0
+    // unbinds it. Other contexts keep their bindings: each guest thread has
+    // its own current context.
     bool makeCurrent(uint32_t context, uint32_t drawable, int32_t width, int32_t height) {
         auto it = contexts_.find(context);
-        if (it == contexts_.end() || drawable == 0) {
-            release();
-            return context == 0;
-        }
+        if (it == contexts_.end()) return context == 0;
         Context& ctx = it->second;
+        if (drawable == 0) {
+            ctx.drawable = 0;
+            if (active_ == context) {
+                CGLSetCurrentContext(nullptr);
+                active_ = 0;
+            }
+            return true;
+        }
         CGLSetCurrentContext(ctx.cgl);
-        current_ = context;
-        drawable_ = drawable;
+        active_ = context;
+        ctx.drawable = drawable;
         width = std::max(1, width);
         height = std::max(1, height);
         Surface& surface = surfaces_[{CGLGetShareGroup(ctx.cgl), drawable}];
@@ -517,9 +569,8 @@ private:
         return w.bytes(at + 2);
     }
 
-    void execute(const Words& w) {
-        if (current_ == 0) return;
-        Context& ctx = contexts_[current_];
+    // Runs a command stream in `ctx`, which activate() made current.
+    void execute(Context& ctx, const Words& w) {
         for (size_t at = 0; at < w.size();) {
             const uint32_t header = w.u(at);
             const uint32_t cmd = header >> 16;
@@ -554,6 +605,18 @@ private:
             case GLP_FN_glTexImage2D:
                 glTexImage2D(w.u(p), w.i(p + 1), w.i(p + 2), w.i(p + 3), w.i(p + 4), w.i(p + 5), w.u(p + 6),
                              w.u(p + 7), imageData(w, p + 8, end));
+                break;
+            case GLP_FN_glTexImage3D:
+            case GLP_FN_glTexImage3DEXT: // the core command of the legacy profile (GL 1.2)
+                glTexImage3D(w.u(p), w.i(p + 1), w.i(p + 2), w.i(p + 3), w.i(p + 4), w.i(p + 5), w.i(p + 6),
+                             w.u(p + 7), w.u(p + 8), imageData(w, p + 9, end));
+                break;
+            case GLP_FN_glTexSubImage3D:
+            case GLP_FN_glTexSubImage3DEXT:
+                if (const void* data = imageData(w, p + 10, end)) {
+                    glTexSubImage3D(w.u(p), w.i(p + 1), w.i(p + 2), w.i(p + 3), w.i(p + 4), w.i(p + 5), w.i(p + 6),
+                                    w.i(p + 7), w.u(p + 8), w.u(p + 9), data);
+                }
                 break;
             case GLP_FN_glTexSubImage1D:
                 if (const void* data = imageData(w, p + 6, end)) {
@@ -654,8 +717,8 @@ private:
                 glEnd();
                 break;
             case GLP_FN_PALETTE:
-                if (n >= 2 && drawable_ != 0) {
-                    Surface& surface = surfaces_[{CGLGetShareGroup(ctx.cgl), drawable_}];
+                if (n >= 2 && ctx.drawable != 0) {
+                    Surface& surface = surfaces_[{CGLGetShareGroup(ctx.cgl), ctx.drawable}];
                     const auto count = static_cast<uint32_t>(std::min<size_t>(w.u(p + 1), n - 2));
                     surface.overlay = (w.u(p) & GLP_PALETTE_OVERLAY) != 0;
                     surface.palette.resize(count);
@@ -700,7 +763,7 @@ private:
     }
 
     // GLP_OP_QUERY: { command, reply address, reply bytes, arguments... }.
-    void query(R5000& cpu, const Words& w) {
+    void query(R5000& cpu, uint32_t context, Transfers& io, const Words& w) {
         const uint32_t fn = w.u(0);
         const auto replyAt = static_cast<VirtAddr>(static_cast<int64_t>(static_cast<int32_t>(w.u(1))));
         const uint32_t replyBytes = std::min<uint32_t>(w.u(2), kMaxRequest);
@@ -709,23 +772,24 @@ private:
         // A reply larger than the TLB maps is written page by page; when a
         // fault interrupts it, the re-executed hypercall carries on writing
         // the same, already computed reply: the query does not run twice.
-        if (out_.active && out_.fn == fn && out_.at == replyAt && out_.size == replyBytes) {
-            finishReply(cpu);
+        if (io.out.active && io.out.fn == fn && io.out.at == replyAt && io.out.size == replyBytes) {
+            finishReply(cpu, io.out);
             return;
         }
-        if (current_ == 0) {
+        Context* active = activate(context);
+        if (active == nullptr) {
             cpu.setHypercallResult(0);
             return;
         }
         const bool readsBack = fn == GLP_FN_glReadPixels || fn == GLP_FN_glGetTexImage || fn == GLP_FN_glGetPolygonStipple;
         if (readsBack) { // image reads start from the guest buffer: the pack state may skip bytes
-            if (!preread_.active || preread_.at != replyAt || preread_.data.size() != replyBytes) {
-                preread_ = Preread{replyAt, 0, std::vector<uint8_t>(replyBytes), true};
+            if (!io.preread.active || io.preread.at != replyAt || io.preread.data.size() != replyBytes) {
+                io.preread = Preread{replyAt, 0, std::vector<uint8_t>(replyBytes), true};
             }
-            if (!cpu.guestCopyIn(replyAt, preread_.data, preread_.done)) return;
-            preread_.active = false;
+            if (!cpu.guestCopyIn(replyAt, io.preread.data, io.preread.done)) return;
+            io.preread.active = false;
         }
-        Context& ctx = contexts_[current_];
+        Context& ctx = *active;
         Reply reply;
         uint64_t result = 0;
         auto values = [&](const auto* data, size_t count) {
@@ -738,7 +802,7 @@ private:
             }
         };
         auto imageReply = [&](auto&& readInto) {
-            reply.bytes() = std::move(preread_.data);
+            reply.bytes() = std::move(io.preread.data);
             reply.bytes().resize(replyBytes);
             readInto(reply.bytes().data());
         };
@@ -879,20 +943,20 @@ private:
         }
         std::vector<uint8_t>& bytes = reply.bytes();
         if (bytes.size() > replyBytes) bytes.resize(replyBytes);
-        out_ = Reply::Pending{fn, replyAt, replyBytes, result, std::move(bytes), 0, true};
-        finishReply(cpu);
+        io.out = Reply::Pending{fn, replyAt, replyBytes, result, std::move(bytes), 0, true};
+        finishReply(cpu, io.out);
     }
 
-    void finishReply(R5000& cpu) {
-        if (!cpu.guestCopyOut(out_.at, out_.data, out_.done)) return; // page fault: the hypercall resumes
-        out_.active = false;
-        cpu.setHypercallResult(out_.result);
+    static void finishReply(R5000& cpu, Reply::Pending& out) {
+        if (!cpu.guestCopyOut(out.at, out.data, out.done)) return; // page fault: the hypercall resumes
+        out.active = false;
+        cpu.setHypercallResult(out.result);
     }
 
-    // The framebuffer of `drawable`: the current context's, else another's.
-    std::pair<Context*, Framebuffer*> locate(uint32_t drawable) {
-        if (current_ != 0) {
-            Context& ctx = contexts_[current_];
+    // The framebuffer of `drawable`: the calling context's, else another's.
+    std::pair<Context*, Framebuffer*> locate(uint32_t context, uint32_t drawable) {
+        if (auto own = contexts_.find(context); own != contexts_.end()) {
+            Context& ctx = own->second;
             if (auto it = ctx.drawables.find(drawable); it != ctx.drawables.end()) return {&ctx, &it->second};
         }
         for (auto& [id, ctx] : contexts_) {
@@ -901,11 +965,18 @@ private:
         return {nullptr, nullptr};
     }
 
-    void swap(uint32_t drawable, int32_t x, int32_t y, int32_t width, int32_t height, uint8_t key, uint32_t flags) {
-        auto [ctx, fb] = locate(drawable);
+    void swap(uint32_t context, uint32_t drawable, int32_t x, int32_t y, int32_t width, int32_t height, uint8_t key,
+              uint32_t flags) {
+        if ((flags & GLP_SWAP_HIDE) != 0) { // unmapped or destroyed: no image any more
+            if (sink_) sink_(drawable, nullptr);
+            return;
+        }
+        auto [ctx, fb] = locate(context, drawable);
         if (fb == nullptr || fb->surface == nullptr) return;
-        CGLContextObj previous = CGLGetCurrentContext();
-        if (ctx->cgl != previous) CGLSetCurrentContext(ctx->cgl);
+        // The copy and read-back below change the host context, framebuffer
+        // and buffers: the next operation's activate() sets its own again.
+        active_ = 0;
+        CGLSetCurrentContext(ctx->cgl);
         glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fb->fbo);
         if ((flags & GLP_SWAP_BACK_TO_FRONT) != 0) {
             const GLboolean scissor = glIsEnabled(GL_SCISSOR_TEST); // a blit is scissored
@@ -954,16 +1025,7 @@ private:
             }
             sink_(drawable, &overlay);
         }
-        // Back to the guest's state: its context, drawable and buffers.
-        if (ctx->cgl != previous) {
-            applyDrawBuffer(ctx->drawBuffer);
-            applyReadBuffer(ctx->readBuffer);
-            CGLSetCurrentContext(previous);
-            return;
-        }
-        if (auto it = ctx->drawables.find(drawable_); it != ctx->drawables.end()) {
-            glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, it->second.fbo);
-        }
+        // The framebuffer keeps the guest's draw and read buffers.
         applyDrawBuffer(ctx->drawBuffer);
         applyReadBuffer(ctx->readBuffer);
     }
@@ -973,28 +1035,10 @@ private:
     std::map<uint32_t, Context> contexts_;
     std::map<std::pair<CGLShareGroupObj, uint32_t>, Surface> surfaces_; // by share group and drawable
     uint32_t nextId_ = 1;
-    uint32_t current_ = 0;
-    uint32_t drawable_ = 0;
+    uint32_t active_ = 0; // the guest context whose state the host GL holds (activate)
     unsigned unknownLogged_ = 0;
     bool tableMismatchLogged_ = false;
-    // Hypercall transfers in progress across page faults.
-    struct Transfer {
-        uint32_t op = 0;
-        VirtAddr buffer = 0;
-        uint32_t arg = 0;
-        size_t done = 0;
-        std::vector<uint8_t> data;
-        bool active = false;
-    };
-    struct Preread {
-        VirtAddr at = 0;
-        size_t done = 0;
-        std::vector<uint8_t> data;
-        bool active = false;
-    };
-    Transfer in_;
-    Preread preread_;
-    Reply::Pending out_;
+    std::map<uint32_t, Transfers> transfers_; // by guest context (0: none)
     std::array<std::vector<uint8_t>, 6> arrayData_;
     std::vector<GLuint> indices_;
     std::vector<GLint> lists_;

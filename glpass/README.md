@@ -11,6 +11,7 @@ IRIX then keeps its own OpenGL.
 
 ## Contents
 
+- [Features](#features)
 - [Why it exists](#why-it-exists)
 - [How it works](#how-it-works)
 - [Repository layout](#repository-layout)
@@ -20,6 +21,35 @@ IRIX then keeps its own OpenGL.
 - [Diagnostics](#diagnostics)
 - [Status and limitations](#status-and-limitations)
 - [Changing the code](#changing-the-code)
+
+## Features
+
+- **Host-GPU rendering** of OpenGL 1.1 programs plus common extensions,
+  shown in the program's own X window. The window is composited with a key
+  colour, so other windows, menus and the cursor stay on top.
+- **Threads:** every GLX context is current per thread, for POSIX threads
+  and sproc programs such as Maya alike. Each GL call names its context, and
+  the host runs it in that context.
+- **Window tracking:** the image follows the window as soon as it moves or
+  is resized, and disappears when the window is unmapped or destroyed. Both
+  are driven by X events, not by polling.
+- **Colour index emulation** for 12-bit colour-index programs (Maya's
+  views):
+  - palettes come from the program's X colormaps;
+  - index logic ops;
+  - exact index write masks, with several passes when one isn't enough.
+- **Overlay planes** (optional, `GLPASS_OVERLAY=1`): the X server's 2-bit
+  overlay visual, offered only to requests it satisfies.
+- **Selection and feedback:** `glRenderMode(GL_SELECT / GL_FEEDBACK)`
+  results are written back into the program's buffers in IRIX byte order.
+- **3D textures** (`glTexImage3D`, `GL_EXT_texture3D`), including the 3D
+  pixel-store settings.
+- **Large transfers:** images, readbacks and command batches bigger than the
+  emulated TLB maps are copied page by page.
+- **Version check:** a library built from other sources than the emulator is
+  refused, with a message saying what to do.
+- **Test programs:** `gltri`, `glthreads`/`glthreads_pt`, `glmove` and
+  `glcheck`.
 
 ## Why it exists
 
@@ -57,24 +87,53 @@ IRIX, handed to the emulator, and replayed on the host GPU.
 The guest reaches the emulator with one reserved instruction word,
 `0x00000668` (a SPECIAL encoding that real MIPS hardware rejects). The
 emulator's R5000 hands it to the GL bridge instead of raising an exception.
-Arguments travel in `a0`–`a3` (service, operation, guest buffer, length) and
-results come back in `v0`/`v1`. The full protocol is in
+Arguments travel in `a0`–`a3` (service, operation word, guest buffer, length)
+and results come back in `v0`/`v1`. The operation word holds the operation in
+its low 8 bits and the id of the GLX context it is for above them
+(`GLP_OP_WORD`; see [Threads](#threads)). The full protocol is in
 [guest/glpass_protocol.h](guest/glpass_protocol.h):
 
 | Operation | Purpose |
 |---|---|
 | `HELLO` | Version check: the protocol version (`GLP_VERSION`) and the ID of the generated command table (`GLP_FN_TABLE_ID`); a library built from other sources is refused |
 | `CREATE_CONTEXT`, `DESTROY_CONTEXT` | One host context per GLX context, sharing lists as GLX asks |
-| `MAKE_CURRENT` | Binds a context to a drawable (window, pixmap or pbuffer) of a given size |
+| `MAKE_CURRENT` | Binds a context to a drawable (window, pixmap or pbuffer) of a given size, or unbinds it (drawable 0); other contexts keep their bindings |
 | `SUBMIT` | A batch of encoded GL commands |
 | `QUERY` | A call that returns data (`glGet*`, `glReadPixels`, `glRenderMode`, ...); the host writes the reply into guest memory |
-| `SWAP` | Shows a drawable's image (after `glXSwapBuffers`, or a flush of front-buffer drawing) |
+| `SWAP` | Shows a drawable's image (after `glXSwapBuffers`, or a flush of front-buffer drawing), shows it again at a window's new place, or takes it off the display (`GLP_SWAP_HIDE`) |
 | `FINISH` | Waits for the host GPU |
 
 The host reads and writes guest memory through the guest's own address
 translation. Buffers larger than the R5000 TLB maps at once (about 384 KB)
 are copied page by page; a page fault stops the copy and the hypercall
-resumes where it stopped when IRIX re-executes it.
+resumes where it stopped when IRIX re-executes it. Interrupted copies are kept
+per context, so another thread calling in meanwhile does not restart them.
+
+### Threads
+
+GLX makes a context current per thread, and programs draw from several
+threads at once. IRIX programs have threads of two kinds:
+
+- **POSIX threads** share one process. Each thread's state sits under a
+  pthread key (`pthread_key_create`, `pthread_getspecific`,
+  `pthread_setspecific`).
+- **sproc** threads (Maya) are processes sharing one address space, and
+  libpthread cannot be loaded into them. Each one's state is found by its own
+  pid, read from its PRDA (`PRDA->t_sys.t_pid`) without a system call.
+
+The library does not link libpthread. It looks the key functions up at run
+time and uses them when the program has them.
+
+Each thread has its own current context, command buffer and pending
+`glBegin` batch. Every GL hypercall names its context in the operation word.
+The host keeps, per context, the drawable it is bound to. It makes a context's
+host GL context, framebuffer and draw/read buffers current only when the
+calling context differs from the one that ran last, so interleaved threads
+each draw into their own context.
+
+Tables that all threads share are guarded by one library lock, which the
+thread holding it may take again. They hold drawables, window positions and
+modes, palettes sent, visuals handed out, and the library's X connection.
 
 ### The command stream
 
@@ -89,9 +148,23 @@ Most of the 886 entry points in IRIX's `gl.h` are generated by
 
 | Kind | Count | How |
 |---|---|---|
-| Generated | 459 | Plain-value or fixed-size-array arguments. The guest encoder and the host replay are both generated. Vendor forms (`glBindTextureEXT`) replay as the core host command. |
-| Hand-written | 104 | Calls that return data, carry images (with the pixel-store state), use client vertex arrays, selection or feedback, evaluators, or need the colour-index emulation |
-| Stubs | 323 | Not available on the host (imaging subset, 3D textures, vertex programs, ...): logged on first use, otherwise ignored |
+| Generated | 451 | Plain-value or fixed-size-array arguments. The guest encoder and the host replay are both generated. Vendor forms (`glBindTextureEXT`) replay as the core host command. |
+| Hand-written (`MANUAL`) | 108 | Calls that return data, carry images (with the pixel-store state, 3D images included), use client vertex arrays, selection or feedback, evaluators, or need the colour-index emulation |
+| Watched by the guest (`GUEST_MANUAL`) | 8 | Hand-written in the guest, which tracks state with them (index logic op, clears, attribute stack, display lists); replayed by generated host code |
+| Stubs | 319 | Not available on the host (imaging subset, vertex programs, ...): logged on first use, otherwise ignored |
+
+**Selection and feedback.** `glSelectBuffer` and `glFeedbackBuffer` give the
+host a buffer of the same size; the guest keeps the program's pointer.
+Leaving `GL_SELECT` or `GL_FEEDBACK`, `glRenderMode` is a query: the host
+writes its buffer back into the program's, one big-endian word per value, so
+names, depths and float coordinates arrive in IRIX byte order.
+
+**3D textures.** `glTexImage3D` and `glTexSubImage3D`, and their `EXT` forms,
+replay as the host's core 3D texture commands. The guest sizes the image with
+the 3D pixel-store state (`GL_UNPACK_IMAGE_HEIGHT`, `GL_UNPACK_SKIP_IMAGES`),
+and `GL_EXT_texture3D` is advertised.
+
+`glcheck` checks all three value by value.
 
 The GLX layer (visuals, FBConfigs, contexts, windows, pixmaps, pbuffers,
 `glXUseXFont`, SGI extensions) is hand-written in
@@ -127,7 +200,9 @@ buffer back and composites it over the emulated display, but only where the
 framebuffer still holds the key. So:
 
 - windows, menus and the cursor on top stay visible;
-- a closed or unmapped window simply stops showing;
+- a closed or unmapped window stops showing: its image is taken off the
+  display as soon as the library reads the window's unmap or destroy event
+  (see [Window tracking](#window-tracking));
 - when two GL windows overlap, the most recently presented one wins.
 
 A small automatic offset (±4 pixels) aligns the image with the window's key
@@ -149,10 +224,61 @@ glpass emulates them:
   over the channels (R = bits 0–7, G = bits 8–9, B = bit 10, A = bit 11).
   Pixel copies and index logic operations (`GL_INDEX_LOGIC_OP`, as XOR) then
   act on indices.
-- `glIndexMask` becomes a per-channel colour mask, which is exact for masks
-  on whole bit groups (the high planes overlay emulation uses).
+- **Write masks** are exact for every mask (see below).
 - The host turns indices into colours with the window's palette when it shows
   the image.
+
+#### Index write masks
+
+A colour mask can only keep or write whole channels. So `glIndexMask` goes
+through the colour mask only when the mask is a union of the bit groups
+above. Other masks are done with the host logic op, using a rule that holds
+for every logic op and every mask.
+
+**The per-bit rule.** A masked index write is, per bit,
+`dst' = mask ? f(src, dst) : dst`, where `f` is the index logic op (copy when
+the logic op is off). For each bit this is one of four functions of `dst`:
+
+- 0: the bit is cleared;
+- 1: the bit is set;
+- `dst`: the bit is kept;
+- `~dst`: the bit is inverted.
+
+**Passes.** The bits to clear, to set and to invert never overlap, so one
+host pass per kind gives the exact result in any order:
+
+| Bits | Host pass |
+|---|---|
+| to clear | `GL_AND` with all the other bits |
+| to set | `GL_OR` with those bits |
+| to invert | `GL_XOR` with those bits |
+
+**How many passes.**
+
+- One pass covers a logic op such as XOR under any mask.
+- One pass covers a copy of an index whose masked bits are all 0 or all 1.
+- Maya's copies under `0x83e` and `0xfc0` set some bits and clear others,
+  so they take two passes. A single host logic op never needs three.
+
+**What is drawn again for each pass:** `glBegin`/`glEnd` blocks, vertex
+array draws, and `glClear`. A clear becomes window-sized rectangles, because
+`glClear` ignores the logic op.
+
+**Index changes inside a block.** The block's colours are patched for each
+pass, which works when the new index needs the same passes.
+
+**Fallback: first pass only.** Draws that can't be repeated get only the
+first pass, and the trace logs it once per mask:
+
+- display lists, which hold the plain translation and run once;
+- a block whose index changes need different passes;
+- a block larger than the command buffer.
+
+**Guest-side state.** The guest tracks the index state itself: mask, logic
+op, current and clear index. It also tracks that state through `glPushAttrib`
+and `glPopAttrib`, and display lists record their index changes for
+`glCallList`. `glGet` therefore returns the program's own values, not their
+host translation.
 
 The palette is the window's X colormap. The XL8's X server has 8-bit
 colormaps, so a program's stores beyond 255 fail on the server. The small
@@ -177,7 +303,7 @@ Visual requests are answered as follows:
 |---|---|
 | RGBA | The screen's default 8-bit PseudoColor visual |
 | Colour index | The same 8-bit PseudoColor visual |
-| Overlay (level 1) | None by default (see [status](#status-and-limitations)) |
+| Overlay (level 1) | None by default. With `GLPASS_OVERLAY=1`: the X server's overlay visual (2-bit on the XL8), when its depth meets `GLX_BUFFER_SIZE` (see [status](#status-and-limitations)) |
 
 The X visual only carries the key colour, so its type doesn't limit what the
 host renders. GLX reports RGBA8, double buffering, depth 24 and stencil 8.
@@ -187,11 +313,49 @@ copied visual structures, it follows the window's colormap instead.
 ### X connections
 
 The library talks to the X server for window positions, the key fill and
-colormaps on a connection of its own, guarded by an IRIX lock, because Xlib
+colormaps on a connection of its own, guarded by the library lock, because Xlib
 connections are not thread-safe and programs such as Maya use theirs from
 several threads. It avoids waiting for X replies while presenting, because a
 program may hold a server grab then (Maya does during its marking menus):
-window positions are cached for 250 ms.
+window positions come from X events, not from round trips.
+
+### Window tracking
+
+The library tracks each GL window's place on screen from X events, so it
+does not have to ask the server at every present.
+
+**First present.** The first present of a window queries the window and its
+ancestors up to the root. It also selects `StructureNotify` on each of them
+on the library's own connection; this changes nothing for the program.
+
+**After that**, these events on the window or any ancestor keep its screen
+position, size and visibility current:
+
+- `ConfigureNotify` and `GravityNotify`: position and size;
+- `MapNotify` and `UnmapNotify`: visibility;
+- `ReparentNotify` and `DestroyNotify`: the chain of ancestors is queried
+  again at the next present.
+
+Events from before the queries are told apart by their serial number and
+ignored. A window manager's synthetic `ConfigureNotify` is ignored too,
+because the real event of its frame follows.
+
+**When events are read.** The library has no thread of its own. Events are
+read without waiting (`XEventsQueued`, `QueuedAfterReading`) under the
+library lock, whenever any of the program's threads presents a drawable or
+makes a context current. At that point:
+
+- a shown window that is no longer viewable (it or an ancestor was unmapped
+  or destroyed) has its image taken off the display (`GLP_SWAP_HIDE`);
+- a shown window that moved or was resized has its image shown again at its
+  new place, from the front buffer, without being redrawn. The emulator's
+  ±4-pixel alignment search runs again there.
+
+**Overlay windows** are presented while the program may hold a server grab.
+They use the last known place when their chain needs a query, rather than
+waiting for the grab to end.
+
+**Command submission** (`SUBMIT`) never takes the lock or reads events.
 
 ## Repository layout
 
@@ -206,6 +370,9 @@ window positions are cached for 250 ms.
 | [guest/gl_api.txt](guest/gl_api.txt) | The 886 IRIX `gl.h` prototypes the generator reads |
 | [guest/glrun](guest/glrun) | Launcher that sets the library path and the preload |
 | [guest/gltri.c](guest/gltri.c) | Test program: a spinning triangle with a frame-rate counter |
+| [guest/glcheck.c](guest/glcheck.c) | Test program: selection, feedback and 3D textures, checked value by value in the program's memory |
+| [guest/glmove.c](guest/glmove.c) | Test program: moves, then unmaps, a GL window without redrawing it; its image should follow, then disappear |
+| [guest/glthreads.c](guest/glthreads.c) | Test program: two threads drawing at once, each with its own context and window, checking every frame (`glthreads`: sproc, `glthreads_pt`: POSIX threads) |
 | [guest/Makefile](guest/Makefile) | IRIX build (freeware gcc) |
 | [host/](host/) | Emulator side, compiled into the emulator |
 | [host/GlBridge.hpp](host/GlBridge.hpp) | Bridge interface used by the emulator core |
@@ -247,7 +414,7 @@ built for the n32 ABI, which Maya, Quake III and most IRIX 6.5 programs use.
 
 ```sh
 cd /usr/local/irix-emu/glpass
-make            # libGL.so, libglpass_x.so, gltri
+make            # libGL.so, libglpass_x.so, gltri, glthreads, glthreads_pt, glmove, glcheck
 ```
 
 The guest and the emulator must come from the same source tree: the command
@@ -297,6 +464,29 @@ The image is a plain tar archive (everything under `glpass/`), padded to
    ```
 
    It should print `gltri: irix-emu / glpass (<host GPU>)` and frame rates.
+   For a fuller check:
+
+   ```sh
+   /usr/local/irix-emu/glpass/glrun /usr/local/irix-emu/glpass/glcheck
+   ```
+
+   It should end with `glcheck: PASS`.
+
+### Updating after an emulator update
+
+The library and the emulator must come from the same sources (see
+[Building](#guest-side-inside-irix)). After pulling or rebuilding the
+emulator, a stale library makes the emulator log this:
+
+```
+GL bridge: the guest glpass library (0x...) was built from other sources than this emulator (0x...)
+```
+
+Programs started with `glrun` then get no GL: Maya aborts with signal 6, and
+others print `glpass: this library and the emulator come from different
+glpass sources`. Rebuild the CD image (`glpass/tools/make-guest-cd.sh`) and
+repeat step 2 above. The line `#define GLP_FN_TABLE_ID` in
+`/usr/local/irix-emu/glpass/glpass_fn.h` should then match the emulator's ID.
 
 The emulator keeps the CD image open and reads it on each access. While
 developing, you can rebuild the image in place and repeat step 2 without
@@ -342,10 +532,12 @@ own OpenGL, as before.
 | Where | Variable | Effect |
 |---|---|---|
 | IRIX | `GLPASS_TRACE=1` | Logs, to the program's stderr: the first call of every GL entry point; GLX calls; presents and palettes; and, from `libglpass_x`, the pixel values handed to X and any non-copy X line drawing |
-| IRIX | `GLPASS_OVERLAY=1` | Offers the X server's overlay visual for overlay requests (experimental, see below) |
+| IRIX | `GLPASS_OVERLAY=1` | Offers the X server's overlay visual for overlay requests that its depth satisfies (see below) |
 | Emulator | `INDY_TRACE_GL=1` | Logs each composited image (size, position, key alignment, centre pixel) and the host time of each swap |
 | Emulator | `INDY_GL_DUMP=<dir>` | With `INDY_TRACE_GL`, writes each window's last host image to `<dir>/gl_<window>.ppm` |
 | Emulator | `kill -USR1 <pid>` | Saves a screenshot of the running emulator to `$INDY_SNAPSHOT` (default `indy-snapshot.ppm`) |
+| Emulator | `INDY_INPUT_FILE=<file>` | Lines appended while it runs are input (`mouse <dx> <dy> [<buttons>]`, `type <text>`): with the screenshots, scripted tests of a running program |
+| Emulator | `INDY_TRACE_PLANES=1` | Logs which Newport plane sets the X server draws into (main, overlay, popup, CID) |
 
 An entry point that glpass does not provide logs
 `glpass: <name> is not supported (ignored)` once.
@@ -357,8 +549,11 @@ Tested programs:
 | Program | State |
 |---|---|
 | `gltri` | Works: thousands of frames per second |
+| `glcheck` | Pass: selection (hits, names, depths), feedback (tokens, window coordinates, pass-through), 3D texture upload with skipped images |
+| `glmove` | Pass: the image follows the moved window and disappears when it is unmapped |
+| `glthreads`, `glthreads_pt` | Pass: two threads, 150 frames each, no frame drawn into the other thread's context (sproc and POSIX threads) |
 | Quake III Arena (IRIX build) | Runs: menus, intro, game; host cost about 1.2 ms per frame. Image quality has dropped since the visual changes made for Maya (under investigation), and fullscreen mode shows a normal window. |
-| Maya 6.5 | Usable: viewports in wireframe and smooth shade, tumbling, selection, manipulators, dropdown and panel menus, right-click marking menus. Gaps below. |
+| Maya 6.5 | Usable: viewports in wireframe and smooth shade, tumbling, object creation and selection, manipulators, dropdown and panel menus, right-click marking menus, range slider; the same with `GLPASS_OVERLAY=1`. Gaps below. |
 
 Known limitations:
 
@@ -367,19 +562,39 @@ Known limitations:
   visual changes, for a reason not yet found. Its fullscreen mode
   (`r_fullscreen 1`) reports 640×480 fullscreen but draws a decorated
   window.
-- **No selection rectangle in Maya.** Maya draws it only in overlay planes.
-  With `GLPASS_OVERLAY=1` Maya gets an overlay visual but freezes after
-  start, so overlays are off by default.
-- **Maya's range slider** (under the timeline) is drawn black; the cause is
-  not yet found.
-- **Index write masks** are exact only on whole bit groups; masks inside one
-  group (Maya uses `0x83e`, `0xfc0`) are approximated, which may cause
-  occasional redraw glitches.
+- **No selection rectangle in Maya.** During a drag Maya draws the rectangle
+  with GL into the viewport's back buffer (`glLineStipple`) and calls only
+  `glFlush`, with no swap, no `glDrawBuffer(GL_FRONT)` and no X drawing. With
+  double-buffered windows nothing of it is shown. How Maya expects it to
+  appear is not known yet.
+- **Overlay planes** (`GLPASS_OVERLAY=1`) are off by default:
+  - **The XL8 overlay.** The XL8's only overlay visual is 2-bit (its popup
+    planes). Since `GLX_BUFFER_SIZE` is now honoured as a minimum, Maya's
+    requests for 8- and 4-bit overlays find none, as with IRIX's GLX.
+  - **Maya with overlays on** therefore uses no overlay context. It runs
+    normally: menus and marking menus work.
+  - **The earlier freeze.** It came from offering the 2-bit visual for those
+    requests. Maya then posted its Motif menus in overlay planes it could not
+    create windows in, which left an invisible menu holding the pointer grab.
+- **Index write masks** are exact (see
+  [Index write masks](#index-write-masks)), except in display lists and
+  blocks that change to an index needing other passes. Those get the first
+  pass only, logged once per mask with `GLPASS_TRACE=1`.
+- **Maya's marking menu** briefly shows the rest of Maya's interface black
+  with red outlines while it is up: a colormap switch on the X side,
+  restored on release.
 - **Host:** macOS only (CGL, legacy OpenGL 2.1). Other hosts get the stub.
 - **Guest:** n32 programs only, started through `glrun`.
-- **Threads:** the current context is per process, not per thread.
+- **Window changes while the program is idle:** the library has no thread of
+  its own, so a move or unmap shows on the display at the next present or
+  `glXMakeCurrent` from any of the program's threads. Until then, the image
+  shows only where its key colour still is.
+- **Threads:** a context current in two threads at once is not refused as
+  GLX would; both threads' commands then go to that one context.
+  `glXDestroyContext` on a context current in another thread takes effect at
+  once, not when that thread releases it.
 - **Not available:** the imaging subset (colour tables, convolution,
-  histograms), 3D textures, vertex and fragment programs, multisampling,
+  histograms), compressed textures, vertex and fragment programs, multisampling,
   accumulation buffers, stereo.
 
 ## Changing the code
@@ -397,7 +612,9 @@ Known limitations:
   the macOS OpenGL headers declare. Rebuild the emulator and the guest.
 - **Hand-written entry points:** list the function in the generator's `MANUAL`
   set, implement it in `guest/glpass.c`, and, if it sends a command, add its
-  replay case in `host/GlBridgeMac.cpp`.
+  replay case in `host/GlBridgeMac.cpp`. A function the guest only needs to
+  watch (it tracks state with it, then sends the command unchanged) goes in
+  `GUEST_MANUAL` instead: the host replay stays generated.
 - **Protocol changes:** edit `guest/glpass_protocol.h` and bump `GLP_VERSION`.
 - **Checking the guest sources on the host:** there's no MIPS cross-compiler
   in the build, but with IRIX's `GL/gl.h`, `GL/glx.h` and `GL/glxtokens.h` in

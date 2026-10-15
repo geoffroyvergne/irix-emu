@@ -25,3 +25,42 @@ Technical Constraints & Crucial Guardrails:
 3. Endianness Check: When passing context handles or IDs between guest and host, ensure they are properly byte-swapped if they are read directly from guest memory pointers.
 
 Please provide the exact modified code sections for 'guest/glpass.c' and 'guest/glpass_internal.h', as well as the host-side structural changes in 'host/GlBridgeMac.cpp'.
+
+# Prompt 2 : X11 Optimization and Elimination of Desynchronization
+
+Context: Inside 'guest/glpass.c' and 'guest/xstore.c', the library talks to the X server to get window positions and handle colormaps. To avoid X server deadlocks during drawing, window positions are currently cached with an arbitrary 250ms timer. This causes severe rendering lag, misaligned compositing, and visual artifacts when moving or resizing windows.
+
+Task: Implement a reactive, asynchronous window geometry tracking system to replace the 250ms timer.
+
+Technical Constraints & Crucial Guardrails:
+1. Thread Safety: Xlib connections are not thread-safe. Maya uses X11 from multiple threads. Ensure that our dedicated glpass X connection remains strictly guarded by our IRIX lock without stalling the OpenGL command submission hypercalls (`SUBMIT`).
+2. Event-Driven Sync: Instead of a time-based cache, modify the loop to intercept X11 `ConfigureNotify` events asynchronously. Update the window dimensions and positions in shared guest structures immediately when the X server reports a change.
+3. Handle Key-Colour Compositing: Ensure that the automatic offset adjustment (±4 pixels mentioned in the doc) reacts instantly to window mapping and unmapping events to prevent the host GPU from drawing over closed or hidden windows.
+
+Please provide the updated window-tracking and event-handling code for 'guest/glpass.c' and 'guest/xstore.c'.
+
+# Prompt 3 : Overlay Correction and Color Index Emulation (12-bit)
+
+Context: Maya relies heavily on 12-bit color-index visuals and overlay planes (Layer 1) to draw wireframe views, marking menus, and selection bounding boxes. Currently, turning on 'GLPASS_OVERLAY=1' freezes the emulator, and index write masks inside bit groups (like Maya's 0x83e or 0xfc0) cause severe redraw glitches.
+
+Task: Fix the overlay-induced freeze and improve the precision of the Color Index Emulation.
+
+Technical Constraints & Crucial Guardrails:
+1. Prevent the Freeze: Analyze why exposing the X server's overlay visual causes a deadlock. If necessary, implement a safe fallback where glpass intercepts overlay requests and routes them to a secondary transparent host Framebuffer Object (FBO).
+2. Bitwise Logic & Index Masks: In 'guest/glpass.c', refine how `glIndexMask` and bitwise logical operations (`GL_INDEX_LOGIC_OP`, like XOR) are handled. Since the host only renders in RGBA, map irregular 12-bit MIPS index masks precisely across the host channels (R=bits 0-7, G=bits 8-9, B=bit 10, A=bit 11).
+3. Endianness Vector Warning: Color palettes and colormaps captured via `XStoreColors` in 'guest/xstore.c' store pixel data in arrays. When sending these colormaps to the host to generate the display palette, convert the big-endian pixel structures carefully to match the host host's RGB memory layout.
+
+Please provide the structural changes required to make 'GLPASS_OVERLAY=1' stable and the math fixes for index masking.
+
+# Prompt 4 : Replacing Missing OpenGL Functions (Stubs to Real Implementations)
+
+Context: Our python generator 'tools/glpass-gen.py' currently marks 323 entry points as stubs (ignored), including 3D textures, feedback/selection modes, and evaluators. Advanced SGI demos and Houdini require these to avoid crashing or rendering black screens.
+
+Task: Update the automated generator framework and manually implement Selection and Feedback OpenGL workflows.
+
+Technical Constraints & Crucial Guardrails:
+1. Generator Modification: Explain how to modify 'tools/glpass-gen.py' or 'guest/gl_api.txt' to shift `glRenderMode(GL_SELECT)` and `glRenderMode(GL_FEEDBACK)` from stubs to Hand-written ('MANUAL') routines.
+2. The Critical Endianness Trap: Selection and Feedback modes write rendering data back into memory arrays allocated by the guest application. When the host replays these modes, it generates data in Little-Endian. The host bridge MUST iterate through the selection/feedback buffer and byte-swap every single depth value, name, and floating-point coordinate before writing it back into the Big-Endian IRIX guest memory space.
+3. 3D Textures: Implement a pipeline for `glTexImage3D` so it maps natively to the host GPU's 3D texturing capabilities within the legacy profile.
+
+Please provide the updated Python generator logic and the hand-written C/C++ implementation for the selection/feedback buffer transfer.

@@ -19,11 +19,15 @@
 #include <X11/Xutil.h>
 
 #include <dlfcn.h>
+#include <errno.h>
+#include <pthread.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <sys/time.h>
 #include <unistd.h>
 #ifdef __sgi
 #include <abi_mutex.h>
+#include <sys/prctl.h>
 #endif
 #include <stdio.h>
 #include <stdlib.h>
@@ -50,6 +54,13 @@ static long glp_call(unsigned long service, unsigned long op, const void *buffer
     return v0;
 }
 
+/* A GL operation for `context` (0: none), which the host runs with that
+   context's host GL context. */
+static long glp_gl(unsigned int op, unsigned int context, const void *buffer, unsigned long length)
+{
+    return glp_call(GLP_SERVICE_GL, GLP_OP_WORD(op, context), buffer, length, 0);
+}
+
 static int glp_state = -1; /* -1 unknown, 0 unavailable, 1 available */
 
 static int glp_available(void)
@@ -57,7 +68,7 @@ static int glp_available(void)
     if (glp_state < 0) {
         long version = 0, hello = -1;
         if (glp_call(GLP_SERVICE_PING, 0, 0, 0, &version) == (long)GLP_PING_MAGIC) {
-            hello = glp_call(GLP_SERVICE_GL, GLP_OP_HELLO, 0, GLP_FN_TABLE_ID, 0);
+            hello = glp_gl(GLP_OP_HELLO, 0, 0, GLP_FN_TABLE_ID);
         }
         glp_state = hello == (long)GLP_VERSION;
         if (hello == GLP_ERR_TABLE) {
@@ -150,7 +161,17 @@ struct glp_array {
 
 struct glp_pixelstore {
     int swap, lsbfirst, rowlength, skiprows, skippixels, alignment;
+    int imageheight, skipimages; /* 3D images (GL 1.2, EXT_texture3D) */
 };
+
+/* GL 1.2 / EXT_texture3D pixel store and texture names, by value: the IRIX
+   headers name them with an _EXT suffix. */
+#define GLP_PACK_SKIP_IMAGES 0x806B
+#define GLP_PACK_IMAGE_HEIGHT 0x806C
+#define GLP_UNPACK_SKIP_IMAGES 0x806D
+#define GLP_UNPACK_IMAGE_HEIGHT 0x806E
+#define GLP_TEXTURE_3D 0x806F
+#define GLP_TEXTURE_DEPTH 0x8071
 
 struct glp_client {
     struct glp_array arrays[ARR_COUNT];
@@ -158,6 +179,68 @@ struct glp_client {
 };
 
 #define CLIENT_STACK 16
+
+/* Colour index write state (see "Colour index writes"). */
+struct glp_index_state {
+    unsigned int mask;  /* glIndexMask */
+    int logic;          /* GL_INDEX_LOGIC_OP enabled */
+    GLenum op;          /* glLogicOp */
+    unsigned int index; /* glIndex */
+    unsigned int clear; /* glClearIndex */
+};
+
+/* What the host buffer was last set to for it. */
+struct glp_index_host {
+    int known;             /* 0 after a display list or attribute pop set it behind our back */
+    int logic;             /* GL_COLOR_LOGIC_OP */
+    GLenum op;
+    unsigned int channels; /* colour mask: bit 0 R ... bit 3 A */
+};
+
+/* Index state changes a display list makes when called. */
+struct glp_list_effect {
+    GLuint list;
+    unsigned int changed; /* INDEX_CHANGED_* */
+    struct glp_index_state state;
+};
+
+#define INDEX_STACK 16
+
+/* One pass of a masked index write: host logic op and the index value whose
+   encoding is the colour. */
+struct glp_index_pass {
+    GLenum op;
+    unsigned int value;
+};
+
+struct glp_index {
+    struct glp_index_state state;
+    struct glp_index_host host;
+    struct glp_index_pass passes[3]; /* for the current index; host set for passes[0] */
+    int npasses;
+    int group;                     /* a draw being recorded for the other passes */
+    int group_ok;
+    unsigned int group_start;      /* its first word in the thread's command buffer */
+    unsigned long group_flushes;
+    unsigned int group_index;
+    unsigned int ncolors;          /* colours set inside the recorded draw: patched per pass */
+    struct {
+        unsigned int at;           /* payload word, from group_start */
+        unsigned int index;
+    } colors[64];
+    struct {
+        GLbitfield bits;
+        struct glp_index_state state;
+        struct glp_index_host host;
+    } stack[INDEX_STACK];
+    int depth;
+    int in_begin;                  /* between glBegin and glEnd: no state changes */
+    GLuint list;                   /* list being compiled; 0 none */
+    GLenum list_mode;
+    struct glp_list_effect compiling;
+    struct glp_list_effect *effects;
+    int neffects, capeffects;
+};
 
 struct __GLXcontextRec {
     unsigned int id;
@@ -181,10 +264,9 @@ struct __GLXcontextRec {
     int index_mode;                  /* colour index (else RGBA) */
     int pseudo;                      /* on a PseudoColor visual: the mode follows the window */
     int overlay;                     /* created for the overlay planes' visual */
+    struct glp_index ix;             /* colour index writes */
+    GLuint list_base;                /* glListBase */
 };
-
-static GLXContext current;
-static struct __GLXcontextRec no_context; /* client state when nothing is current */
 
 static void context_defaults(GLXContext c)
 {
@@ -201,61 +283,214 @@ static void context_defaults(GLXContext c)
     c->client.pack.alignment = 4;
     c->client.unpack.alignment = 4;
     c->render_mode = GL_RENDER;
+    c->ix.state.mask = 0xFFFFFFFFu;
+    c->ix.state.op = GL_COPY;
+    c->ix.state.index = 1;
     c->draw_buffer = GL_BACK; /* every visual is double-buffered */
     c->read_buffer = GL_BACK;
 }
 
+/* ---- Per-thread state ---------------------------------------------------------- */
+
+/* GLX makes a context current per thread, so the current context and the
+   command stream built for it belong to the calling thread. IRIX programs
+   run threads two ways:
+     * POSIX threads: one process; a pthread key holds each thread's state.
+     * sproc (Maya): one process per thread, sharing the address space; the
+       state is found by the thread's own pid, PRDA->t_sys.t_pid, which is
+       read from memory, not with a system call.
+   libpthread cannot be loaded into a sproc program, so this library does not
+   link it: its key functions are looked up at run time and used when the
+   program has them. */
+struct glp_thread {
+    pid_t pid;                         /* the process (sproc) it was made in */
+    GLXContext current;
+    struct __GLXcontextRec no_context; /* client state when nothing is current */
+    unsigned int *cmdbuf;              /* commands not submitted yet */
+    unsigned int cmdcap, cmdlen;
+    unsigned long submitted;           /* words sent for the current context (trace) */
+    unsigned long flushes;             /* submissions so far: a buffer range is intact while unchanged */
+    int begin_pending;                 /* a glBegin held back while only glArrayElement follows */
+    GLenum begin_mode;
+    unsigned int *begin_elements;
+    unsigned int begin_count, begin_capacity;
+};
+
+static pid_t thread_pid(void)
+{
+#ifdef __sgi
+    pid_t pid = PRDA->t_sys.t_pid;
+    if (pid) return pid;
+#endif
+    return getpid();
+}
+
+static struct {
+    int ready; /* 0 not looked up yet, 1 in use, -1 not available */
+    pthread_key_t key;
+    void *(*get)(pthread_key_t);
+    int (*set)(pthread_key_t, const void *);
+} keys;
+
+/* States found by pid: sprocs, and every thread when there are no keys. */
+#define THREADS_MAX 128
+static struct {
+    struct glp_thread *volatile state;
+    volatile pid_t pid; /* written after `state`: a match finds the state complete */
+} threads[THREADS_MAX];
+static int next_thread_slot;
+
+#ifdef __sgi
+static abilock_t threads_lock; /* zero: UNLOCKED */
+#define THREADS_LOCK() spin_lock(&threads_lock)
+#define THREADS_UNLOCK() release_lock(&threads_lock)
+#else
+#define THREADS_LOCK() ((void)0)
+#define THREADS_UNLOCK() ((void)0)
+#endif
+
+static void thread_free(void *state)
+{
+    struct glp_thread *t = (struct glp_thread *)state;
+    if (!t) return;
+    free(t->cmdbuf);
+    free(t->begin_elements);
+    free(t);
+}
+
+static void keys_lookup(void)
+{
+    void *program;
+    int (*create)(pthread_key_t *, void (*)(void *));
+    THREADS_LOCK();
+    if (!keys.ready) {
+        keys.ready = -1;
+        program = dlopen(0, RTLD_LAZY);
+        if (program) {
+            create = (int (*)(pthread_key_t *, void (*)(void *)))dlsym(program, "pthread_key_create");
+            keys.get = (void *(*)(pthread_key_t))dlsym(program, "pthread_getspecific");
+            keys.set = (int (*)(pthread_key_t, const void *))dlsym(program, "pthread_setspecific");
+            if (create && keys.get && keys.set && create(&keys.key, thread_free) == 0) keys.ready = 1;
+        }
+    }
+    THREADS_UNLOCK();
+}
+
+/* A new state for the calling thread: under its pthread key when `keyed`,
+   else in the pid table (reusing the slot of a process that has exited). */
+static struct glp_thread *thread_attach(pid_t pid, int keyed)
+{
+    struct glp_thread *t = (struct glp_thread *)calloc(1, sizeof *t);
+    struct glp_thread *dead = 0;
+    int i, slot = -1;
+    if (!t) {
+        fprintf(stderr, "glpass: out of memory for a thread's state\n");
+        abort();
+    }
+    t->pid = pid;
+    context_defaults(&t->no_context);
+    THREADS_LOCK();
+    if (keyed && keys.set(keys.key, t) == 0 && keys.get(keys.key) == t) {
+        THREADS_UNLOCK();
+        return t;
+    }
+    if (keyed) keys.ready = -1; /* functions that do not keep values (stubs): pids only */
+    for (i = 0; i < THREADS_MAX && slot < 0; ++i) {
+        if (!threads[i].pid || (kill(threads[i].pid, 0) < 0 && errno == ESRCH)) slot = i;
+    }
+    if (slot < 0) {
+        slot = next_thread_slot; /* full of live threads: take the oldest slot */
+        next_thread_slot = (next_thread_slot + 1) % THREADS_MAX;
+        fprintf(stderr, "glpass: more than %d GL threads; thread %ld loses its state\n", THREADS_MAX,
+                (long)threads[slot].pid);
+    } else if (threads[slot].pid) {
+        dead = threads[slot].state;
+    }
+    threads[slot].pid = 0;
+    threads[slot].state = t;
+    threads[slot].pid = pid;
+    THREADS_UNLOCK();
+    thread_free(dead);
+    return t;
+}
+
+struct glp_thread *glp_self(void)
+{
+    const pid_t pid = thread_pid();
+    struct glp_thread *t;
+    int i;
+    if (!keys.ready) keys_lookup();
+    if (keys.ready > 0) {
+        t = (struct glp_thread *)keys.get(keys.key);
+        if (t && t->pid == pid) return t;          /* a POSIX thread, or the program itself */
+        if (!t) return thread_attach(pid, 1);      /* a POSIX thread's first GL call */
+        /* else a sproc, which shares its parent's key values: by pid */
+    }
+    for (i = 0; i < THREADS_MAX; ++i) {
+        if (threads[i].pid == pid) return threads[i].state;
+    }
+    return thread_attach(pid, 0);
+}
+
+/* The calling thread's current context; 0 if none. */
+static GLXContext current_context(void) { return glp_self()->current; }
+
+unsigned int glp_current_id(void)
+{
+    GLXContext c = current_context();
+    return c ? c->id : 0;
+}
+
 static GLXContext ctx(void)
 {
-    if (current) return current;
-    if (!no_context.render_mode) context_defaults(&no_context);
-    return &no_context;
+    struct glp_thread *t = glp_self();
+    return t->current ? t->current : &t->no_context;
 }
 
 /* ---- Command buffer ----------------------------------------------------------- */
 
-static unsigned int *cmdbuf;
-static unsigned int cmdcap, cmdlen;
-
-static unsigned long submitted; /* words sent for the current context (trace) */
-
-static void glp_flush(void)
+static void thread_flush(struct glp_thread *t)
 {
-    if (cmdlen > 0 && current) submitted += cmdlen;
-    if (cmdlen > 0 && current) glp_call(GLP_SERVICE_GL, GLP_OP_SUBMIT, cmdbuf, (unsigned long)cmdlen * 4, 0);
-    cmdlen = 0;
+    if (t->cmdlen > 0) ++t->flushes;
+    if (t->cmdlen > 0 && t->current) {
+        t->submitted += t->cmdlen;
+        glp_gl(GLP_OP_SUBMIT, t->current->id, t->cmdbuf, (unsigned long)t->cmdlen * 4);
+    }
+    t->cmdlen = 0;
 }
 
-static void begin_materialize(void);
-static int begin_pending; /* a glBegin held back while only glArrayElement follows */
+static void glp_flush(void) { thread_flush(glp_self()); }
+
+static void begin_materialize(struct glp_thread *t);
 
 unsigned int *glp_put(unsigned int cmd, unsigned int words)
 {
+    struct glp_thread *t = glp_self();
     unsigned int header = words < GLP_LONG_RECORD ? 1 : 2;
     unsigned int *p;
-    if (begin_pending) begin_materialize(); /* another command inside glBegin/glEnd */
-    if (cmdlen + header + words > cmdcap) {
-        glp_flush();
-        if (header + words > cmdcap) {
-            unsigned int cap = cmdcap ? cmdcap : 16384;
+    if (t->begin_pending) begin_materialize(t); /* another command inside glBegin/glEnd */
+    if (t->cmdlen + header + words > t->cmdcap) {
+        thread_flush(t);
+        if (header + words > t->cmdcap) {
+            unsigned int cap = t->cmdcap ? t->cmdcap : 16384;
             while (cap < header + words) cap *= 2;
-            free(cmdbuf);
-            cmdbuf = (unsigned int *)malloc((size_t)cap * 4);
-            if (!cmdbuf) {
+            free(t->cmdbuf);
+            t->cmdbuf = (unsigned int *)malloc((size_t)cap * 4);
+            if (!t->cmdbuf) {
                 fprintf(stderr, "glpass: out of memory for a %u-word command\n", words);
                 abort();
             }
-            cmdcap = cap;
+            t->cmdcap = cap;
         }
     }
-    p = &cmdbuf[cmdlen];
+    p = &t->cmdbuf[t->cmdlen];
     if (header == 1) {
         p[0] = (cmd << 16) | words;
     } else {
         p[0] = (cmd << 16) | GLP_LONG_RECORD;
         p[1] = words;
     }
-    cmdlen += header + words;
+    t->cmdlen += header + words;
     return p + header;
 }
 
@@ -280,10 +515,11 @@ static long glp_query(unsigned int fn, void *reply, unsigned int bytes, const un
     unsigned int local[32];
     unsigned int *req;
     long result;
-    if (!current) return 0;
+    struct glp_thread *t = glp_self();
+    if (!t->current) return 0;
     req = nargs + 3 <= 32 ? local : (unsigned int *)malloc((nargs + 3) * 4);
     if (!req) return 0;
-    glp_flush();
+    thread_flush(t);
     if (reply && bytes) {
         /* Fault the pages in first so the host finds them mapped and writable. */
         volatile char *c = (volatile char *)reply;
@@ -295,7 +531,7 @@ static long glp_query(unsigned int fn, void *reply, unsigned int bytes, const un
     req[1] = (unsigned int)(unsigned long)reply;
     req[2] = reply ? bytes : 0;
     if (nargs) memcpy(req + 3, args, nargs * 4);
-    result = glp_call(GLP_SERVICE_GL, GLP_OP_QUERY, req, (nargs + 3) * 4, 0);
+    result = glp_gl(GLP_OP_QUERY, t->current->id, req, (nargs + 3) * 4);
     if (req != local) free(req);
     return result;
 }
@@ -411,6 +647,23 @@ static unsigned int image_bytes(const struct glp_pixelstore *ps, GLsizei width, 
            (unsigned int)(height - 1) * stride + (unsigned int)width * group;
 }
 
+/* The same for width x height x depth: depth images, each image_height rows
+   apart (the image height, or the height when 0), after skip_images. */
+static unsigned int image_bytes_3d(const struct glp_pixelstore *ps, GLsizei width, GLsizei height, GLsizei depth,
+                                   GLenum format, GLenum type)
+{
+    struct glp_pixelstore plain = *ps;
+    unsigned int rows, stride;
+    if (depth <= 0 || width <= 0 || height <= 0) return 0;
+    rows = (unsigned int)(ps->imageheight > 0 ? ps->imageheight : height);
+    plain.skiprows = 0;
+    plain.skippixels = 0;
+    /* One row's stride, alignment included: two rows minus one. */
+    stride = image_bytes(&plain, width, 2, format, type) - image_bytes(&plain, width, 1, format, type);
+    return ((unsigned int)ps->skipimages + (unsigned int)depth - 1) * rows * stride +
+           image_bytes(ps, width, height, format, type);
+}
+
 /* Appends a pixel transfer: the argument words, a has-data flag, the byte
    count and the bytes the host will read from the base pointer. */
 static void put_image(unsigned int fn, const unsigned int *args, unsigned int nargs, const void *pixels,
@@ -446,6 +699,10 @@ void glPixelStorei(GLenum pname, GLint param)
     case GL_UNPACK_SKIP_ROWS: c->unpack.skiprows = param; break;
     case GL_UNPACK_SKIP_PIXELS: c->unpack.skippixels = param; break;
     case GL_UNPACK_ALIGNMENT: c->unpack.alignment = param; break;
+    case GLP_PACK_SKIP_IMAGES: c->pack.skipimages = param; break;
+    case GLP_PACK_IMAGE_HEIGHT: c->pack.imageheight = param; break;
+    case GLP_UNPACK_SKIP_IMAGES: c->unpack.skipimages = param; break;
+    case GLP_UNPACK_IMAGE_HEIGHT: c->unpack.imageheight = param; break;
     default: break;
     }
     p = glp_put(GLP_FN_glPixelStorei, 2);
@@ -473,6 +730,44 @@ void glTexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei widt
     a[0] = target; a[1] = (unsigned int)level; a[2] = (unsigned int)internalformat; a[3] = (unsigned int)width;
     a[4] = (unsigned int)height; a[5] = (unsigned int)border; a[6] = format; a[7] = type;
     put_image(GLP_FN_glTexImage2D, a, 8, pixels, image_bytes(&ctx()->client.unpack, width, height, format, type));
+}
+
+/* 3D textures (GL 1.2 / EXT_texture3D): the host's core glTexImage3D. The
+   signatures are the IRIX headers' (internalformat a GLenum). */
+void glTexImage3D(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth,
+                  GLint border, GLenum format, GLenum type, const GLvoid *pixels)
+{
+    unsigned int a[9];
+    TRACE(glTexImage3D);
+    a[0] = target; a[1] = (unsigned int)level; a[2] = (unsigned int)internalformat; a[3] = (unsigned int)width;
+    a[4] = (unsigned int)height; a[5] = (unsigned int)depth; a[6] = (unsigned int)border; a[7] = format;
+    a[8] = type;
+    put_image(GLP_FN_glTexImage3D, a, 9, pixels,
+              image_bytes_3d(&ctx()->client.unpack, width, height, depth, format, type));
+}
+
+void glTexImage3DEXT(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height,
+                     GLsizei depth, GLint border, GLenum format, GLenum type, const GLvoid *pixels)
+{
+    glTexImage3D(target, level, internalformat, width, height, depth, border, format, type, pixels);
+}
+
+void glTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width,
+                     GLsizei height, GLsizei depth, GLenum format, GLenum type, const GLvoid *pixels)
+{
+    unsigned int a[10];
+    TRACE(glTexSubImage3D);
+    a[0] = target; a[1] = (unsigned int)level; a[2] = (unsigned int)xoffset; a[3] = (unsigned int)yoffset;
+    a[4] = (unsigned int)zoffset; a[5] = (unsigned int)width; a[6] = (unsigned int)height;
+    a[7] = (unsigned int)depth; a[8] = format; a[9] = type;
+    put_image(GLP_FN_glTexSubImage3D, a, 10, pixels,
+              image_bytes_3d(&ctx()->client.unpack, width, height, depth, format, type));
+}
+
+void glTexSubImage3DEXT(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width,
+                        GLsizei height, GLsizei depth, GLenum format, GLenum type, const GLvoid *pixels)
+{
+    glTexSubImage3D(target, level, xoffset, yoffset, zoffset, width, height, depth, format, type, pixels);
 }
 
 void glTexSubImage1D(GLenum target, GLint level, GLint xoffset, GLsizei width, GLenum format, GLenum type,
@@ -535,13 +830,28 @@ void glPolygonStipple(const GLubyte *mask)
 
 /* ---- Lists, textures, evaluators ------------------------------------------------- */
 
+void glListBase(GLuint base)
+{
+    TRACE(glListBase);
+    glp_put(GLP_FN_glListBase, 1)[0] = base;
+    ctx()->list_base = base;
+}
+
+static void index_before_lists(GLXContext c);
+static void index_after_lists(GLXContext c, const GLuint *ids, GLsizei n);
+static void index_update(GLXContext c);
+static int passes_begin(GLXContext c);
+static void passes_end(GLXContext c);
+
 void glCallLists(GLsizei n, GLenum type, const GLvoid *lists)
 {
     const unsigned char *b = (const unsigned char *)lists;
+    GLXContext c = current_context();
     unsigned int *p;
     GLsizei i;
     TRACE(glCallLists);
     if (n <= 0 || !lists) return;
+    if (c && c->index_mode) index_before_lists(c);
     /* Sent as ints, so the host needs no byte order handling. */
     p = glp_put(GLP_FN_glCallLists, 1 + (unsigned int)n);
     p[0] = (unsigned int)n;
@@ -560,6 +870,13 @@ void glCallLists(GLsizei n, GLenum type, const GLvoid *lists)
         default: v = 0; break;
         }
         p[1 + i] = (unsigned int)v;
+    }
+    if (c && c->index_mode && !c->ix.list) {
+        for (i = 0; i < n; ++i) {
+            GLuint id = c->list_base + p[1 + i];
+            index_after_lists(c, &id, 1);
+        }
+        index_update(c);
     }
 }
 
@@ -801,8 +1118,8 @@ static int array_elem_bytes(const struct glp_array *a)
        5 edge flag), size, type, bytes, then elements first..first+count-1
        packed (big-endian, as in guest memory),
      GLP_DRAW_ELEMENTS: nindices, then indices relative to `first`. */
-static void client_draw(unsigned int kind, GLenum mode, GLint first, GLsizei count, const unsigned int *indices,
-                        GLsizei nindices)
+static void client_draw_once(unsigned int kind, GLenum mode, GLint first, GLsizei count,
+                             const unsigned int *indices, GLsizei nindices)
 {
     struct glp_array *arr = ctx()->client.arrays;
     unsigned int words = 4, *p, at;
@@ -848,6 +1165,16 @@ static void client_draw(unsigned int kind, GLenum mode, GLint first, GLsizei cou
     }
 }
 
+/* A vertex array draw, sent once per colour index pass (see index_passes). */
+static void client_draw(unsigned int kind, GLenum mode, GLint first, GLsizei count, const unsigned int *indices,
+                        GLsizei nindices)
+{
+    GLXContext c = ctx();
+    const int recorded = kind != GLP_DRAW_ELEMENT && passes_begin(c);
+    client_draw_once(kind, mode, first, count, indices, nindices);
+    if (recorded) passes_end(c);
+}
+
 void glDrawArrays(GLenum mode, GLint first, GLsizei count)
 {
     TRACE(glDrawArrays);
@@ -859,78 +1186,87 @@ void glDrawArraysEXT(GLenum mode, GLint first, GLsizei count) { glDrawArrays(mod
 /* glBegin ... glArrayElement* ... glEnd (Quake III draws so) becomes one
    indexed draw: the glBegin is held back and the elements collected; any
    other command in between sends the glBegin and the elements as they were. */
-static GLenum begin_mode;
-static unsigned int *begin_elements;
-static unsigned int begin_count, begin_capacity;
-
-static void begin_materialize(void)
+static void begin_materialize(struct glp_thread *t)
 {
-    unsigned int i, count = begin_count;
-    begin_pending = 0;
-    glp_put(GLP_FN_glBegin, 1)[0] = begin_mode;
-    begin_count = 0;
-    for (i = 0; i < count; ++i) client_draw(GLP_DRAW_ELEMENT, 0, (GLint)begin_elements[i], 1, 0, 0);
+    unsigned int i, count = t->begin_count;
+    t->begin_pending = 0;
+    glp_put(GLP_FN_glBegin, 1)[0] = t->begin_mode;
+    t->begin_count = 0;
+    for (i = 0; i < count; ++i) client_draw(GLP_DRAW_ELEMENT, 0, (GLint)t->begin_elements[i], 1, 0, 0);
 }
 
 void glBegin(GLenum mode)
 {
+    struct glp_thread *t = glp_self();
+    GLXContext c = ctx();
     TRACE(glBegin);
-    if (begin_pending) begin_materialize();
-    begin_mode = mode;
-    begin_count = 0;
-    begin_pending = 1;
+    if (t->begin_pending) begin_materialize(t);
+    c->ix.in_begin = 1; /* the index state's host setting cannot change until glEnd */
+    passes_begin(c);    /* the block is sent again for further colour index passes */
+    t->begin_mode = mode;
+    t->begin_count = 0;
+    t->begin_pending = 1;
+}
+
+static void end_block(void)
+{
+    struct glp_thread *t = glp_self();
+    struct glp_array *arr = ctx()->client.arrays;
+    unsigned int i, lo = 0xFFFFFFFFu, hi = 0;
+    if (!t->begin_pending) {
+        glp_put(GLP_FN_glEnd, 0);
+        return;
+    }
+    if (t->begin_count == 0) { /* glBegin; glEnd: nothing drawn */
+        t->begin_pending = 0;
+        return;
+    }
+    if (!arr[ARR_VERTEX].enabled || !arr[ARR_VERTEX].pointer) {
+        begin_materialize(t);
+        glp_put(GLP_FN_glEnd, 0);
+        return;
+    }
+    t->begin_pending = 0;
+    for (i = 0; i < t->begin_count; ++i) {
+        if (t->begin_elements[i] < lo) lo = t->begin_elements[i];
+        if (t->begin_elements[i] > hi) hi = t->begin_elements[i];
+    }
+    for (i = 0; i < t->begin_count; ++i) t->begin_elements[i] -= lo;
+    client_draw(GLP_DRAW_ELEMENTS, t->begin_mode, (GLint)lo, (GLsizei)(hi - lo + 1), t->begin_elements,
+                (GLsizei)t->begin_count);
+    t->begin_count = 0;
 }
 
 void glEnd(void)
 {
-    struct glp_array *arr = ctx()->client.arrays;
-    unsigned int i, lo = 0xFFFFFFFFu, hi = 0;
+    GLXContext c = ctx();
     TRACE(glEnd);
-    if (!begin_pending) {
-        glp_put(GLP_FN_glEnd, 0);
-        return;
-    }
-    if (begin_count == 0) { /* glBegin; glEnd: nothing drawn */
-        begin_pending = 0;
-        return;
-    }
-    if (!arr[ARR_VERTEX].enabled || !arr[ARR_VERTEX].pointer) {
-        begin_materialize();
-        glp_put(GLP_FN_glEnd, 0);
-        return;
-    }
-    begin_pending = 0;
-    for (i = 0; i < begin_count; ++i) {
-        if (begin_elements[i] < lo) lo = begin_elements[i];
-        if (begin_elements[i] > hi) hi = begin_elements[i];
-    }
-    for (i = 0; i < begin_count; ++i) begin_elements[i] -= lo;
-    client_draw(GLP_DRAW_ELEMENTS, begin_mode, (GLint)lo, (GLsizei)(hi - lo + 1), begin_elements,
-                (GLsizei)begin_count);
-    begin_count = 0;
+    c->ix.in_begin = 0;
+    end_block();
+    passes_end(c);
 }
 
 void glArrayElement(GLint i)
 {
+    struct glp_thread *t = glp_self();
     TRACE(glArrayElement);
-    if (begin_pending && i >= 0) {
-        if (begin_count == begin_capacity) {
-            unsigned int capacity = begin_capacity ? begin_capacity * 2 : 1024;
-            unsigned int *grown = (unsigned int *)realloc(begin_elements, capacity * sizeof *grown);
+    if (t->begin_pending && i >= 0) {
+        if (t->begin_count == t->begin_capacity) {
+            unsigned int capacity = t->begin_capacity ? t->begin_capacity * 2 : 1024;
+            unsigned int *grown = (unsigned int *)realloc(t->begin_elements, capacity * sizeof *grown);
             if (!grown) {
-                begin_materialize();
+                begin_materialize(t);
                 client_draw(GLP_DRAW_ELEMENT, 0, i, 1, 0, 0);
                 return;
             }
-            begin_elements = grown;
-            begin_capacity = capacity;
+            t->begin_elements = grown;
+            t->begin_capacity = capacity;
         }
-        begin_elements[begin_count++] = (unsigned int)i;
+        t->begin_elements[t->begin_count++] = (unsigned int)i;
         return;
     }
     client_draw(GLP_DRAW_ELEMENT, 0, i, 1, 0, 0);
 }
-
 void glArrayElementEXT(GLint i) { glArrayElement(i); }
 
 void glDrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indices)
@@ -1005,6 +1341,7 @@ static int draws_front(GLenum mode)
 
 void glDrawBuffer(GLenum mode)
 {
+    GLXContext current = current_context();
     TRACE(glDrawBuffer);
     if (current) glx_log("glDrawBuffer(%#x) context %u", mode, current->id);
     ctx()->draw_buffer = mode;
@@ -1013,6 +1350,7 @@ void glDrawBuffer(GLenum mode)
 
 void glReadBuffer(GLenum mode)
 {
+    GLXContext current = current_context();
     TRACE(glReadBuffer);
     if (current) glx_log("glReadBuffer(%#x) context %u", mode, current->id);
     ctx()->read_buffer = mode;
@@ -1087,6 +1425,10 @@ static int client_get(GLenum pname, double *v)
     case GL_UNPACK_SKIP_ROWS: *v = cl->unpack.skiprows; return 1;
     case GL_UNPACK_SKIP_PIXELS: *v = cl->unpack.skippixels; return 1;
     case GL_UNPACK_ALIGNMENT: *v = cl->unpack.alignment; return 1;
+    case GLP_PACK_SKIP_IMAGES: *v = cl->pack.skipimages; return 1;
+    case GLP_PACK_IMAGE_HEIGHT: *v = cl->pack.imageheight; return 1;
+    case GLP_UNPACK_SKIP_IMAGES: *v = cl->unpack.skipimages; return 1;
+    case GLP_UNPACK_IMAGE_HEIGHT: *v = cl->unpack.imageheight; return 1;
     case GL_DRAW_BUFFER: *v = c->draw_buffer; return 1;
     case GL_READ_BUFFER: *v = c->read_buffer; return 1;
     case GL_RENDER_MODE: *v = c->render_mode; return 1;
@@ -1095,6 +1437,12 @@ static int client_get(GLenum pname, double *v)
     case GL_RGBA_MODE: *v = !c->index_mode; return 1;
     case GL_STEREO: *v = 0; return 1;
     case GL_CLIENT_ATTRIB_STACK_DEPTH: *v = c->client_depth; return 1;
+    /* Colour index state: the host holds its translation. */
+    case GL_INDEX_WRITEMASK: if (!c->index_mode) return 0; *v = (GLint)c->ix.state.mask; return 1;
+    case GL_INDEX_LOGIC_OP: if (!c->index_mode) return 0; *v = c->ix.state.logic; return 1;
+    case GL_LOGIC_OP_MODE: if (!c->index_mode) return 0; *v = c->ix.state.op; return 1;
+    case GL_CURRENT_INDEX: if (!c->index_mode) return 0; *v = c->ix.state.index; return 1;
+    case GL_INDEX_CLEAR_VALUE: if (!c->index_mode) return 0; *v = c->ix.state.clear; return 1;
     case GL_MAX_CLIENT_ATTRIB_STACK_DEPTH: *v = CLIENT_STACK; return 1;
     case GL_SELECTION_BUFFER_SIZE: *v = c->select_size; return 1;
     case GL_FEEDBACK_BUFFER_SIZE: *v = c->feedback_size; return 1;
@@ -1167,6 +1515,7 @@ GLboolean glIsEnabled(GLenum cap)
     int i = array_index(cap);
     TRACE(glIsEnabled);
     if (i >= 0) return (GLboolean)ctx()->client.arrays[i].enabled;
+    if (cap == GL_INDEX_LOGIC_OP && ctx()->index_mode) return (GLboolean)(ctx()->ix.state.logic != 0);
     return (GLboolean)glp_query(GLP_FN_glIsEnabled, 0, 0, &arg, 1);
 }
 
@@ -1242,12 +1591,14 @@ void glReadPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format
 
 void glGetTexImage(GLenum target, GLint level, GLenum format, GLenum type, GLvoid *pixels)
 {
-    GLint width = 0, height = 1;
+    GLint width = 0, height = 1, depth = 1;
     unsigned int a[4], bytes;
     TRACE(glGetTexImage);
     glGetTexLevelParameteriv(target, level, GL_TEXTURE_WIDTH, &width);
     if (target != GL_TEXTURE_1D) glGetTexLevelParameteriv(target, level, GL_TEXTURE_HEIGHT, &height);
-    bytes = image_bytes(&ctx()->client.pack, width, height, format, type);
+    if (target == GLP_TEXTURE_3D) glGetTexLevelParameteriv(target, level, GLP_TEXTURE_DEPTH, &depth);
+    bytes = target == GLP_TEXTURE_3D ? image_bytes_3d(&ctx()->client.pack, width, height, depth, format, type)
+                                     : image_bytes(&ctx()->client.pack, width, height, format, type);
     if (!pixels || !bytes) return;
     a[0] = target; a[1] = (unsigned int)level; a[2] = format; a[3] = type;
     glp_query(GLP_FN_glGetTexImage, pixels, bytes, a, 4);
@@ -1330,7 +1681,7 @@ static const char *const host_extensions[] = {
 static const char core_extensions[] =
     "GL_EXT_polygon_offset GL_EXT_texture GL_EXT_texture_object GL_EXT_vertex_array GL_EXT_subtexture "
     "GL_EXT_copy_texture GL_EXT_texture_edge_clamp GL_SGIS_texture_edge_clamp GL_SGIS_texture_lod "
-    "GL_EXT_draw_range_elements";
+    "GL_EXT_draw_range_elements GL_EXT_texture3D";
 
 static int has_word(const char *list, const char *word)
 {
@@ -1345,6 +1696,7 @@ static int has_word(const char *list, const char *word)
 
 const GLubyte *glGetString(GLenum name)
 {
+    GLXContext current = current_context();
     static char renderer[256], host_list[8192], extensions[2048];
     TRACE(glGetString);
     switch (name) {
@@ -1353,6 +1705,7 @@ const GLubyte *glGetString(GLenum name)
     case GL_VERSION:
         return (const GLubyte *)"1.1 glpass";
     case GL_RENDERER:
+        glp_lock();
         if (!renderer[0] && current) {
             char host[200];
             unsigned int arg = GL_RENDERER;
@@ -1360,8 +1713,10 @@ const GLubyte *glGetString(GLenum name)
             glp_query(GLP_FN_glGetString, host, sizeof host - 1, &arg, 1);
             snprintf(renderer, sizeof renderer, "glpass (%s)", host);
         }
+        glp_unlock();
         return (const GLubyte *)(renderer[0] ? renderer : "glpass");
     case GL_EXTENSIONS:
+        glp_lock();
         if (!extensions[0] && current) {
             unsigned int arg = GL_EXTENSIONS;
             int i;
@@ -1374,6 +1729,7 @@ const GLubyte *glGetString(GLenum name)
                 strcat(extensions, host_extensions[i]);
             }
         }
+        glp_unlock();
         return (const GLubyte *)(extensions[0] ? extensions : core_extensions);
     default:
         return 0;
@@ -1387,38 +1743,36 @@ static struct glp_drawable *find_drawable(XID id);
 /* Everything this library asks the X server for itself (window positions,
    the key fill, colormaps) goes through a connection of its own: the
    program's connection may be in use by another of its threads (Maya's
-   sprocs), and Xlib connections are not thread-safe. A lock, which the
-   owning process may take again, keeps this connection to one thread. */
+   sprocs), and Xlib connections are not thread-safe. The library lock keeps
+   this connection, and the tables all threads share (drawables, window
+   positions and modes, palettes sent, visuals handed out), to one thread at
+   a time; the thread holding it may take it again. */
 #ifdef __sgi
-static abilock_t xlock;
-static int xlock_ready;
+static abilock_t glp_mutex; /* zero: UNLOCKED */
 #endif
-static pid_t xlock_owner;
-static int xlock_depth;
+static struct glp_thread *volatile glp_owner;
+static int glp_depth;
 
-static void xlock_acquire(void)
+void glp_lock(void)
 {
-#ifdef __sgi
-    if (!xlock_ready) {
-        init_lock(&xlock);
-        xlock_ready = 1;
-    }
-    if (xlock_owner == getpid()) {
-        ++xlock_depth;
+    struct glp_thread *self = glp_self();
+    if (glp_owner == self) {
+        ++glp_depth;
         return;
     }
-    spin_lock(&xlock);
+#ifdef __sgi
+    spin_lock(&glp_mutex);
 #endif
-    xlock_owner = getpid();
-    xlock_depth = 1;
+    glp_owner = self;
+    glp_depth = 1;
 }
 
-static void xlock_release(void)
+void glp_unlock(void)
 {
-    if (--xlock_depth > 0) return;
-    xlock_owner = 0;
+    if (--glp_depth > 0) return;
+    glp_owner = 0;
 #ifdef __sgi
-    release_lock(&xlock);
+    release_lock(&glp_mutex);
 #endif
 }
 
@@ -1499,7 +1853,7 @@ static struct {
 static int next_palette_slot;
 
 /* Sends the current drawable's palette to the host if it changed. */
-static void load_palette(Display *dpy, GLXContext c, GLXDrawable drawable)
+static void load_palette_locked(Display *dpy, GLXContext c, GLXDrawable drawable)
 {
     static unsigned int palette[PALETTE_SIZE];
     XWindowAttributes wa;
@@ -1518,15 +1872,15 @@ static void load_palette(Display *dpy, GLXContext c, GLXDrawable drawable)
         /* First time for this window: ask the server for its colormap. Later
            updates come from the noted stores alone, with no request: the
            program may hold a server grab then (see present). */
-        xlock_acquire();
+        glp_lock();
         if (!XGetWindowAttributes(dpy, drawable, &wa) || wa.colormap == None) {
-            xlock_release();
+            glp_unlock();
             return;
         }
         n = wa.visual && wa.visual->map_entries > 0 && wa.visual->map_entries <= 256 ? wa.visual->map_entries : 256;
         for (i = 0; i < n; ++i) colors[i].pixel = (unsigned long)i;
         XQueryColors(dpy, wa.colormap, colors, n);
-        xlock_release();
+        glp_unlock();
         slot = next_palette_slot;
         next_palette_slot = (next_palette_slot + 1) % PALETTES_KNOWN;
         sent_palettes[slot].drawable = drawable;
@@ -1576,15 +1930,326 @@ static void load_palette(Display *dpy, GLXContext c, GLXDrawable drawable)
     }
 }
 
+static void load_palette(Display *dpy, GLXContext c, GLXDrawable drawable)
+{
+    glp_lock();
+    load_palette_locked(dpy, c, drawable);
+    glp_unlock();
+}
+
+/* ---- Colour index writes ------------------------------------------------------------- */
+
+/* The host buffer stores index bits in channels (GLP_INDEX_R/G/B/A): bits 0-7
+   in red, 8-9 in green, 10 in blue, 11 in alpha. A colour mask can only keep
+   or write whole channels, so an index write mask is exact through it only
+   when it is a union of these groups. Other masks (Maya uses 0x83e and 0xfc0)
+   are made exact with the logic op instead. Per bit, the masked write
+   dst' = mask ? f(src, dst) : dst, with f the index logic op (copy when off)
+   and src the current index, is one of four functions of dst: 0, 1, dst or
+   ~dst. The bits to clear, to set and to invert are disjoint, so one host
+   pass for each kind present gives the exact result in any order:
+     clear -> AND with the other bits    set -> OR with them    invert -> XOR with them
+   One pass is the common case (a logic op such as XOR, or a copy of an index
+   whose masked bits are all 0 or all 1); a copy of an index with masked bits
+   both 0 and 1 takes two. Draws are then sent once per pass: glBegin/glEnd
+   blocks, vertex array draws and clears. What cannot be repeated (display
+   lists, an index changed inside glBegin/glEnd, a block too large for the
+   command buffer) gets the first pass only, logged once per mask. */
+static const unsigned int index_groups[4] = {0x0FFu, 0x300u, 0x400u, 0x800u};
+#define INDEX_BITS (PALETTE_SIZE - 1u)
+
+enum {
+    INDEX_CHANGED_MASK = 1, INDEX_CHANGED_LOGIC = 2, INDEX_CHANGED_OP = 4,
+    INDEX_CHANGED_INDEX = 8, INDEX_CHANGED_CLEAR = 16
+};
+
+/* The channels a mask touches; *exact when it covers them entirely. */
+static unsigned int index_channels(unsigned int mask, int *exact)
+{
+    unsigned int channels = 0;
+    int k;
+    *exact = 1;
+    mask &= INDEX_BITS;
+    for (k = 0; k < 4; ++k) {
+        if (mask & index_groups[k]) {
+            channels |= 1u << k;
+            if ((mask & index_groups[k]) != index_groups[k]) *exact = 0;
+        }
+    }
+    return channels;
+}
+
+/* GL logic op result for one source and destination bit: the low four bits
+   of the GL_CLEAR..GL_SET codes are the X11 truth table. */
+static int logic_bit(GLenum op, int s, int d)
+{
+    return (int)(((op & 0xFu) >> ((1 - s) * 2 + (1 - d))) & 1u);
+}
+
+/* The passes writing index `src` under `st`, and the host setting for the
+   first: logic op on/off and op, colour mask. Returns the number of passes. */
+static int index_passes(const struct glp_index_state *st, unsigned int src, struct glp_index_host *host,
+                        struct glp_index_pass pass[3])
+{
+    const unsigned int mask = st->mask & INDEX_BITS;
+    const GLenum op = st->logic ? st->op : GL_COPY;
+    unsigned int zero = 0, one = 0, invert = 0, b;
+    int exact, n = 0;
+    host->known = 1;
+    host->channels = index_channels(mask, &exact);
+    if (exact) { /* whole channels: the colour mask does it */
+        host->logic = st->logic;
+        host->op = st->op;
+        pass[0].op = st->op;
+        pass[0].value = src;
+        return 1;
+    }
+    for (b = 0; b < 12; ++b) {
+        const unsigned int bit = 1u << b;
+        int r0, r1;
+        if (!(mask & bit)) continue;
+        r0 = logic_bit(op, (src & bit) != 0, 0);
+        r1 = logic_bit(op, (src & bit) != 0, 1);
+        if (r0 == 0 && r1 == 0) zero |= bit;
+        else if (r0 == 1 && r1 == 1) one |= bit;
+        else if (r0 == 1 && r1 == 0) invert |= bit;
+    }
+    if (zero) { pass[n].op = GL_AND; pass[n].value = INDEX_BITS & ~zero; ++n; }
+    if (one) { pass[n].op = GL_OR; pass[n].value = one; ++n; }
+    if (invert) { pass[n].op = GL_XOR; pass[n].value = invert; ++n; }
+    if (n == 0) { pass[n].op = GL_NOOP; pass[n].value = 0; ++n; }
+    host->channels = 0xFu;
+    host->logic = 1;
+    host->op = pass[0].op;
+    return n;
+}
+
+static void index_log_approximate(const struct glp_index_state *st, const char *why)
+{
+    static unsigned int logged[8];
+    static int nlogged;
+    const unsigned int key = (st->mask & INDEX_BITS) | (st->logic ? st->op << 12 : 0);
+    int i;
+    for (i = 0; i < nlogged; ++i) {
+        if (logged[i] == key) return;
+    }
+    if (nlogged == 8) return;
+    logged[nlogged++] = key;
+    glx_log("index mask %#x, %s: first pass only (%s)", st->mask & INDEX_BITS, st->logic ? "logic op" : "copy", why);
+}
+
+static void put_word(unsigned int fn, unsigned int word) { glp_put(fn, 1)[0] = word; }
+
+static void put_channels(unsigned int channels)
+{
+    unsigned int *p = glp_put(GLP_FN_glColorMask, 4);
+    int k;
+    for (k = 0; k < 4; ++k) p[k] = (channels >> k) & 1u;
+}
+
+static void encode_index(unsigned int *p, unsigned int i)
+{
+    p[0] = GLP_INDEX_R(i); p[1] = GLP_INDEX_G(i); p[2] = GLP_INDEX_B(i); p[3] = GLP_INDEX_A(i);
+}
+
+/* Returns the payload's place in the calling thread's command buffer. */
+static unsigned int *put_index_color(unsigned int i)
+{
+    unsigned int *p = glp_put(GLP_FN_glColor4ub, 4);
+    encode_index(p, i);
+    return p;
+}
+
+/* Sends the host the parts of `want` it does not have. */
+static void index_apply(struct glp_index *ix, const struct glp_index_host *want)
+{
+    struct glp_index_host *h = &ix->host;
+    if (!h->known || h->logic != want->logic) {
+        put_word(want->logic ? GLP_FN_glEnable : GLP_FN_glDisable, GL_COLOR_LOGIC_OP);
+    }
+    if (!h->known || h->op != want->op) put_word(GLP_FN_glLogicOp, want->op);
+    if (!h->known || h->channels != want->channels) put_channels(want->channels);
+    *h = *want;
+}
+
+/* Brings the host in line with the context's index state, and sets the
+   colour for the current index (its first pass). Inside glBegin/glEnd the
+   host state cannot change: the colour is exact only if the state fits. */
+static void index_update(GLXContext c)
+{
+    struct glp_index *ix = &c->ix;
+    struct glp_index_host want;
+    struct glp_index_pass pass[3];
+    const unsigned int src = ix->state.index % PALETTE_SIZE;
+    int n = index_passes(&ix->state, src, &want, pass);
+    if (ix->in_begin) {
+        if (ix->group && ix->group_ok) {
+            /* Another index inside a recorded block: exact when it takes the
+               same passes; its colour is patched for each. */
+            int k, same = n == ix->npasses && ix->ncolors < sizeof ix->colors / sizeof ix->colors[0];
+            for (k = 0; same && k < n; ++k) same = pass[k].op == ix->passes[k].op;
+            if (same) {
+                struct glp_thread *t = glp_self();
+                unsigned int *p = put_index_color(pass[0].value);
+                ix->colors[ix->ncolors].at = (unsigned int)(p - t->cmdbuf) - ix->group_start;
+                ix->colors[ix->ncolors].index = src;
+                ++ix->ncolors;
+                return;
+            }
+            ix->group_ok = 0;
+        }
+        if (!ix->host.known || ix->host.logic != want.logic || ix->host.op != want.op ||
+            ix->host.channels != want.channels || n > 1) {
+            index_log_approximate(&ix->state, "index changed inside glBegin/glEnd");
+            put_index_color(src);
+            return;
+        }
+        put_index_color(pass[0].value);
+        return;
+    }
+    index_apply(ix, &want);
+    memcpy(ix->passes, pass, sizeof pass);
+    ix->npasses = n;
+    put_index_color(pass[0].value);
+}
+
+/* Raw words appended to the calling thread's command stream. */
+static void put_raw(struct glp_thread *t, const unsigned int *words, unsigned int n)
+{
+    if (t->cmdlen + n > t->cmdcap) {
+        thread_flush(t);
+        if (n > t->cmdcap) {
+            unsigned int cap = t->cmdcap ? t->cmdcap : 16384;
+            while (cap < n) cap *= 2;
+            free(t->cmdbuf);
+            t->cmdbuf = (unsigned int *)malloc((size_t)cap * 4);
+            if (!t->cmdbuf) {
+                fprintf(stderr, "glpass: out of memory for a %u-word command\n", n);
+                abort();
+            }
+            t->cmdcap = cap;
+        }
+    }
+    memcpy(t->cmdbuf + t->cmdlen, words, (size_t)n * 4);
+    t->cmdlen += n;
+}
+
+/* A draw starts: when the current index takes several passes, its commands
+   are kept to be sent again. Returns 1 when it started a recording. */
+static int passes_begin(GLXContext c)
+{
+    struct glp_thread *t = glp_self();
+    struct glp_index *ix = &c->ix;
+    if (!c->index_mode || ix->group || ix->list || ix->npasses < 2 || !ix->host.known) return 0;
+    ix->group = 1;
+    ix->group_ok = 1;
+    ix->group_start = t->cmdlen;
+    ix->group_flushes = t->flushes;
+    ix->group_index = ix->state.index % PALETTE_SIZE;
+    ix->ncolors = 0;
+    return 1;
+}
+
+/* The draw ended: its commands again for each further pass, each with its
+   logic op and colour, then the host back to the first pass. */
+static void passes_end(GLXContext c)
+{
+    struct glp_thread *t = glp_self();
+    struct glp_index *ix = &c->ix;
+    unsigned int *copy, n;
+    int k;
+    if (!ix->group) return;
+    ix->group = 0;
+    if (!ix->group_ok || t->flushes != ix->group_flushes || t->cmdlen < ix->group_start) {
+        index_log_approximate(&ix->state, ix->group_ok ? "draw larger than the command buffer"
+                                                       : "index changed inside glBegin/glEnd");
+        index_update(c);
+        return;
+    }
+    n = t->cmdlen - ix->group_start;
+    if (n == 0) return;
+    copy = (unsigned int *)malloc((size_t)n * 4);
+    if (!copy) return;
+    memcpy(copy, t->cmdbuf + ix->group_start, (size_t)n * 4);
+    for (k = 1; k < ix->npasses; ++k) {
+        unsigned int j;
+        for (j = 0; j < ix->ncolors; ++j) { /* this pass's colour for each index set inside */
+            struct glp_index_host host;
+            struct glp_index_pass pass[3];
+            (void)index_passes(&ix->state, ix->colors[j].index, &host, pass);
+            if (ix->colors[j].at + 4 <= n) encode_index(copy + ix->colors[j].at, pass[k].value);
+        }
+        put_word(GLP_FN_glLogicOp, ix->passes[k].op);
+        put_index_color(ix->passes[k].value);
+        put_raw(t, copy, n);
+    }
+    free(copy);
+    /* The host now has the last pass's op; set it up for the current index
+       (which the block may have changed). */
+    ix->host.op = ix->passes[ix->npasses - 1].op;
+    index_update(c);
+}
+
+/* While a GL_COMPILE list is built, state calls are recorded, not run: the
+   list gets the plain translation (whole channels), and its effect on the
+   index state is noted for glCallList. */
+static int index_compiling(const struct glp_index *ix) { return ix->list && ix->list_mode == GL_COMPILE; }
+
+/* Notes a change in the list being built. GL_COMPILE changes went to its
+   record already (index_target_state); GL_COMPILE_AND_EXECUTE ones are
+   copied from the context's state. */
+static void index_note(struct glp_index *ix, unsigned int changed)
+{
+    struct glp_index_state *r = &ix->compiling.state;
+    if (!ix->list) return;
+    ix->compiling.changed |= changed;
+    if (ix->list_mode == GL_COMPILE) return;
+    if (changed & INDEX_CHANGED_MASK) r->mask = ix->state.mask;
+    if (changed & INDEX_CHANGED_LOGIC) r->logic = ix->state.logic;
+    if (changed & INDEX_CHANGED_OP) r->op = ix->state.op;
+    if (changed & INDEX_CHANGED_INDEX) r->index = ix->state.index;
+    if (changed & INDEX_CHANGED_CLEAR) r->clear = ix->state.clear;
+}
+
+static struct glp_index_state *index_target_state(struct glp_index *ix)
+{
+    /* Compiling only: the change goes to the list's record, not the context. */
+    return index_compiling(ix) ? &ix->compiling.state : &ix->state;
+}
+
+/* The plain translation, which lists and approximate writes use. */
+static void index_plain(GLXContext c, const struct glp_index_state *st, unsigned int changed)
+{
+    int exact;
+    if (changed & INDEX_CHANGED_MASK) put_channels(index_channels(st->mask, &exact));
+    if (changed & INDEX_CHANGED_LOGIC) put_word(st->logic ? GLP_FN_glEnable : GLP_FN_glDisable, GL_COLOR_LOGIC_OP);
+    if (changed & INDEX_CHANGED_OP) put_word(GLP_FN_glLogicOp, st->op);
+    if (changed & INDEX_CHANGED_INDEX) put_index_color(st->index % PALETTE_SIZE);
+    (void)c;
+}
+
+static void index_changed(GLXContext c, unsigned int changed)
+{
+    struct glp_index *ix = &c->ix;
+    index_note(ix, changed);
+    if (ix->list) {
+        /* Lists hold the plain translation; the host state is unknown after. */
+        index_plain(c, index_target_state(ix), changed);
+        ix->host.known = 0;
+        if (index_compiling(ix)) return;
+    }
+    index_update(c);
+}
+
 static void set_index(double index)
 {
-    unsigned int i;
+    GLXContext current = current_context();
     if (current && !current->index_mode) {
         glx_log("glIndex(%ld) in RGBA context %u on %#lx", (long)index, current->id, (unsigned long)current->drawable);
     }
     if (!current || !current->index_mode) return;
-    i = (unsigned int)(long)index % PALETTE_SIZE;
-    glColor4ub((GLubyte)GLP_INDEX_R(i), (GLubyte)GLP_INDEX_G(i), (GLubyte)GLP_INDEX_B(i), (GLubyte)GLP_INDEX_A(i));
+    index_target_state(&current->ix)->index = (unsigned int)(long)index % PALETTE_SIZE;
+    index_changed(current, INDEX_CHANGED_INDEX);
 }
 
 void glIndexd(GLdouble c) { TRACE(glIndexd); set_index(c); }
@@ -1600,20 +2265,29 @@ void glIndexubv(const GLubyte *c) { TRACE(glIndexubv); set_index(c[0]); }
 
 void glClearIndex(GLfloat c)
 {
+    GLXContext current = current_context();
     unsigned int i;
     TRACE(glClearIndex);
     if (!current || !current->index_mode) return;
     i = (unsigned int)(long)c % PALETTE_SIZE;
+    index_target_state(&current->ix)->clear = i;
+    index_note(&current->ix, INDEX_CHANGED_CLEAR);
     glClearColor((GLfloat)GLP_INDEX_R(i) / 255.0f, (GLfloat)GLP_INDEX_G(i) / 255.0f, (GLfloat)GLP_INDEX_B(i) / 255.0f,
                  (GLfloat)GLP_INDEX_A(i) / 255.0f);
 }
 
 /* In a colour-index context, GL_INDEX_LOGIC_OP (GL_LOGIC_OP) acts on the
-   stored indices: the RGBA host buffer needs GL_COLOR_LOGIC_OP for that. */
+   stored indices: the host's GL_COLOR_LOGIC_OP, which the index state
+   drives. */
 static void put_cap(unsigned int fn, GLenum cap)
 {
-    glp_put(fn, 1)[0] = cap;
-    if (cap == GL_INDEX_LOGIC_OP && current && current->index_mode) glp_put(fn, 1)[0] = GL_COLOR_LOGIC_OP;
+    GLXContext current = current_context();
+    if (cap == GL_INDEX_LOGIC_OP && current && current->index_mode) {
+        index_target_state(&current->ix)->logic = fn == GLP_FN_glEnable;
+        index_changed(current, INDEX_CHANGED_LOGIC);
+        return;
+    }
+    put_word(fn, cap);
 }
 
 void glEnable(GLenum cap)
@@ -1628,18 +2302,245 @@ void glDisable(GLenum cap)
     put_cap(GLP_FN_glDisable, cap);
 }
 
-/* The index write mask, per group of planes stored in one channel. */
+void glLogicOp(GLenum opcode)
+{
+    GLXContext current = current_context();
+    TRACE(glLogicOp);
+    if (!current || !current->index_mode) {
+        put_word(GLP_FN_glLogicOp, opcode);
+        return;
+    }
+    index_target_state(&current->ix)->op = opcode;
+    index_changed(current, INDEX_CHANGED_OP);
+}
+
 void glIndexMask(GLuint mask)
 {
-    unsigned int *p;
+    GLXContext current = current_context();
     TRACE(glIndexMask);
     if (!current || !current->index_mode) return;
     glx_log("glIndexMask(%#x) context %u", mask, current->id);
-    p = glp_put(GLP_FN_glColorMask, 4);
-    p[0] = (mask & 0x0FFu) != 0;
-    p[1] = (mask & 0x300u) != 0;
-    p[2] = (mask & 0x400u) != 0;
-    p[3] = (mask & 0x800u) != 0;
+    index_target_state(&current->ix)->mask = mask;
+    index_changed(current, INDEX_CHANGED_MASK);
+}
+
+/* glClear ignores the logic op but obeys the index mask. A mask of whole
+   channels clears through the colour mask; another is cleared exactly by a
+   window-sized rectangle per pass (see index_passes). */
+void glClear(GLbitfield mask)
+{
+    GLXContext c = current_context();
+    struct glp_index *ix;
+    struct glp_index_state copy;
+    struct glp_index_host want;
+    struct glp_index_pass pass[3];
+    unsigned int *p;
+    int n, k;
+    TRACE(glClear);
+    if (!c || !c->index_mode || !(mask & GL_COLOR_BUFFER_BIT) || c->ix.list) {
+        put_word(GLP_FN_glClear, mask);
+        return;
+    }
+    ix = &c->ix;
+    copy = ix->state;
+    copy.logic = 0; /* a clear copies the clear index */
+    n = index_passes(&copy, ix->state.clear % PALETTE_SIZE, &want, pass);
+    if (!want.logic) { /* whole channels: a plain clear through the colour mask */
+        if (!ix->host.known || ix->host.channels != want.channels) put_channels(want.channels);
+        put_word(GLP_FN_glClear, mask);
+        if (ix->host.known && ix->host.channels != want.channels) put_channels(ix->host.channels);
+        if (!ix->host.known) index_update(c);
+        return;
+    }
+    if (mask & ~GL_COLOR_BUFFER_BIT) put_word(GLP_FN_glClear, mask & ~GL_COLOR_BUFFER_BIT);
+    put_word(GLP_FN_glPushAttrib, GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_CURRENT_BIT | GL_POLYGON_BIT |
+                                      GL_VIEWPORT_BIT | GL_TRANSFORM_BIT);
+    {
+        static const GLenum off[] = {GL_DEPTH_TEST, GL_STENCIL_TEST, GL_ALPHA_TEST, GL_BLEND, GL_DITHER,
+                                     GL_LIGHTING, GL_FOG, GL_TEXTURE_1D, GL_TEXTURE_2D, GL_CULL_FACE,
+                                     GL_POLYGON_STIPPLE, GL_CLIP_PLANE0, GL_CLIP_PLANE1, GL_CLIP_PLANE2,
+                                     GL_CLIP_PLANE3, GL_CLIP_PLANE4, GL_CLIP_PLANE5};
+        unsigned int i;
+        for (i = 0; i < sizeof off / sizeof off[0]; ++i) put_word(GLP_FN_glDisable, off[i]);
+    }
+    put_word(GLP_FN_glEnable, GL_COLOR_LOGIC_OP);
+    put_channels(0xFu);
+    p = glp_put(GLP_FN_glPolygonMode, 2);
+    p[0] = GL_FRONT_AND_BACK; p[1] = GL_FILL;
+    p = glp_put(GLP_FN_glViewport, 4);
+    p[0] = 0; p[1] = 0; p[2] = c->width ? c->width : 1; p[3] = c->height ? c->height : 1;
+    put_word(GLP_FN_glMatrixMode, GL_PROJECTION);
+    glp_put(GLP_FN_glPushMatrix, 0);
+    glp_put(GLP_FN_glLoadIdentity, 0);
+    put_word(GLP_FN_glMatrixMode, GL_MODELVIEW);
+    glp_put(GLP_FN_glPushMatrix, 0);
+    glp_put(GLP_FN_glLoadIdentity, 0);
+    for (k = 0; k < n; ++k) {
+        put_word(GLP_FN_glLogicOp, pass[k].op);
+        put_index_color(pass[k].value);
+        p = glp_put(GLP_FN_glRectf, 4);
+        p[0] = glp_fbits(-1.0f); p[1] = glp_fbits(-1.0f); p[2] = glp_fbits(1.0f); p[3] = glp_fbits(1.0f);
+    }
+    glp_put(GLP_FN_glPopMatrix, 0);
+    put_word(GLP_FN_glMatrixMode, GL_PROJECTION);
+    glp_put(GLP_FN_glPopMatrix, 0);
+    glp_put(GLP_FN_glPopAttrib, 0); /* back to the index state's host setting, matrix mode included */
+}
+
+/* The index state is attribute state: GL_COLOR_BUFFER_BIT (mask, logic op,
+   clear index), GL_ENABLE_BIT (logic op on/off), GL_CURRENT_BIT (index). */
+void glPushAttrib(GLbitfield mask)
+{
+    GLXContext c = current_context();
+    TRACE(glPushAttrib);
+    put_word(GLP_FN_glPushAttrib, mask);
+    if (!c || !c->index_mode || c->ix.list) return;
+    if (c->ix.depth < INDEX_STACK) {
+        c->ix.stack[c->ix.depth].bits = mask;
+        c->ix.stack[c->ix.depth].state = c->ix.state;
+        c->ix.stack[c->ix.depth].host = c->ix.host;
+    }
+    ++c->ix.depth;
+}
+
+void glPopAttrib(void)
+{
+    GLXContext c = current_context();
+    struct glp_index *ix;
+    TRACE(glPopAttrib);
+    glp_put(GLP_FN_glPopAttrib, 0);
+    if (!c || !c->index_mode) return;
+    ix = &c->ix;
+    if (ix->list) { /* inside a list: its effect is unknown */
+        ix->host.known = 0;
+        return;
+    }
+    if (ix->depth <= 0) return;
+    if (--ix->depth >= INDEX_STACK) {
+        ix->host.known = 0;
+        return;
+    }
+    {
+        const GLbitfield bits = ix->stack[ix->depth].bits;
+        const struct glp_index_state *saved = &ix->stack[ix->depth].state;
+        const struct glp_index_host *host = &ix->stack[ix->depth].host;
+        if (bits & GL_COLOR_BUFFER_BIT) {
+            ix->state.mask = saved->mask;
+            ix->state.op = saved->op;
+            ix->state.clear = saved->clear;
+            ix->state.logic = saved->logic;
+            ix->host.op = host->op;
+            ix->host.channels = host->channels;
+            ix->host.logic = host->logic;
+        } else if (bits & GL_ENABLE_BIT) {
+            ix->state.logic = saved->logic;
+            ix->host.logic = host->logic;
+        }
+        if (bits & GL_CURRENT_BIT) ix->state.index = saved->index;
+        ix->host.known = ix->host.known && host->known;
+        if (bits & (GL_COLOR_BUFFER_BIT | GL_ENABLE_BIT | GL_CURRENT_BIT)) index_update(c);
+    }
+}
+
+void glNewList(GLuint list, GLenum mode)
+{
+    GLXContext c = current_context();
+    unsigned int *p;
+    TRACE(glNewList);
+    p = glp_put(GLP_FN_glNewList, 2);
+    p[0] = list;
+    p[1] = mode;
+    if (!c || !c->index_mode) return;
+    c->ix.list = list;
+    c->ix.list_mode = mode;
+    c->ix.compiling.list = list;
+    c->ix.compiling.changed = 0;
+    c->ix.compiling.state = c->ix.state;
+}
+
+void glEndList(void)
+{
+    GLXContext c = current_context();
+    struct glp_index *ix;
+    int i;
+    TRACE(glEndList);
+    glp_put(GLP_FN_glEndList, 0);
+    if (!c || !c->index_mode || !c->ix.list) return;
+    ix = &c->ix;
+    for (i = 0; i < ix->neffects && ix->effects[i].list != ix->list; ++i) {
+    }
+    if (ix->compiling.changed) {
+        if (i == ix->neffects && ix->neffects == ix->capeffects) {
+            int cap = ix->capeffects ? ix->capeffects * 2 : 64;
+            struct glp_list_effect *grown =
+                (struct glp_list_effect *)realloc(ix->effects, (size_t)cap * sizeof *grown);
+            if (grown) {
+                ix->effects = grown;
+                ix->capeffects = cap;
+            }
+        }
+        if (i == ix->neffects && ix->neffects < ix->capeffects) ++ix->neffects;
+        if (i < ix->neffects) ix->effects[i] = ix->compiling;
+    } else if (i < ix->neffects) {
+        ix->effects[i].changed = 0; /* redefined without index changes */
+    }
+    ix->list = 0;
+    ix->list_mode = 0;
+    if (!ix->host.known) index_update(c);
+}
+
+/* After a list ran: its index state changes apply, and the host state it
+   left (the plain translation) is brought back in line. */
+static void index_after_lists(GLXContext c, const GLuint *ids, GLsizei n)
+{
+    struct glp_index *ix = &c->ix;
+    GLsizei k;
+    int i;
+    for (k = 0; k < n; ++k) {
+        for (i = 0; i < ix->neffects; ++i) {
+            const struct glp_list_effect *e = &ix->effects[i];
+            if (e->list != ids[k] || !e->changed) continue;
+            if (e->changed & INDEX_CHANGED_MASK) ix->state.mask = e->state.mask;
+            if (e->changed & INDEX_CHANGED_LOGIC) ix->state.logic = e->state.logic;
+            if (e->changed & INDEX_CHANGED_OP) ix->state.op = e->state.op;
+            if (e->changed & INDEX_CHANGED_INDEX) ix->state.index = e->state.index;
+            if (e->changed & INDEX_CHANGED_CLEAR) ix->state.clear = e->state.clear;
+            ix->host.known = 0;
+        }
+    }
+}
+
+/* Lists draw with the plain translation: before one runs, the host gets it
+   for the current state (unless that is what it has). */
+static void index_before_lists(GLXContext c)
+{
+    struct glp_index *ix = &c->ix;
+    struct glp_index_host want;
+    int exact;
+    if (ix->list) return;
+    want.known = 1;
+    want.channels = index_channels(ix->state.mask, &exact);
+    want.logic = ix->state.logic;
+    want.op = ix->state.op;
+    if (ix->host.known && ix->host.channels == want.channels && ix->host.logic == want.logic &&
+        ix->host.op == want.op) {
+        return;
+    }
+    index_apply(ix, &want);
+    ix->npasses = 1; /* lists draw once, with the plain translation */
+    put_index_color(ix->state.index % PALETTE_SIZE);
+}
+
+void glCallList(GLuint list)
+{
+    GLXContext c = current_context();
+    TRACE(glCallList);
+    if (c && c->index_mode) index_before_lists(c);
+    put_word(GLP_FN_glCallList, list);
+    if (c && c->index_mode && !c->ix.list) {
+        index_after_lists(c, &list, 1);
+        index_update(c);
+    }
 }
 
 /* ---- GLX drawables ------------------------------------------------------------------- */
@@ -1658,13 +2559,17 @@ struct glp_drawable {
 static struct glp_drawable *drawables;
 static XID next_pbuffer = 0x7F000000; /* pbuffers have no X resource: ids from a range X does not use */
 
+/* The list is under the library lock; an entry lives until the program
+   destroys its pixmap or pbuffer, which no other thread draws to then. */
 static struct glp_drawable *find_drawable(XID id)
 {
     struct glp_drawable *d;
+    glp_lock();
     for (d = drawables; d; d = d->next) {
-        if (d->id == id) return d;
+        if (d->id == id) break;
     }
-    return 0;
+    glp_unlock();
+    return d;
 }
 
 static struct glp_drawable *add_drawable(XID id, int kind)
@@ -1673,22 +2578,26 @@ static struct glp_drawable *add_drawable(XID id, int kind)
     if (!d) return 0;
     d->id = id;
     d->kind = kind;
+    glp_lock();
     d->next = drawables;
     drawables = d;
+    glp_unlock();
     return d;
 }
 
 static void remove_drawable(XID id)
 {
     struct glp_drawable **pp;
+    glp_lock();
     for (pp = &drawables; *pp; pp = &(*pp)->next) {
         if ((*pp)->id == id) {
             struct glp_drawable *d = *pp;
             *pp = d->next;
             free(d);
-            return;
+            break;
         }
     }
+    glp_unlock();
 }
 
 static int x_error_code;
@@ -1747,9 +2656,9 @@ static int drawable_geometry_unlocked(Display *dpy, GLXDrawable d, int *sx, int 
 static int drawable_geometry(Display *dpy, GLXDrawable d, int *sx, int *sy, unsigned int *w, unsigned int *h)
 {
     int on_screen;
-    xlock_acquire();
+    glp_lock();
     on_screen = drawable_geometry_unlocked(xconn(dpy), d, sx, sy, w, h);
-    xlock_release();
+    glp_unlock();
     return on_screen;
 }
 
@@ -1766,6 +2675,7 @@ static int mask_shift(unsigned long mask, int *bits)
 /* Copies a pixmap drawable's host image into the X pixmap. */
 static void update_pixmap_unlocked(struct glp_drawable *pd)
 {
+    GLXContext current = current_context();
     Display *dpy = current ? xconn(current->dpy) : 0;
     XVisualInfo templ, *vi;
     XImage *image;
@@ -1819,80 +2729,266 @@ static int is_overlay_window(GLXDrawable d);
 
 static void update_pixmap(struct glp_drawable *pd)
 {
-    xlock_acquire();
+    glp_lock();
     update_pixmap_unlocked(pd);
-    xlock_release();
+    glp_unlock();
 }
 
 static void present_unlocked(Display *dpy, Display *app, GLXDrawable drawable, int swap);
 
-/* Window positions and sizes last queried, by window. */
-#define GEOMETRY_KNOWN 32
-static struct {
-    GLXDrawable drawable;
-    int x, y;
+/* ---- Window tracking -------------------------------------------------------------------- */
+
+/* Where each GL window is on screen, kept from the X server's events rather
+   than asked for at every present. The first present of a window (or of one
+   whose ancestors changed) queries it and its ancestors and selects
+   StructureNotify on them on this library's connection; from then on their
+   ConfigureNotify, GravityNotify, MapNotify, UnmapNotify, ReparentNotify and
+   DestroyNotify events keep the position, size and visibility current. The
+   events are read without waiting (XEventsQueued, QueuedAfterReading) under
+   the library lock whenever a thread presents or makes a context current;
+   command submission never waits for them. Selecting events on another
+   client's windows changes nothing for that client. */
+#define TRACKED_MAX 64
+#define CHAIN_MAX 24
+struct link {
+    Window id;
+    int x, y;            /* outer corner, relative to the parent's inside */
+    unsigned int border;
+    int mapped;
+};
+static struct tracked {
+    Window window;        /* 0: free slot */
+    int valid;            /* chain known (cleared by a reparent or an ancestor's destruction) */
+    int nchain;
+    struct link chain[CHAIN_MAX]; /* the window, then its ancestors below the root */
     unsigned int w, h;
-    double when; /* seconds */
-} geometry_cache[GEOMETRY_KNOWN];
+    unsigned long since;  /* events older than the queries (lower serial) are ignored */
+    int shown;            /* its image is on the emulated display */
+    int moved;            /* position, size or mapping changed since it was last shown */
+} tracked[TRACKED_MAX];
+static int next_tracked;
 
-static double now_seconds(void)
-{
-    struct timeval tv;
-    gettimeofday(&tv, 0);
-    return (double)tv.tv_sec + (double)tv.tv_usec / 1e6;
-}
-static int next_geometry_slot;
-
-/* The noted geometry of `d`, if noted less than `max_age` seconds ago. */
-static int cached_geometry_within(GLXDrawable d, int *x, int *y, unsigned int *w, unsigned int *h, double max_age)
+static struct tracked *find_tracked(Window w)
 {
     int i;
-    for (i = 0; i < GEOMETRY_KNOWN; ++i) {
-        if (geometry_cache[i].drawable == d && d && now_seconds() - geometry_cache[i].when <= max_age) {
-            *x = geometry_cache[i].x;
-            *y = geometry_cache[i].y;
-            *w = geometry_cache[i].w;
-            *h = geometry_cache[i].h;
-            return 1;
-        }
+    for (i = 0; i < TRACKED_MAX; ++i) {
+        if (tracked[i].window == w && w) return &tracked[i];
     }
     return 0;
 }
 
-static void note_geometry(GLXDrawable d, int x, int y, unsigned int w, unsigned int h)
+/* Queries `w` and its ancestors (round trips) and starts tracking them. */
+static struct tracked *track_window(Display *dpy, Window w)
 {
-    int i, slot = -1;
-    for (i = 0; i < GEOMETRY_KNOWN; ++i) {
-        if (geometry_cache[i].drawable == d) slot = i;
+    struct tracked *t = find_tracked(w);
+    int (*previous)(Display *, XErrorEvent *);
+    Window cur = w, root = 0, parent = 0, *children = 0;
+    unsigned int nchildren;
+    int n = 0;
+    if (!t) {
+        t = &tracked[next_tracked];
+        next_tracked = (next_tracked + 1) % TRACKED_MAX; /* full: the oldest one goes */
+        memset(t, 0, sizeof *t);
     }
-    if (slot < 0) {
-        slot = next_geometry_slot;
-        next_geometry_slot = (next_geometry_slot + 1) % GEOMETRY_KNOWN;
+    XSync(dpy, False);
+    x_error_code = 0;
+    previous = XSetErrorHandler(note_x_error);
+    t->since = NextRequest(dpy);
+    while (n < CHAIN_MAX) {
+        struct link *l = &t->chain[n];
+        XWindowAttributes wa;
+        /* Selected before the query: no change can fall between the two. */
+        XSelectInput(dpy, cur, StructureNotifyMask);
+        if (!XGetWindowAttributes(dpy, cur, &wa)) break;
+        l->id = cur;
+        l->x = wa.x;
+        l->y = wa.y;
+        l->border = (unsigned int)wa.border_width;
+        l->mapped = wa.map_state != IsUnmapped;
+        if (n == 0) {
+            t->w = (unsigned int)wa.width;
+            t->h = (unsigned int)wa.height;
+        }
+        ++n;
+        if (!XQueryTree(dpy, cur, &root, &parent, &children, &nchildren)) break;
+        if (children) XFree(children);
+        if (!parent || parent == root) break;
+        cur = parent;
     }
-    geometry_cache[slot].drawable = d;
-    geometry_cache[slot].x = x;
-    geometry_cache[slot].y = y;
-    geometry_cache[slot].w = w;
-    geometry_cache[slot].h = h;
-    geometry_cache[slot].when = now_seconds();
+    XSync(dpy, False);
+    XSetErrorHandler(previous);
+    if (x_error_code || n == 0 || (parent != root && n == CHAIN_MAX)) {
+        glx_log("window %#lx: cannot track (X error %d, %d ancestors)", (unsigned long)w, x_error_code, n);
+        t->window = 0;
+        return 0;
+    }
+    t->window = w;
+    t->nchain = n;
+    t->valid = 1;
+    t->moved = 1;
+    return t;
 }
 
-static int cached_geometry(GLXDrawable d, int *x, int *y, unsigned int *w, unsigned int *h)
+static int tracked_viewable(const struct tracked *t)
 {
-    return cached_geometry_within(d, x, y, w, h, 1e30);
+    int k;
+    if (!t->valid) return 0;
+    for (k = 0; k < t->nchain; ++k) {
+        if (!t->chain[k].mapped) return 0;
+    }
+    return 1;
+}
+
+/* The inside's top-left corner in root coordinates. */
+static void tracked_origin(const struct tracked *t, int *sx, int *sy)
+{
+    int k;
+    *sx = 0;
+    *sy = 0;
+    for (k = 0; k < t->nchain; ++k) {
+        *sx += t->chain[k].x + (int)t->chain[k].border;
+        *sy += t->chain[k].y + (int)t->chain[k].border;
+    }
+}
+
+static void track_event(const XEvent *e)
+{
+    int i, k;
+    Window w;
+    switch (e->type) {
+    case ConfigureNotify: w = e->xconfigure.window; break;
+    case GravityNotify: w = e->xgravity.window; break;
+    case MapNotify: w = e->xmap.window; break;
+    case UnmapNotify: w = e->xunmap.window; break;
+    case ReparentNotify: w = e->xreparent.window; break;
+    case DestroyNotify: w = e->xdestroywindow.window; break;
+    default: return;
+    }
+    /* A window manager's synthetic ConfigureNotify gives root coordinates;
+       the real one, which follows the frame's own, is what the chain uses. */
+    if (e->xany.send_event) return;
+    for (i = 0; i < TRACKED_MAX; ++i) {
+        struct tracked *t = &tracked[i];
+        if (!t->window || e->xany.serial < t->since) continue;
+        for (k = 0; k < t->nchain; ++k) {
+            struct link *l = &t->chain[k];
+            if (l->id != w) continue;
+            switch (e->type) {
+            case ConfigureNotify:
+                l->x = e->xconfigure.x;
+                l->y = e->xconfigure.y;
+                l->border = (unsigned int)e->xconfigure.border_width;
+                if (k == 0) {
+                    t->w = (unsigned int)e->xconfigure.width;
+                    t->h = (unsigned int)e->xconfigure.height;
+                }
+                break;
+            case GravityNotify:
+                l->x = e->xgravity.x;
+                l->y = e->xgravity.y;
+                break;
+            case MapNotify: l->mapped = 1; break;
+            case UnmapNotify: l->mapped = 0; break;
+            case ReparentNotify: t->valid = 0; break; /* a new chain: queried at the next present */
+            case DestroyNotify:
+                t->valid = 0;
+                l->mapped = 0;
+                break;
+            }
+            t->moved = 1;
+        }
+    }
+}
+
+/* Sends a window's image again, at its tracked place (its front buffer, no
+   key fill: the window's pixels move with it), or hides it. */
+static void reshow(struct tracked *t, unsigned int context, int show)
+{
+    unsigned int req[7];
+    int sx, sy;
+    memset(req, 0, sizeof req);
+    req[0] = (unsigned int)t->window;
+    if (show) {
+        tracked_origin(t, &sx, &sy);
+        req[1] = (unsigned int)sx; req[2] = (unsigned int)sy;
+        req[3] = t->w; req[4] = t->h;
+        req[5] = is_overlay_window(t->window) ? GLP_OVERLAY_KEY : GLP_DEFAULT_KEY;
+    } else {
+        req[6] = GLP_SWAP_HIDE;
+    }
+    glp_gl(GLP_OP_SWAP, context, req, sizeof req);
+}
+
+/* Reads the events that have arrived, without waiting, and brings the
+   emulated display along: a shown window that is no longer viewable (it, or
+   an ancestor, was unmapped or destroyed) has its image taken down, and one
+   that moved is shown at its new place. Under the library lock. */
+static void track_events(Display *dpy, unsigned int context)
+{
+    XEvent e;
+    int i;
+    if (!dpy) return;
+    while (XEventsQueued(dpy, QueuedAfterReading) > 0) {
+        XNextEvent(dpy, &e);
+        track_event(&e);
+    }
+    for (i = 0; i < TRACKED_MAX; ++i) {
+        struct tracked *t = &tracked[i];
+        if (!t->window || !t->moved) continue;
+        if (!tracked_viewable(t)) {
+            if (t->shown) {
+                glx_log("window %#lx hidden", (unsigned long)t->window);
+                reshow(t, context, 0);
+                t->shown = 0;
+            }
+            t->moved = 0;
+            continue;
+        }
+        if (t->shown) {
+            int sx, sy;
+            tracked_origin(t, &sx, &sy);
+            glx_log("window %#lx moved to %d,%d (%ux%u)", (unsigned long)t->window, sx, sy, t->w, t->h);
+            reshow(t, context, 1);
+        }
+        t->moved = 0;
+    }
+}
+
+/* Size and screen position of window `d` (this library's connection, under
+   the lock). From the tracked state; the server is asked only for a window
+   not tracked yet, or whose ancestors changed, unless `trust_stale` (overlay
+   windows, drawn while the program may hold a server grab: the last known
+   place, if any, rather than a round trip that would wait for the grab).
+   Returns 1 when the window is viewable, 0 when it is not, -1 when unknown. */
+static int window_geometry(Display *dpy, GLXDrawable d, int trust_stale, int *sx, int *sy, unsigned int *w,
+                           unsigned int *h)
+{
+    struct tracked *t = find_tracked(d);
+    *sx = *sy = 0;
+    if (!t || !(t->valid || (trust_stale && t->nchain > 0))) t = track_window(dpy, d);
+    if (!t) {
+        *w = *h = 1;
+        return -1;
+    }
+    tracked_origin(t, sx, sy);
+    *w = t->w;
+    *h = t->h;
+    if (!t->valid) return 1; /* stale, trusted */
+    return tracked_viewable(t);
 }
 
 static void present(Display *dpy, GLXDrawable drawable, int swap)
 {
     if (!dpy) return;
-    xlock_acquire();
+    glp_lock();
     present_unlocked(xconn(dpy), dpy, drawable, swap);
-    xlock_release();
+    glp_unlock();
 }
 
 /* `dpy` is this library's connection, `app` the program's. */
 static void present_unlocked(Display *dpy, Display *app, GLXDrawable drawable, int swap)
 {
+    GLXContext current = current_context();
     struct glp_drawable *pd = find_drawable(drawable);
     unsigned int req[7];
     int sx, sy;
@@ -1903,22 +2999,21 @@ static void present_unlocked(Display *dpy, Display *app, GLXDrawable drawable, i
     req[0] = (unsigned int)drawable;
     if (pd) {
         req[6] = (swap ? GLP_SWAP_BACK_TO_FRONT : 0) | GLP_SWAP_NO_DISPLAY;
-        glp_call(GLP_SERVICE_GL, GLP_OP_SWAP, req, sizeof req, 0);
+        glp_gl(GLP_OP_SWAP, current ? current->id : 0, req, sizeof req);
         if (pd->kind == DRAW_PIXMAP && current && current->drawable == drawable) update_pixmap(pd);
         return;
     }
-    /* Overlay windows (menus, marquee) present while the program may hold a
-       server grab, during which this library's connection gets no replies:
-       they use the position noted at their last ordinary query. */
-    /* Other windows reuse it for a quarter of a second: fewer round trips,
-       and a move or resize shows a few frames later at most. */
-    if (!(is_overlay_window(drawable) ? cached_geometry(drawable, &sx, &sy, &w, &h)
-                                      : cached_geometry_within(drawable, &sx, &sy, &w, &h, 0.25))) {
-        if (!drawable_geometry(dpy, drawable, &sx, &sy, &w, &h)) {
-            glx_log("present(%#lx): not a window on screen", (unsigned long)drawable);
-            return;
-        }
-        note_geometry(drawable, sx, sy, w, h);
+    /* The window's place comes from the X server's events (see Window
+       tracking); overlay windows (menus, marquee), presented while the
+       program may hold a server grab, keep their last known place. */
+    track_events(dpy, current ? current->id : 0);
+    switch (window_geometry(dpy, drawable, is_overlay_window(drawable), &sx, &sy, &w, &h)) {
+    case -1:
+        glx_log("present(%#lx): not a window on screen", (unsigned long)drawable);
+        return;
+    case 0:
+        glx_log("present(%#lx): not viewable", (unsigned long)drawable);
+        return;
     }
     glx_log("present(%#lx) %ux%u at %d,%d%s", (unsigned long)drawable, w, h, sx, sy, swap ? " swap" : "");
     /* Paint the key colour: the host image shows wherever it survives. */
@@ -1953,7 +3048,14 @@ static void present_unlocked(Display *dpy, Display *app, GLXDrawable drawable, i
     req[1] = (unsigned int)sx; req[2] = (unsigned int)sy;
     req[3] = w; req[4] = h; req[6] = swap ? GLP_SWAP_BACK_TO_FRONT : 0;
     req[5] = is_overlay_window(drawable) ? GLP_OVERLAY_KEY : GLP_DEFAULT_KEY;
-    glp_call(GLP_SERVICE_GL, GLP_OP_SWAP, req, sizeof req, 0);
+    glp_gl(GLP_OP_SWAP, current ? current->id : 0, req, sizeof req);
+    {
+        struct tracked *t = find_tracked(drawable);
+        if (t) {
+            t->shown = 1;
+            t->moved = 0;
+        }
+    }
     if (current && current->drawable == drawable && (w != current->width || h != current->height)) {
         glXMakeCurrent(current->dpy, drawable, current); /* window resized: resize the host framebuffer */
     }
@@ -1969,21 +3071,24 @@ static int nswapped;
 
 static int has_swapped(GLXDrawable d)
 {
-    int i;
-    for (i = 0; i < nswapped; ++i) {
-        if (swapped[i] == d) return 1;
-    }
-    return 0;
+    int i, found = 0;
+    glp_lock();
+    for (i = 0; i < nswapped && !found; ++i) found = swapped[i] == d;
+    glp_unlock();
+    return found;
 }
 
 static void note_swapped(GLXDrawable d)
 {
-    if (has_swapped(d)) return;
-    if (nswapped == SWAPPED_MAX) {
-        memmove(swapped, swapped + 1, sizeof swapped[0] * (SWAPPED_MAX - 1)); /* forget the oldest */
-        --nswapped;
+    glp_lock();
+    if (!has_swapped(d)) {
+        if (nswapped == SWAPPED_MAX) {
+            memmove(swapped, swapped + 1, sizeof swapped[0] * (SWAPPED_MAX - 1)); /* forget the oldest */
+            --nswapped;
+        }
+        swapped[nswapped++] = d;
     }
-    swapped[nswapped++] = d;
+    glp_unlock();
 }
 
 /* Windows of the overlay planes' visual (noted when a context of it is made
@@ -1995,27 +3100,31 @@ static int noverlay_windows;
 
 static int is_overlay_window(GLXDrawable d)
 {
-    int i;
-    for (i = 0; i < noverlay_windows; ++i) {
-        if (overlay_windows[i] == d) return 1;
-    }
-    return 0;
+    int i, found = 0;
+    glp_lock();
+    for (i = 0; i < noverlay_windows && !found; ++i) found = overlay_windows[i] == d;
+    glp_unlock();
+    return found;
 }
 
 static void note_overlay_window(GLXDrawable d)
 {
-    if (is_overlay_window(d)) return;
-    if (noverlay_windows == OVERLAY_WINDOWS_MAX) {
-        memmove(overlay_windows, overlay_windows + 1, sizeof overlay_windows[0] * (OVERLAY_WINDOWS_MAX - 1));
-        --noverlay_windows;
+    glp_lock();
+    if (!is_overlay_window(d)) {
+        if (noverlay_windows == OVERLAY_WINDOWS_MAX) {
+            memmove(overlay_windows, overlay_windows + 1, sizeof overlay_windows[0] * (OVERLAY_WINDOWS_MAX - 1));
+            --noverlay_windows;
+        }
+        overlay_windows[noverlay_windows++] = d;
     }
-    overlay_windows[noverlay_windows++] = d;
+    glp_unlock();
 }
 
 /* glFlush and glFinish show what was drawn when it is meant to be seen now:
    drawing into the front buffer, or into a never-swapped drawable. */
 static void present_flushed(void)
 {
+    GLXContext current = current_context();
     if (!current || !current->drawable) return;
     load_palette(current->dpy, current, current->drawable);
     if (draws_front(current->draw_buffer)) {
@@ -2027,6 +3136,7 @@ static void present_flushed(void)
 
 void glFlush(void)
 {
+    GLXContext current = current_context();
     TRACE(glFlush);
     glp_flush();
     if (current) glx_log("glFlush (context %u, draw buffer %#x)", current->id, current->draw_buffer);
@@ -2035,10 +3145,11 @@ void glFlush(void)
 
 void glFinish(void)
 {
+    GLXContext current = current_context();
     TRACE(glFinish);
     glp_flush();
     if (current) glx_log("glFinish (context %u, draw buffer %#x)", current->id, current->draw_buffer);
-    if (current) glp_call(GLP_SERVICE_GL, GLP_OP_FINISH, 0, 0, 0);
+    if (current) glp_gl(GLP_OP_FINISH, current->id, 0, 0);
     present_flushed();
 }
 
@@ -2055,6 +3166,7 @@ struct __GLXFBConfigRec {
    above the GL image of the window below, their transparent index unseen. */
 static VisualID overlay_visual_id;
 static int overlay_transparent;
+static int overlay_depth; /* its planes: 2 on the XL8 (the popup planes) */
 
 static VisualID overlay_visual(Display *dpy, int screen)
 {
@@ -2088,7 +3200,16 @@ static VisualID overlay_visual(Display *dpy, int screen)
         }
     }
     XFree(data);
-    glx_log("overlay visual %#lx, transparent index %d", (unsigned long)overlay_visual_id, overlay_transparent);
+    if (overlay_visual_id) {
+        XVisualInfo templ, *vi;
+        int count = 0;
+        templ.visualid = overlay_visual_id;
+        vi = XGetVisualInfo(dpy, VisualIDMask, &templ, &count);
+        overlay_depth = vi && count > 0 ? vi->depth : 2;
+        if (vi) XFree(vi);
+    }
+    glx_log("overlay visual %#lx, depth %d, transparent index %d", (unsigned long)overlay_visual_id, overlay_depth,
+            overlay_transparent);
     return overlay_visual_id;
 }
 
@@ -2106,7 +3227,7 @@ static int overlay_config_value(int attribute, int *value)
 {
     switch (attribute) {
     case GLX_USE_GL: *value = 1; break;
-    case GLX_BUFFER_SIZE: *value = 8; break;
+    case GLX_BUFFER_SIZE: *value = overlay_depth; break; /* the visual's depth: windows are made with it */
     case GLX_LEVEL: *value = 1; break;
     case GLX_RGBA: case GLX_DOUBLEBUFFER: case GLX_STEREO: case GLX_AUX_BUFFERS: *value = 0; break;
     case GLX_RED_SIZE: case GLX_GREEN_SIZE: case GLX_BLUE_SIZE: case GLX_ALPHA_SIZE: *value = 0; break;
@@ -2278,19 +3399,23 @@ static int next_chosen;
 static void note_chosen(const XVisualInfo *vi, int index)
 {
     if (!vi) return;
+    glp_lock();
     chosen[next_chosen].vi = vi;
     chosen[next_chosen].index = index;
     next_chosen = (next_chosen + 1) % CHOSEN_MAX;
+    glp_unlock();
 }
 
 /* 1 colour index, 0 RGBA, -1 not handed out here. */
 static int chosen_mode(const XVisualInfo *vi)
 {
-    int i;
-    for (i = 0; i < CHOSEN_MAX; ++i) {
-        if (vi && chosen[i].vi == vi) return chosen[i].index;
+    int i, mode = -1;
+    glp_lock();
+    for (i = 0; i < CHOSEN_MAX && mode < 0; ++i) {
+        if (vi && chosen[i].vi == vi) mode = chosen[i].index;
     }
-    return -1;
+    glp_unlock();
+    return mode;
 }
 
 XVisualInfo *glXChooseVisual(Display *dpy, int screen, int *attributes)
@@ -2307,7 +3432,25 @@ XVisualInfo *glXChooseVisual(Display *dpy, int screen, int *attributes)
     match = attributes_match(attributes, 0);
     if (match == 3) {
         XVisualInfo templ;
+        int wanted = 0;
         templ.visualid = overlay_visual(dpy, screen);
+        /* GLX_BUFFER_SIZE is a minimum, as in IRIX's GLX: the XL8's overlay
+           planes are 2 bits, so a request for more finds none. (Maya asks
+           for 8-bit overlay planes to put its Motif menus in; offered the
+           2-bit visual for that, it posted menus it could not create.) */
+        for (a = attributes; a && *a != None; ++a) {
+            const int attribute = *a;
+            if (attribute == GLX_USE_GL || attribute == GLX_RGBA || attribute == GLX_DOUBLEBUFFER ||
+                attribute == GLX_STEREO || a[1] == None) {
+                continue; /* GLX 1.0 booleans take no value */
+            }
+            if (attribute == GLX_BUFFER_SIZE) wanted = a[1];
+            ++a;
+        }
+        if (templ.visualid && wanted > overlay_depth) {
+            if (overlay_logged <= 4) glx_log("  -> no overlay visual of %d bits (%d)", wanted, overlay_depth);
+            return 0;
+        }
         vi = templ.visualid ? XGetVisualInfo(dpy, VisualIDMask, &templ, &count) : 0;
         if (overlay_logged <= 4) glx_log("  -> overlay visual %#lx", vi ? (unsigned long)vi->visualid : 0ul);
         return vi;
@@ -2402,7 +3545,7 @@ static GLXContext new_context(Display *dpy, int screen, VisualID visual, GLXCont
     GLXContext c;
     long id;
     if (!glp_available()) return 0;
-    id = glp_call(GLP_SERVICE_GL, GLP_OP_CREATE_CONTEXT, 0, share ? share->id : 0, 0);
+    id = glp_gl(GLP_OP_CREATE_CONTEXT, 0, 0, share ? share->id : 0);
     if (id <= 0) return 0;
     c = (GLXContext)calloc(1, sizeof *c);
     if (!c) return 0;
@@ -2459,15 +3602,19 @@ GLXContext glXCreateContextWithConfigSGIX(Display *dpy, GLXFBConfigSGIX config, 
     return glXCreateNewContext(dpy, config, render_type, share, direct);
 }
 
+/* GLX destroys a context current in another thread when that thread
+   releases it; this library destroys it at once (the host unbinds it), and
+   the other thread's next GL call finds no context. */
 void glXDestroyContext(Display *dpy, GLXContext c)
 {
+    struct glp_thread *t = glp_self();
     (void)dpy;
     if (!c) return;
-    if (c == current) {
-        glp_flush();
-        current = 0;
+    if (c == t->current) {
+        thread_flush(t);
+        t->current = 0;
     }
-    glp_call(GLP_SERVICE_GL, GLP_OP_DESTROY_CONTEXT, 0, c->id, 0);
+    glp_gl(GLP_OP_DESTROY_CONTEXT, c->id, 0, c->id);
     free(c);
 }
 
@@ -2491,29 +3638,33 @@ static int window_is_index(Display *app, GLXDrawable drawable)
 {
     XWindowAttributes wa;
     Display *dpy;
-    int i, index;
-    for (i = 0; i < WINDOW_MODES_MAX; ++i) {
-        if (window_modes[i].drawable == drawable && drawable) return window_modes[i].index;
+    int i, index = -1;
+    glp_lock();
+    for (i = 0; i < WINDOW_MODES_MAX && index < 0; ++i) {
+        if (window_modes[i].drawable == drawable && drawable) index = window_modes[i].index;
     }
-    xlock_acquire();
-    dpy = xconn(app);
-    index = XGetWindowAttributes(dpy, drawable, &wa) && wa.colormap != None &&
-            wa.colormap != DefaultColormap(dpy, DefaultScreen(dpy));
-    xlock_release();
-    window_modes[next_window_mode].drawable = drawable;
-    window_modes[next_window_mode].index = index;
-    next_window_mode = (next_window_mode + 1) % WINDOW_MODES_MAX;
+    if (index < 0) {
+        dpy = xconn(app);
+        index = XGetWindowAttributes(dpy, drawable, &wa) && wa.colormap != None &&
+                wa.colormap != DefaultColormap(dpy, DefaultScreen(dpy));
+        window_modes[next_window_mode].drawable = drawable;
+        window_modes[next_window_mode].index = index;
+        next_window_mode = (next_window_mode + 1) % WINDOW_MODES_MAX;
+    }
+    glp_unlock();
     return index;
 }
 
 Bool glXMakeCurrent(Display *dpy, GLXDrawable drawable, GLXContext c)
 {
+    struct glp_thread *t = glp_self();
+    GLXContext current = t->current;
     unsigned int req[4];
     int sx, sy;
     struct glp_drawable *pd;
     glx_log("glXMakeCurrent(%#lx, context %u) [context %u drew %lu words]", (unsigned long)drawable,
-            c ? c->id : 0u, current ? current->id : 0u, (glp_flush(), submitted));
-    submitted = 0;
+            c ? c->id : 0u, current ? current->id : 0u, (thread_flush(t), t->submitted));
+    t->submitted = 0;
     if (current && current->drawable && (pd = find_drawable(current->drawable)) != 0 && pd->kind == DRAW_PIXMAP &&
         (current != c || current->drawable != drawable)) {
         glp_flush();
@@ -2525,30 +3676,41 @@ Bool glXMakeCurrent(Display *dpy, GLXDrawable drawable, GLXContext c)
         glp_flush();
         present_flushed();
     }
-    glp_flush();
+    thread_flush(t);
     if (!c || !drawable) {
-        memset(req, 0, sizeof req);
-        glp_call(GLP_SERVICE_GL, GLP_OP_MAKE_CURRENT, req, sizeof req, 0);
-        current = 0;
+        /* Releases this thread's context only: other threads keep theirs. */
+        if (current) {
+            req[0] = current->id; req[1] = 0; req[2] = 0; req[3] = 0;
+            glp_gl(GLP_OP_MAKE_CURRENT, current->id, req, sizeof req);
+        }
+        t->current = 0;
         return True;
     }
     XFlush(dpy); /* as GLX does: the program's new windows exist for this library's connection */
-    /* Overlay windows may be made current under a server grab (see present). */
-    if (!(c->overlay && cached_geometry(drawable, &sx, &sy, &c->width, &c->height))) {
-        if (drawable_geometry(dpy, drawable, &sx, &sy, &c->width, &c->height)) {
-            note_geometry(drawable, sx, sy, c->width, c->height);
-        }
-    }
     pd = find_drawable(drawable);
+    if (pd) {
+        drawable_geometry(dpy, drawable, &sx, &sy, &c->width, &c->height);
+    } else {
+        /* Overlay windows may be made current under a server grab (see present). */
+        Display *own;
+        glp_lock();
+        own = xconn(dpy);
+        track_events(own, current ? current->id : 0);
+        window_geometry(own, drawable, c->overlay, &sx, &sy, &c->width, &c->height);
+        glp_unlock();
+    }
     if (pd) {
         pd->width = c->width;
         pd->height = c->height;
     }
     req[0] = c->id; req[1] = (unsigned int)drawable; req[2] = c->width; req[3] = c->height;
-    if (glp_call(GLP_SERVICE_GL, GLP_OP_MAKE_CURRENT, req, sizeof req, 0) != 0) return False;
+    if (glp_gl(GLP_OP_MAKE_CURRENT, c->id, req, sizeof req) != 0) {
+        t->current = 0;
+        return False;
+    }
     c->dpy = dpy;
     c->drawable = drawable;
-    current = c;
+    t->current = c;
     if (c->pseudo && !c->overlay && !find_drawable(drawable)) {
         int index = window_is_index(dpy, drawable);
         if (index != c->index_mode) {
@@ -2575,25 +3737,42 @@ Bool glXMakeCurrentReadSGI(Display *dpy, GLXDrawable draw, GLXDrawable read, GLX
 
 void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
 {
-    glp_flush();
+    struct glp_thread *t = glp_self();
+    GLXContext current = t->current;
+    thread_flush(t);
     if (dpy) XFlush(dpy); /* as GLX does (see glXMakeCurrent) */
-    glx_log("glXSwapBuffers(%p, %#lx) [%lu words]", (void *)dpy, (unsigned long)drawable, submitted);
+    glx_log("glXSwapBuffers(%p, %#lx) [%lu words]", (void *)dpy, (unsigned long)drawable, t->submitted);
     note_swapped(drawable);
-    submitted = 0;
+    t->submitted = 0;
     if (current && current->drawable == drawable) load_palette(current->dpy, current, drawable);
     present(dpy ? dpy : (current ? current->dpy : 0), drawable, 1);
 }
 
-GLXContext glXGetCurrentContext(void) { return current; }
-GLXDrawable glXGetCurrentDrawable(void) { return current ? current->drawable : 0; }
+GLXContext glXGetCurrentContext(void) { return current_context(); }
+
+GLXDrawable glXGetCurrentDrawable(void)
+{
+    GLXContext current = current_context();
+    return current ? current->drawable : 0;
+}
+
 GLXDrawable glXGetCurrentReadDrawable(void) { return glXGetCurrentDrawable(); }
 GLXDrawable glXGetCurrentReadDrawableSGI(void) { return glXGetCurrentDrawable(); }
 GLXDrawable glXGetCurrentDrawableEXT(void) { return glXGetCurrentDrawable(); }
-Display *glXGetCurrentDisplay(void) { return current ? current->dpy : 0; }
+Display *glXGetCurrentDisplay(void)
+{
+    GLXContext current = current_context();
+    return current ? current->dpy : 0;
+}
+
 Display *glXGetCurrentDisplayEXT(void) { return glXGetCurrentDisplay(); }
 Bool glXIsDirect(Display *dpy, GLXContext c) { (void)dpy; (void)c; return True; }
 void glXWaitGL(void) { glFinish(); }
-void glXWaitX(void) { if (current) XSync(current->dpy, False); }
+void glXWaitX(void)
+{
+    GLXContext current = current_context();
+    if (current) XSync(current->dpy, False);
+}
 
 int glXQueryContext(Display *dpy, GLXContext c, int attribute, int *value)
 {
@@ -2664,9 +3843,12 @@ void glXDestroyPixmap(Display *dpy, GLXPixmap pix) { (void)dpy; remove_drawable(
 
 static XID new_pbuffer(unsigned int width, unsigned int height)
 {
-    struct glp_drawable *d = add_drawable(next_pbuffer, DRAW_PBUFFER);
+    struct glp_drawable *d;
+    glp_lock();
+    d = add_drawable(next_pbuffer, DRAW_PBUFFER);
+    if (d) ++next_pbuffer;
+    glp_unlock();
     if (!d) return 0;
-    ++next_pbuffer;
     d->width = width ? width : 1;
     d->height = height ? height : 1;
     return d->id;
@@ -2696,6 +3878,7 @@ void glXDestroyGLXPbufferSGIX(Display *dpy, GLXPbufferSGIX pbuf) { (void)dpy; re
 
 void glXQueryDrawable(Display *dpy, GLXDrawable draw, int attribute, unsigned int *value)
 {
+    GLXContext current = current_context();
     int sx, sy;
     unsigned int w = 0, h = 0;
     if (!value) return;
@@ -2763,17 +3946,22 @@ static unsigned int video_count;
 
 int glXGetVideoSyncSGI(unsigned int *count)
 {
-    if (count) *count = ++video_count;
+    glp_lock();
+    ++video_count;
+    if (count) *count = video_count;
+    glp_unlock();
     return 0;
 }
 
 int glXWaitVideoSyncSGI(int divisor, int remainder, unsigned int *count)
 {
+    glp_lock();
     ++video_count;
     if (divisor > 0 && remainder >= 0 && remainder < divisor) {
         while ((int)(video_count % (unsigned int)divisor) != remainder) ++video_count;
     }
     if (count) *count = video_count;
+    glp_unlock();
     return 0;
 }
 
@@ -2808,6 +3996,7 @@ Bool glXAssociateDMPbufferSGIX(Display *dpy, GLXPbufferSGIX pbuffer, void *param
    of Mesa's xfonts.c). */
 void glXUseXFont(Font font, int first, int count, int listBase)
 {
+    GLXContext current = current_context();
     Display *dpy = current ? current->dpy : 0;
     XFontStruct *fs;
     Pixmap pixmap;

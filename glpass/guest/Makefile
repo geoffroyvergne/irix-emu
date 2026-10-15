@@ -1,13 +1,16 @@
 # Built inside IRIX with the freeware gcc (MIPSpro cc needs a licence).
 #   make  -> libGL.so (the pass-through library), libglpass_x.so (colormap
-#            notes for colour-index programs, preloaded) and gltri (a test)
+#            notes for colour-index programs, preloaded), and the tests gltri
+#            glthreads/glthreads_pt (two GL threads, sproc and pthreads) and
+#            glmove (the image follows a moved or unmapped window) and glcheck
+#            (selection, feedback and 3D textures, checked value by value)
 # glpass_gen.c and glpass_fn.h come from glpass/tools/glpass-gen.py on the host.
 CC      = /usr/freeware/bin/gcc
 CFLAGS  = -mabi=n32 -O2 -fPIC -Wall
 HEADERS = glpass_protocol.h glpass_fn.h glpass_internal.h glpass_xstore.h
 OBJS    = glpass.o glpass_gen.o
 
-all: libGL.so libglpass_x.so gltri
+all: libGL.so libglpass_x.so gltri glthreads glthreads_pt glmove glcheck
 
 glpass.o: glpass.c $(HEADERS)
 	$(CC) $(CFLAGS) -c glpass.c
@@ -28,5 +31,17 @@ libglpass_x.so: xstore.o
 gltri: gltri.c libGL.so
 	$(CC) -mabi=n32 -O2 -o gltri gltri.c -L. -lGL -lX11
 
+glthreads: glthreads.c libGL.so
+	$(CC) -mabi=n32 -O2 -o glthreads glthreads.c -L. -lGL -lX11
+
+glthreads_pt: glthreads.c libGL.so
+	$(CC) -mabi=n32 -O2 -DGLTHREADS_PTHREAD -o glthreads_pt glthreads.c -L. -lGL -lX11 -lpthread
+
+glmove: glmove.c libGL.so
+	$(CC) -mabi=n32 -O2 -o glmove glmove.c -L. -lGL -lX11
+
+glcheck: glcheck.c libGL.so
+	$(CC) -mabi=n32 -O2 -o glcheck glcheck.c -L. -lGL -lX11
+
 clean:
-	rm -f *.o libGL.so libglpass_x.so gltri
+	rm -f *.o libGL.so libglpass_x.so gltri glthreads glthreads_pt glmove glcheck

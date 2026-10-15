@@ -412,7 +412,18 @@ The title bar shows emulation speed and whether the mouse is captured.
 
 ### Host-GPU OpenGL (glpass)
 
-IRIX's own OpenGL renders in software on the emulated CPU, too slow for 3D applications. [glpass/](glpass/) is a separate component in this repository: a replacement `libGL.so` for IRIX that sends a program's OpenGL calls to the emulator, which draws them with the host GPU (macOS) and shows them in the program's window. Quake III and Maya 6.5 run with it. See [glpass/README.md](glpass/README.md) for its design, building, installing in IRIX and use.
+IRIX's own OpenGL renders in software on the emulated CPU, too slow for 3D applications. [glpass/](glpass/) is a separate component in this repository: a replacement `libGL.so` for IRIX that sends a program's OpenGL calls to the emulator, which draws them with the host GPU (macOS) and shows them in the program's window. Quake III and Maya 6.5 run with it.
+
+Highlights:
+
+- **Threads:** contexts are current per thread (POSIX threads and sproc).
+- **Window tracking:** the image follows moved, resized and unmapped windows, driven by X events.
+- **Colour index:** 12-bit colour-index emulation with exact index write masks.
+- **Overlays:** an optional overlay-plane mode (`GLPASS_OVERLAY=1`).
+- **Selection and feedback**, with results written back in IRIX byte order.
+- **3D textures.**
+
+**After an emulator update**, rebuild the library inside IRIX when the emulator logs `the guest glpass library ... was built from other sources`. See [glpass/README.md](glpass/README.md) for its features, design, building, installing in IRIX and use.
 
 ### Copy and paste
 
@@ -435,6 +446,8 @@ The same text-to-keys conversion is used by `--type`, so scripted typing also ha
 - **Final state:** on shutdown, `Emulation stopped at cycle N, CPU PC …`.
 - **DMA:** `INDY_TRACE_DMA=1` logs the first memory controller DMA transfers (silent otherwise; aborts are always reported).
 - **Graphics bring-up:** `INDY_TRACE_GFX=<n>` traces Newport register and DCB traffic.
+- **Plane sets:** `INDY_TRACE_PLANES=1` logs the first pixel the X server writes to each Newport plane set (RGB/CI, overlay, popup, CID), and every 65536th write to the overlay planes, which the XL8 does not have.
+- **Scripted input:** `INDY_INPUT_FILE=<file>`: lines appended to the file while the emulator runs are input, `mouse <dx> <dy> [<buttons>]` (PS/2 deltas, +dy up; buttons L=1 R=2 M=4) or `type <text>` (typed with the `--keymap` layout). With `kill -USR1` screenshots, tests can drive and check a running session.
 - **Screenshots:** `--screenshot` writes a binary PPM (any image tool can convert it).
 
 ## Testing

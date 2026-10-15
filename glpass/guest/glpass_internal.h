@@ -10,7 +10,24 @@
 #include "glpass_protocol.h"
 #include "glpass_fn.h"
 
-/* Appends a command record with `words` payload words; returns the payload. */
+/* The calling thread's GL state: its current context, and the command
+   stream and glBegin batch being built for it. Found with a pthread key in
+   POSIX threads programs, by the thread's own pid in sproc ones (see
+   glpass.c); made on the thread's first GL call. */
+struct glp_thread;
+struct glp_thread *glp_self(void);
+
+/* The id of the calling thread's current context (0: none), which every
+   GL hypercall carries (GLP_OP_WORD). */
+unsigned int glp_current_id(void);
+
+/* The library lock: its own X connection and the tables shared by all
+   threads. The thread holding it may take it again. */
+void glp_lock(void);
+void glp_unlock(void);
+
+/* Appends a command record with `words` payload words to the calling
+   thread's stream; returns the payload. */
 unsigned int *glp_put(unsigned int cmd, unsigned int words);
 unsigned int glp_fbits(GLfloat f);
 void glp_dbits(unsigned int *p, GLdouble d);

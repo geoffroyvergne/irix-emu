@@ -475,6 +475,14 @@ uint32_t Newport::applyLogicOp(uint32_t s, uint32_t d) const {
 void Newport::writePixel(int32_t x, int32_t y, uint32_t source) {
     if (!clipPass(x, y)) return;
     const uint32_t planes = drawMode1_ & kDm1PlanesMask;
+    static const bool tracePlanes = std::getenv("INDY_TRACE_PLANES") != nullptr;
+    if (tracePlanes) [[unlikely]] { // which plane sets the X server draws into
+        static uint64_t counts[8];
+        if (counts[planes]++ == 0 || (planes == 4 && (counts[4] & 0xFFFF) == 0)) {
+            log::tagged("GFX", "plane set {} written ({} pixels so far): at {},{} value {:#x}, drawmode1 {:#x}, "
+                               "write mask {:#x}", planes, counts[planes], x, y, source, drawMode1_, wrMask_);
+        }
+    }
     const uint32_t mask = wrMask_ & kGlobalMask;
     uint32_t* p = pixelAddress(x, y);
     if (p == nullptr) return;

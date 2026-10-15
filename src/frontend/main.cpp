@@ -24,6 +24,10 @@
 #include <chrono>
 #include <exception>
 #include <expected>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <string>
 #include <format>
 #include <memory>
 #include <utility>
@@ -53,6 +57,56 @@ struct Options {
 volatile std::sig_atomic_t g_snapshotRequested = 0;
 
 void requestSnapshot(int) { g_snapshotRequested = 1; }
+
+// $INDY_INPUT_FILE: lines appended to this file while the emulator runs are
+// input, for scripted tests (read from where the previous read stopped):
+//   mouse <dx> <dy> [<buttons>]   PS/2 deltas (+dy = up), buttons L=1 R=2 M=4
+//   type <text>                   typed with the --keymap layout
+class InputFile {
+public:
+    explicit InputFile(const char* path) : path_(path != nullptr ? path : "") {
+        if (!path_.empty()) {
+            std::error_code error;
+            offset_ = static_cast<uintmax_t>(std::filesystem::file_size(path_, error));
+            if (error) offset_ = 0;
+        }
+    }
+
+    void poll(CommandQueue& commands, KeyLayout layout) {
+        if (path_.empty()) return;
+        std::error_code error;
+        const uintmax_t size = std::filesystem::file_size(path_, error);
+        if (error || size <= offset_) return;
+        std::ifstream in(path_, std::ios::binary);
+        in.seekg(static_cast<std::streamoff>(offset_));
+        std::string text(static_cast<size_t>(size - offset_), '\0');
+        in.read(text.data(), static_cast<std::streamsize>(text.size()));
+        const size_t end = text.rfind('\n');
+        if (end == std::string::npos) return; // a line not finished yet
+        offset_ += end + 1;
+        std::istringstream lines(text.substr(0, end + 1));
+        for (std::string line; std::getline(lines, line);) {
+            if (line.starts_with("type ")) {
+                for (const cmd::KeyEvent& key : keyEventsForText(line.substr(5), layout).events) commands.push(key);
+                continue;
+            }
+            std::istringstream words(line);
+            std::string verb;
+            int dx = 0, dy = 0, buttons = 0;
+            if (words >> verb && verb == "mouse" && words >> dx >> dy) {
+                words >> buttons;
+                commands.push(cmd::MouseEvent{static_cast<int16_t>(dx), static_cast<int16_t>(dy),
+                                              static_cast<uint8_t>(buttons)});
+            } else if (!line.empty()) {
+                log::warn("INDY_INPUT_FILE: cannot read '{}'", line);
+            }
+        }
+    }
+
+private:
+    std::string path_;
+    uintmax_t offset_ = 0;
+};
 
 // Save the newest frame as a binary PPM (handy for headless checks).
 void writeScreenshot(FrameBuffer& frame, const std::string& path) {
@@ -270,8 +324,10 @@ int run(const Options& options) {
     size_t nextShot = 0;
 
     std::signal(SIGUSR1, requestSnapshot);
+    InputFile inputFile(std::getenv("INDY_INPUT_FILE"));
     while (ui.pumpEvents(commands) && emulator.running()) {
         ui.present(display);
+        inputFile.poll(commands, options.keyLayout);
         if (g_snapshotRequested != 0) {
             g_snapshotRequested = 0;
             const char* path = std::getenv("INDY_SNAPSHOT");

@@ -4,9 +4,15 @@
  *
  * The guest calls the emulator with the hypercall instruction word
  * GLP_HYPERCALL_WORD (a reserved SPECIAL encoding on the R5000):
- *   a0 = service, a1 = operation, a2 = guest buffer address, a3 = length/arg
+ *   a0 = service, a1 = operation word, a2 = guest buffer address, a3 = length/arg
  *   v0 = result (negative = error), v1 = extra result
  * Buffers are big-endian 32-bit words, as the guest writes them.
+ *
+ * Threads: GLX contexts are current per thread. The guest keeps each
+ * thread's current context and command stream apart, and every GL operation
+ * names the context it is for in its operation word (GLP_OP_WORD): the host
+ * runs it with that context's host GL context and drawable, whichever guest
+ * thread (sproc or POSIX thread) sent it.
  *
  * Command stream (GLP_OP_SUBMIT): a sequence of records
  *   word 0: (command << 16) | payload_words, or (command << 16) | 0xFFFF
@@ -26,15 +32,21 @@
 #define GLP_SERVICE_GL   0x0000474Cu /* "GL" */
 
 #define GLP_PING_MAGIC   0x1D1E5u
-#define GLP_VERSION      2u
+#define GLP_VERSION      4u
 #define GLP_ERR_TABLE    (-2) /* HELLO: the guest library was built from other sources than the emulator */
 
-/* GL operations (a1) */
+/* GL operation word (a1): operation in bits 0-7, context id above (0: none). */
+#define GLP_OP_WORD(op, context) ((unsigned long)(op) | (unsigned long)(context) << 8)
+#define GLP_OP_OF(word)          ((unsigned)(word) & 0xFFu)
+#define GLP_CONTEXT_OF(word)     ((unsigned)(word) >> 8)
+
+/* GL operations */
 #define GLP_OP_HELLO          0u /* a3 = GLP_FN_TABLE_ID; v0 = GLP_VERSION when host GL is available and the
                                     command tables match, GLP_ERR_TABLE when they differ, else < 0 */
 #define GLP_OP_CREATE_CONTEXT 1u /* a3 = share context id (0 = none); v0 = context id */
 #define GLP_OP_DESTROY_CONTEXT 2u /* a3 = context id */
-#define GLP_OP_MAKE_CURRENT   3u /* a2 -> { context, drawable, width, height } (drawable 0 = release) */
+#define GLP_OP_MAKE_CURRENT   3u /* a2 -> { context, drawable, width, height }: binds the context to the
+                                    drawable; drawable 0 unbinds it (other contexts stay bound) */
 #define GLP_OP_SUBMIT         4u /* a2 -> command stream, a3 = bytes */
 #define GLP_OP_SWAP           5u /* a2 -> { drawable, x, y, width, height, key, flags } (screen coordinates) */
 #define GLP_OP_FINISH         6u /* wait for the host; nothing to return */
@@ -45,6 +57,7 @@
 /* GLP_OP_SWAP flags */
 #define GLP_SWAP_BACK_TO_FRONT 1u /* glXSwapBuffers: copy the back buffer to the front first */
 #define GLP_SWAP_NO_DISPLAY    2u /* a pixmap or pbuffer: nothing to show on screen */
+#define GLP_SWAP_HIDE          4u /* the window was unmapped or destroyed: take its image off the display */
 
 /* Record length escape */
 #define GLP_LONG_RECORD 0xFFFFu

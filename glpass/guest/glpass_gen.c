@@ -258,22 +258,6 @@ void glBlendFuncSeparateEXT(GLenum sfactorRGB, GLenum dfactorRGB, GLenum sfactor
     p[3] = (unsigned int)(dfactorAlpha);
 }
 
-void glCallList(GLuint list)
-{
-    unsigned int *p;
-    GLP_TRACE(GLP_FN_glCallList, "glCallList");
-    p = glp_put(GLP_FN_glCallList, 1);
-    p[0] = (unsigned int)(list);
-}
-
-void glClear(GLbitfield mask)
-{
-    unsigned int *p;
-    GLP_TRACE(GLP_FN_glClear, "glClear");
-    p = glp_put(GLP_FN_glClear, 1);
-    p[0] = (unsigned int)(mask);
-}
-
 void glClearAccum(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha)
 {
     unsigned int *p;
@@ -1521,14 +1505,6 @@ void glEnableVertexAttribArrayARB(GLuint index)
 void glEndFragmentShaderATI(void)
 {
     glp_unimplemented("glEndFragmentShaderATI");
-}
-
-void glEndList(void)
-{
-    unsigned int *p;
-    GLP_TRACE(GLP_FN_glEndList, "glEndList");
-    p = glp_put(GLP_FN_glEndList, 0);
-    (void)p;
 }
 
 void glEndOcclusionQueryNV(void)
@@ -2807,14 +2783,6 @@ void glLineWidth(GLfloat width)
     p[0] = glp_fbits(width);
 }
 
-void glListBase(GLuint base)
-{
-    unsigned int *p;
-    GLP_TRACE(GLP_FN_glListBase, "glListBase");
-    p = glp_put(GLP_FN_glListBase, 1);
-    p[0] = (unsigned int)(base);
-}
-
 void glListParameterfSGIX(GLuint list, GLenum pname, GLfloat param)
 {
     (void)list;
@@ -2928,14 +2896,6 @@ void glLockArraysEXT(GLint first, GLsizei count)
     (void)first;
     (void)count;
     glp_unimplemented("glLockArraysEXT");
-}
-
-void glLogicOp(GLenum opcode)
-{
-    unsigned int *p;
-    GLP_TRACE(GLP_FN_glLogicOp, "glLogicOp");
-    p = glp_put(GLP_FN_glLogicOp, 1);
-    p[0] = (unsigned int)(opcode);
 }
 
 void glMapGrid1d(GLint un, GLdouble u1, GLdouble u2)
@@ -3811,15 +3771,6 @@ void glMultiTexCoord4svARB(GLenum target, const GLshort *v)
     for (i = 0; i < 4; ++i) { p[1 + i * 1] = (unsigned int)(int)(v[i]); }
 }
 
-void glNewList(GLuint list, GLenum mode)
-{
-    unsigned int *p;
-    GLP_TRACE(GLP_FN_glNewList, "glNewList");
-    p = glp_put(GLP_FN_glNewList, 2);
-    p[0] = (unsigned int)(list);
-    p[1] = (unsigned int)(mode);
-}
-
 GLuint glNewObjectBufferATI(GLsizei size, const GLvoid *pointer, GLenum usage)
 {
     (void)size;
@@ -4248,14 +4199,6 @@ void glPolygonOffset(GLfloat factor, GLfloat units)
     p[1] = glp_fbits(units);
 }
 
-void glPopAttrib(void)
-{
-    unsigned int *p;
-    GLP_TRACE(GLP_FN_glPopAttrib, "glPopAttrib");
-    p = glp_put(GLP_FN_glPopAttrib, 0);
-    (void)p;
-}
-
 void glPopMatrix(void)
 {
     unsigned int *p;
@@ -4363,14 +4306,6 @@ void glProgramStringARB(GLenum target, GLenum format, GLsizei len, const GLvoid 
     (void)len;
     (void)string;
     glp_unimplemented("glProgramStringARB");
-}
-
-void glPushAttrib(GLbitfield mask)
-{
-    unsigned int *p;
-    GLP_TRACE(GLP_FN_glPushAttrib, "glPushAttrib");
-    p = glp_put(GLP_FN_glPushAttrib, 1);
-    p[0] = (unsigned int)(mask);
 }
 
 void glPushMatrix(void)
@@ -5785,36 +5720,6 @@ void glTexGeniv(GLenum coord, GLenum pname, const GLint *params)
     for (i = 0; i < n; ++i) { p[3 + i * 1] = (unsigned int)(int)(params[i]); }
 }
 
-void glTexImage3D(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLenum format, GLenum type, const GLvoid *pixels)
-{
-    (void)target;
-    (void)level;
-    (void)internalformat;
-    (void)width;
-    (void)height;
-    (void)depth;
-    (void)border;
-    (void)format;
-    (void)type;
-    (void)pixels;
-    glp_unimplemented("glTexImage3D");
-}
-
-void glTexImage3DEXT(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLenum format, GLenum type, const GLvoid *pixels)
-{
-    (void)target;
-    (void)level;
-    (void)internalformat;
-    (void)width;
-    (void)height;
-    (void)depth;
-    (void)border;
-    (void)format;
-    (void)type;
-    (void)pixels;
-    glp_unimplemented("glTexImage3DEXT");
-}
-
 void glTexImage4DSGIS(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth, GLsizei size4d, GLint border, GLenum format, GLenum type, const GLvoid *pixels)
 {
     (void)target;
@@ -5873,38 +5778,6 @@ void glTexParameteriv(GLenum target, GLenum pname, const GLint *params)
     p[1] = (unsigned int)(pname);
     p[2] = (unsigned int)n;
     for (i = 0; i < n; ++i) { p[3 + i * 1] = (unsigned int)(int)(params[i]); }
-}
-
-void glTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const GLvoid *pixels)
-{
-    (void)target;
-    (void)level;
-    (void)xoffset;
-    (void)yoffset;
-    (void)zoffset;
-    (void)width;
-    (void)height;
-    (void)depth;
-    (void)format;
-    (void)type;
-    (void)pixels;
-    glp_unimplemented("glTexSubImage3D");
-}
-
-void glTexSubImage3DEXT(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const GLvoid *pixels)
-{
-    (void)target;
-    (void)level;
-    (void)xoffset;
-    (void)yoffset;
-    (void)zoffset;
-    (void)width;
-    (void)height;
-    (void)depth;
-    (void)format;
-    (void)type;
-    (void)pixels;
-    glp_unimplemented("glTexSubImage3DEXT");
 }
 
 void glTexSubImage4DSGIS(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint woffset, GLsizei width, GLsizei height, GLsizei depth, GLsizei size4d, GLenum format, GLenum type, const GLvoid *pixels)

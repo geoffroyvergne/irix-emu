@@ -26,6 +26,10 @@ glpass/guest/*.o
 glpass/guest/libGL.so
 glpass/guest/libglpass_x.so
 glpass/guest/gltri
+glpass/guest/glthreads
+glpass/guest/glthreads_pt
+glpass/guest/glmove
+glpass/guest/glcheck
 
 # Compiled objects and libraries
 *.o
