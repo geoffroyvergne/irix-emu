@@ -55,10 +55,17 @@ static int glp_state = -1; /* -1 unknown, 0 unavailable, 1 available */
 static int glp_available(void)
 {
     if (glp_state < 0) {
-        long version = 0;
-        glp_state = glp_call(GLP_SERVICE_PING, 0, 0, 0, &version) == (long)GLP_PING_MAGIC &&
-                    glp_call(GLP_SERVICE_GL, GLP_OP_HELLO, 0, 0, 0) == (long)GLP_VERSION;
-        if (!glp_state) fprintf(stderr, "glpass: no host GL pass-through in this emulator\n");
+        long version = 0, hello = -1;
+        if (glp_call(GLP_SERVICE_PING, 0, 0, 0, &version) == (long)GLP_PING_MAGIC) {
+            hello = glp_call(GLP_SERVICE_GL, GLP_OP_HELLO, 0, GLP_FN_TABLE_ID, 0);
+        }
+        glp_state = hello == (long)GLP_VERSION;
+        if (hello == GLP_ERR_TABLE) {
+            fprintf(stderr, "glpass: this library and the emulator come from different glpass sources: "
+                            "rebuild it in IRIX (see glpass/README.md)\n");
+        } else if (!glp_state) {
+            fprintf(stderr, "glpass: no host GL pass-through in this emulator\n");
+        }
     }
     return glp_state;
 }

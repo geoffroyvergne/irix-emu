@@ -2,6 +2,7 @@
 
 #include "indy/core/Commands.hpp"
 #include "indy/core/FrameBuffer.hpp"
+#include "indy/input/TextKeys.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -16,6 +17,7 @@ struct FrontendConfig {
     int  width  = 1024;
     int  height = 768;
     bool vsync  = true;
+    KeyLayout keyLayout = KeyLayout::Us; // IRIX's keyboard layout, for pasted text
 };
 
 // Owns the SDL window, renderer and streaming texture. Lives on the main
@@ -70,6 +72,7 @@ private:
     float mouseDx_ = 0, mouseDy_ = 0; // accumulated motion in guest pixels (PS/2: +y = up)
     uint8_t mouseButtons_ = 0;
     std::deque<cmd::KeyEvent> pasteQueue_; // clipboard text being typed into the PS/2 keyboard
+    KeyLayout keyLayout_;                  // the guest's layout, which picks the keys
 };
 
 } // namespace indy::frontend

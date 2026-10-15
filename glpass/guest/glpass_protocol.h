@@ -27,9 +27,11 @@
 
 #define GLP_PING_MAGIC   0x1D1E5u
 #define GLP_VERSION      2u
+#define GLP_ERR_TABLE    (-2) /* HELLO: the guest library was built from other sources than the emulator */
 
 /* GL operations (a1) */
-#define GLP_OP_HELLO          0u /* v0 = GLP_VERSION when host GL is available, else < 0 */
+#define GLP_OP_HELLO          0u /* a3 = GLP_FN_TABLE_ID; v0 = GLP_VERSION when host GL is available and the
+                                    command tables match, GLP_ERR_TABLE when they differ, else < 0 */
 #define GLP_OP_CREATE_CONTEXT 1u /* a3 = share context id (0 = none); v0 = context id */
 #define GLP_OP_DESTROY_CONTEXT 2u /* a3 = context id */
 #define GLP_OP_MAKE_CURRENT   3u /* a2 -> { context, drawable, width, height } (drawable 0 = release) */

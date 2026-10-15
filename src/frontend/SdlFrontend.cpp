@@ -41,7 +41,7 @@ SdlFrontend::SdlContext::~SdlContext() {
     SDL_Quit();
 }
 
-SdlFrontend::SdlFrontend(const FrontendConfig& config) {
+SdlFrontend::SdlFrontend(const FrontendConfig& config) : keyLayout_(config.keyLayout) {
     SDL_Window* window = nullptr;
     SDL_Renderer* renderer = nullptr;
     if (!SDL_CreateWindowAndRenderer(config.title.c_str(), config.width, config.height,
@@ -97,11 +97,12 @@ void SdlFrontend::startPaste() {
         return;
     }
     char* text = SDL_GetClipboardText();
-    const TypedText typed = keyEventsForText(text != nullptr ? text : "");
+    const TypedText typed = keyEventsForText(text != nullptr ? text : "", keyLayout_);
     SDL_free(text);
     pasteQueue_.assign(typed.events.begin(), typed.events.end());
     log::info("Pasting {} key presses into the PS/2 keyboard{}", typed.events.size() / 2,
-              typed.skipped != 0 ? std::format(" ({} characters with no US-keyboard key skipped)", typed.skipped)
+              typed.skipped != 0 ? std::format(" ({} characters with no key on the {} layout skipped)", typed.skipped,
+                                               keyLayout_ == KeyLayout::Fr ? "French" : "US")
                                  : std::string{});
 }
 

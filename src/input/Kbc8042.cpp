@@ -35,6 +35,7 @@ constexpr std::array<uint16_t, 0xE8> makeSet2Table() {
     t[0x2D] = 0x4E; t[0x2E] = 0x55; t[0x2F] = 0x54; t[0x30] = 0x5B; t[0x31] = 0x5D; // - = [ ] backslash
     t[0x33] = 0x4C; t[0x34] = 0x52; t[0x35] = 0x0E; t[0x36] = 0x41; t[0x37] = 0x49; // ; ' ` , .
     t[0x38] = 0x4A; t[0x39] = 0x58;                                                 // / CapsLock
+    t[0x32] = 0x5D; t[0x64] = 0x61;                       // ISO keys: # (next to Enter), \ (next to left Shift)
     constexpr uint8_t fkeys[12] = {0x05, 0x06, 0x04, 0x0C, 0x03, 0x0B, 0x83, 0x0A, 0x01, 0x09, 0x78, 0x07};
     for (size_t i = 0; i < 12; ++i) t[0x3A + i] = fkeys[i];                            // F1..F12
     t[0x47] = 0x7E;                                                                 // ScrollLock
@@ -60,6 +61,7 @@ constexpr std::array<uint8_t, 0xE8> makeSet3Table() {
         if (kSet2[i] != 0 && (kSet2[i] & kE0) == 0) t[i] = static_cast<uint8_t>(kSet2[i]);
     }
     t[0x29] = 0x08; t[0x31] = 0x5C; t[0x39] = 0x14;                                 // Esc \ CapsLock
+    t[0x32] = 0x53; t[0x64] = 0x13;                                                 // ISO # and \ keys
     constexpr uint8_t fkeys[12] = {0x07, 0x0F, 0x17, 0x1F, 0x27, 0x2F, 0x37, 0x3F, 0x47, 0x4F, 0x56, 0x5E};
     for (size_t i = 0; i < 12; ++i) t[0x3A + i] = fkeys[i];                         // F1..F12
     t[0x46] = 0x57; t[0x47] = 0x5F; t[0x48] = 0x62;                                 // PrtSc ScrLk Pause

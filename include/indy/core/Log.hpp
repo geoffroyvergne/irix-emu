@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdio>
+#include <cstdlib>
 #include <format>
 #include <iterator>
 #include <string>
@@ -21,6 +22,14 @@ enum class Level { Debug, Info, Warn, Error };
     case Level::Error: return "ERROR";
     }
     return "?????";
+}
+
+// INDY_VERBOSE=1: also report what IRIX does routinely during bring-up and
+// normal running (hardware probes taking bus errors, unemulated registers it
+// tolerates, exceptions the kernel handles), which is noise otherwise.
+[[nodiscard]] inline bool verbose() noexcept {
+    static const bool enabled = std::getenv("INDY_VERBOSE") != nullptr;
+    return enabled;
 }
 
 // Emit "[tag] message" - used directly by subsystems with their own channel

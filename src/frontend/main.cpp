@@ -40,6 +40,7 @@ struct Options {
     bool vsync = true;
     std::string screenshot; // write the last frame here (PPM) on exit
     bool clockGiven = false; // --mhz seen (otherwise the CPU model picks the clock)
+    KeyLayout keyLayout = KeyLayout::Us; // --keymap (or INDY_KEYMAP): IRIX's layout, for --type and paste
     std::vector<std::pair<double, std::string>> timedScreenshots; // --screenshot-at <sec>:<file>
     // --type (repeatable): at <seconds>, text sent through the PS/2 keyboard.
     std::vector<std::pair<double, std::string>> typing;
@@ -75,6 +76,7 @@ constexpr std::string_view kUsage =
     "usage: indy <prom.bin> [--cdrom <file.iso>] [--disk <image> ...] [--disk-size <MiB>] [--nvram <file>]\n"
     "            [--mac <xx:xx:xx:xx:xx:xx>] [--cpu r5000|r4600] [--mhz <MHz>] [--ram <MiB>] [--trace <N>]\n"
     "            [--no-gfx] [--screenshot <file.ppm>] [--screenshot-at <sec>:<file.ppm>] [--type <sec>:<text>] [--mouse <sec>:<dx>,<dy>[,<btn>]]\n"
+    "            [--keymap us|fr]\n"
     "            [--unthrottled] [--no-vsync]\n"
     "       Type into this terminal to reach the serial console; the window feeds the PS/2 keyboard.\n"
     "       (the PROM may also be given with --prom or the INDY_PROM environment variable)";
@@ -90,6 +92,11 @@ std::expected<uint64_t, std::string> parseUnsigned(std::string_view option, std:
 
 std::expected<Options, std::string> parseArgs(int argc, char* argv[]) {
     Options options;
+    if (const char* env = std::getenv("INDY_KEYMAP"); env != nullptr && *env != '\0') { // default for --keymap
+        const auto layout = keyLayoutFromName(env);
+        if (!layout) return std::unexpected(std::format("invalid INDY_KEYMAP '{}' (us or fr)", env));
+        options.keyLayout = *layout;
+    }
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg = argv[i];
         auto value = [&]() -> std::expected<std::string_view, std::string> {
@@ -151,6 +158,12 @@ std::expected<Options, std::string> parseArgs(int argc, char* argv[]) {
             auto count = parseUnsigned(arg, *v);
             if (!count) return std::unexpected(count.error());
             options.system.traceInstructions = *count;
+        } else if (arg == "--keymap") { // the layout IRIX uses: us (default) or fr
+            auto v = value();
+            if (!v) return std::unexpected(v.error());
+            const auto layout = keyLayoutFromName(*v);
+            if (!layout) return std::unexpected(std::format("invalid --keymap '{}' (us or fr)", *v));
+            options.keyLayout = *layout;
         } else if (arg == "--type") { // "<seconds>:<text>", \r and \n escapes allowed
             auto v = value();
             if (!v) return std::unexpected(v.error());
@@ -236,6 +249,7 @@ int run(const Options& options) {
         .width  = static_cast<int>(sys.displayWidth),
         .height = static_cast<int>(sys.displayHeight),
         .vsync  = options.vsync,
+        .keyLayout = options.keyLayout,
     });
 
     EmulationThread emulator(std::move(machine), commands,
@@ -272,7 +286,7 @@ int run(const Options& options) {
             commands.push(options.mouseEvents[nextMouse++].second);
         }
         while (nextTyping < options.typing.size() && elapsed >= options.typing[nextTyping].first) {
-            for (const cmd::KeyEvent& key : keyEventsForText(options.typing[nextTyping++].second).events) {
+            for (const cmd::KeyEvent& key : keyEventsForText(options.typing[nextTyping++].second, options.keyLayout).events) {
                 commands.push(key);
             }
         }

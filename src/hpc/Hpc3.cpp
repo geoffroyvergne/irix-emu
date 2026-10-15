@@ -208,7 +208,7 @@ void Hpc3::merge(uint32_t& word, uint32_t offset, AccessSize size, uint64_t valu
 
 void Hpc3::unimplemented(uint32_t offset, bool isWrite) {
     // One warning per 4 KiB block keeps the log readable during bring-up.
-    if (warnings_.first(offset >> 12)) {
+    if (log::verbose() && warnings_.first(offset >> 12)) {
         log::warn("HPC3: {} at +{:#07x} (physical {:#010x}) not emulated yet{}",
                   isWrite ? "write" : "read", offset, 0x1FB8'0000u + offset,
                   isWrite ? "" : ", returning 0");

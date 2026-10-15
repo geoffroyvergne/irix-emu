@@ -2,6 +2,9 @@
 #ifndef GLPASS_FN_H
 #define GLPASS_FN_H
 
+/* Identifies this command table: guest and emulator must have the same (GLP_OP_HELLO). */
+#define GLP_FN_TABLE_ID 0x7c0944c9u
+
 enum {
     GLP_FN_glAccum = 0x100,
     GLP_FN_glActiveTexture = 0x101,

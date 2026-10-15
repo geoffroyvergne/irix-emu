@@ -127,7 +127,7 @@ void Ioc2::writeRegister(uint32_t slot, uint8_t value) {
 }
 
 void Ioc2::unimplemented(uint32_t slot, bool isWrite, uint8_t value) {
-    if (warnings_.first(slot)) {
+    if (log::verbose() && warnings_.first(slot)) {
         if (isWrite) {
             log::warn("IOC2: write {:#04x} to unimplemented register +{:#04x}", value, slot + 3);
         } else {

@@ -2422,6 +2422,20 @@ void textToKeyPresses() {
     std::string printable;
     for (char c = 0x20; c < 0x7F; ++c) printable.push_back(c);
     CHECK(keyEventsForText(printable).skipped == 0);
+
+    // French AZERTY: the keys at the US positions that produce the character.
+    const auto fr = [](std::string_view text) { return keyEventsForText(text, KeyLayout::Fr).events; };
+    CHECK(same(fr("a"), {{0x14, true}, {0x14, false}}));                                   // US q key
+    CHECK(same(fr("m"), {{0x33, true}, {0x33, false}}));                                   // US ; key
+    CHECK(same(fr("/"), {{0xE1, true}, {0x37, true}, {0x37, false}, {0xE1, false}}));      // Shift + US . key
+    CHECK(same(fr("!"), {{0x38, true}, {0x38, false}}));                                   // US / key
+    CHECK(same(fr("1"), {{0xE1, true}, {0x1E, true}, {0x1E, false}, {0xE1, false}}));      // digits are shifted
+    CHECK(same(fr("@"), {{0xE6, true}, {0x27, true}, {0x27, false}, {0xE6, false}}));      // AltGr + 0 key
+    CHECK(same(fr("<"), {{0x64, true}, {0x64, false}}));                                   // ISO key
+    CHECK(same(fr("\xC3\xA9"), {{0x1F, true}, {0x1F, false}}));                          // é on the 2 key
+    CHECK(keyEventsForText(printable, KeyLayout::Fr).skipped == 0);
+    CHECK(keyLayoutFromName("FR") == KeyLayout::Fr && keyLayoutFromName("us") == KeyLayout::Us &&
+          !keyLayoutFromName("de"));
 }
 
 } // namespace

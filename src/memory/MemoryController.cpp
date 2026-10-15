@@ -4,6 +4,7 @@
 #include "indy/memory/PhysicalMap.hpp"
 
 #include <bit>
+#include <cstdlib>
 #include <format>
 #include <numeric>
 #include <vector>
@@ -39,6 +40,11 @@ constexpr uint32_t kDmaDefaultStride = 0x0001'0000;
 constexpr uint32_t kDmaDefaultCount  = 0x0001'000C;
 constexpr uint32_t kDmaDefaultMode   = 0x0000'0028;
 constexpr unsigned kDmaLogLimit      = 64;
+
+bool traceDma() {
+    static const bool enabled = std::getenv("INDY_TRACE_DMA") != nullptr;
+    return enabled;
+}
 // Start latency (MAME's DMA timer): 4 ticks after a GIO-address start, 1 after
 // the other start registers, at 33.33 MHz.
 constexpr uint64_t kDmaTimerHz       = 33'333'333;
@@ -346,7 +352,7 @@ std::optional<PhysAddr> MemoryController::dmaTranslate(uint32_t vaddr) {
     // No entry matched. ASSUMPTION (undocumented in available references): the
     // address is physical. The PROM's "VDMA Clear" programs no DMA TLB entry
     // and passes physical RAM addresses, so real hardware must behave this way.
-    if (warnings_.first(0xD3A0'0000u)) {
+    if (log::verbose() && warnings_.first(0xD3A0'0000u)) {
         log::tagged("MC DMA", "no DMA TLB entry covers {:#010x}; treating untranslated DMA addresses as physical",
                     vaddr);
     }
@@ -499,7 +505,7 @@ void MemoryController::startDma(unsigned startTicks) {
 
     if (!ok) {
         log::tagged("MC DMA", "aborted after {} bytes: bus error near DMA address {:#010x}", moved, addr);
-    } else if (dmaLogged_ < kDmaLogLimit) {
+    } else if (traceDma() && dmaLogged_ < kDmaLogLimit) { // INDY_TRACE_DMA=1: the first transfers
         ++dmaLogged_;
         if (fill) {
             log::tagged("MC DMA", "Filled {} bytes at virtual {:#010x} with {:#010x} ({} lines x {} bytes)",

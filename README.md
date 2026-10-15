@@ -416,7 +416,7 @@ IRIX's own OpenGL renders in software on the emulated CPU, too slow for 3D appli
 
 ### Copy and paste
 
-- **Into the graphics window** (PROM console, IRIX): copy text on the host, click the emulator window and press **Ctrl+Alt+V** (or **Cmd+V** on macOS). The text is *typed* through the emulated PS/2 keyboard, the only way it can reach the Indy, as if from a US keyboard. Capitals and symbols use Shift; line breaks (`\n`, `\r` or `\r\n`) become Enter; tabs become Tab.
+- **Into the graphics window** (PROM console, IRIX): copy text on the host, click the emulator window and press **Ctrl+Alt+V** (or **Cmd+V** on macOS). The text is *typed* through the emulated PS/2 keyboard, the only way it can reach the Indy, using the layout given with `--keymap` (US by default; see the note below). Capitals and symbols use Shift; line breaks (`\n`, `\r` or `\r\n`) become Enter; tabs become Tab.
   - Typing starts once you release the hotkey's modifiers, so the Indy doesn't see Ctrl/Alt/Cmd held. It runs at about 1,000 characters per second.
   - Characters with no key on a US keyboard (accented letters, emoji, …) are skipped, and the log says how many.
   - Pressing the hotkey again during a paste cancels it.
@@ -424,15 +424,16 @@ IRIX's own OpenGL renders in software on the emulated CPU, too slow for 3D appli
 
 The same text-to-keys conversion is used by `--type`, so scripted typing also handles capitals and symbols.
 
-> **Keyboard layouts:** the emulator sends *physical* key positions, as a real PS/2 keyboard does, and IRIX applies its own keymap. Typing on your keyboard therefore works when IRIX's layout matches your keyboard (e.g. a French AZERTY Mac and an IRIX set up with `LANG=fr`). Paste and `--type` translate text as if from a **US** keyboard, so on an IRIX configured for another layout, letters such as `a`/`q` and most symbols come out wrong.
+> **Keyboard layouts:** the emulator sends *physical* key positions, as a real PS/2 keyboard does, and IRIX applies its own keymap. Typing on your keyboard therefore works when IRIX's layout matches your keyboard (e.g. a French AZERTY Mac and an IRIX set up for French). Paste and `--type` must pick the keys for IRIX's layout: tell the emulator which one with `--keymap us|fr` (or `INDY_KEYMAP=fr`; default `us`). With `--keymap fr`, paste types AZERTY keys, AltGr characters (`@ # { } [ ] | \ ~ ^ ``) and the French accented letters (`é è à ç ù`) included. With the wrong layout, `a`/`q`, digits and most symbols come out wrong (for example `/` becomes `!`).
 
 ## Debugging and diagnostics
 
 - **Instruction trace:** `--trace N` prints `[CPU TRACE] PC: 0xbfc003c0 -> Opcode: 0x3c023041` for the first N instructions.
 - **Crash history:** if the CPU halts, the last 32 executed instructions are printed as `[CPU HISTORY]`.
-- **Exception log:** the first occurrences of each exception type and PC are logged as `[CPU EXCEPTION] …`.
-- **Bus errors / unemulated hardware:** each address or device warns once (`Bus error: …`, `HPC3: … not emulated yet`).
+- **Quiet by default:** what IRIX does routinely is not logged: hardware probes that take bus errors (empty GIO slots), unemulated registers it tolerates, exceptions the kernel handles. `INDY_VERBOSE=1` shows them: the first occurrence of each exception type and PC (`[CPU EXCEPTION] …`), and each undecoded address or device once (`Bus error: …`, `HPC3: … not emulated yet`).
+- **Exception log:** `INDY_TRACE_EXCEPTIONS=1` logs the first occurrence of every exception, routine ones included.
 - **Final state:** on shutdown, `Emulation stopped at cycle N, CPU PC …`.
+- **DMA:** `INDY_TRACE_DMA=1` logs the first memory controller DMA transfers (silent otherwise; aborts are always reported).
 - **Graphics bring-up:** `INDY_TRACE_GFX=<n>` traces Newport register and DCB traffic.
 - **Screenshots:** `--screenshot` writes a binary PPM (any image tool can convert it).
 

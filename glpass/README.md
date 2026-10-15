@@ -63,7 +63,7 @@ results come back in `v0`/`v1`. The full protocol is in
 
 | Operation | Purpose |
 |---|---|
-| `HELLO` | Protocol version check (`GLP_VERSION`) |
+| `HELLO` | Version check: the protocol version (`GLP_VERSION`) and the ID of the generated command table (`GLP_FN_TABLE_ID`); a library built from other sources is refused |
 | `CREATE_CONTEXT`, `DESTROY_CONTEXT` | One host context per GLX context, sharing lists as GLX asks |
 | `MAKE_CURRENT` | Binds a context to a drawable (window, pixmap or pbuffer) of a given size |
 | `SUBMIT` | A batch of encoded GL commands |
@@ -97,6 +97,13 @@ The GLX layer (visuals, FBConfigs, contexts, windows, pixmaps, pbuffers,
 `glXUseXFont`, SGI extensions) is hand-written in
 [guest/glpass.c](guest/glpass.c).
 
+Client vertex arrays are copied out of guest memory when a draw call uses
+them (`glDrawArrays`, `glDrawElements`), only the element range the draw
+needs. A run of `glArrayElement` calls between `glBegin` and `glEnd` (how
+Quake III draws) is collected and sent as one indexed draw at `glEnd`; if
+any other command comes in between, the vertices are sent one by one as
+written. Replaying them one by one on the host costs about ten times more.
+
 ### Showing the image: key-colour compositing
 
 Every GLX drawable renders on the host into a framebuffer object with a back
@@ -104,10 +111,20 @@ buffer, a front buffer and a 24-bit depth plus 8-bit stencil buffer. All
 contexts of a share group draw into the same buffers for a given window, as
 GLX requires.
 
-To show a window's image, the guest library fills the X window with a key
-colour (pixel `0xC7`) and asks the emulator to present. The emulator reads
-the front buffer back and composites it over the emulated display, but only
-where the framebuffer still holds the key. So:
+A window's image is shown (presented) when it is meant to be seen, as on
+SGI hardware:
+
+- at `glXSwapBuffers`, after the back buffer is copied to the front;
+- at `glFlush` or `glFinish` while drawing into the front buffer;
+- at `glFlush` or `glFinish` in a window that has never been swapped, taken
+  for single-buffered (every visual here is double-buffered underneath);
+- at `glXMakeCurrent` leaving such a window, as GLX flushes the context it
+  leaves (Maya's menus end so, without a `glFlush`).
+
+To present, the guest library fills the X window with a key colour (pixel
+`0xC7`) and asks the emulator to show the image. The emulator reads the front
+buffer back and composites it over the emulated display, but only where the
+framebuffer still holds the key. So:
 
 - windows, menus and the cursor on top stay visible;
 - a closed or unmapped window simply stops showing;
@@ -115,6 +132,12 @@ where the framebuffer still holds the key. So:
 
 A small automatic offset (±4 pixels) aligns the image with the window's key
 pixels, absorbing the X server's window-origin offset.
+
+Overlay windows (only with `GLPASS_OVERLAY=1`, see
+[status](#status-and-limitations)) live in the popup planes, not the main
+planes. They are filled with popup value 3 instead, and their image is a
+second layer: shown above the main images where the popup planes hold that
+key, with colour index 0 transparent.
 
 ### Colour index emulation
 
@@ -138,9 +161,11 @@ preloaded to:
 
 - **record colours:** it notes every colour a program stores (`XStoreColors`
   and related calls) and passes the call on to libX11;
-- **seed new colormaps:** a program's own PseudoColor colormap starts with
-  the default colormap's colours, so its Motif widgets inside GL windows show
-  their intended colours;
+- **seed new colormaps:** a program's own PseudoColor colormap (created with
+  `AllocAll`) starts with the default colormap's colours, so its Motif
+  widgets inside GL windows show their intended colours; a colormap created
+  without cells (`AllocNone`) for the default visual is the default colormap
+  itself;
 - **remap drawing pixels:** 12-bit pixel values a program hands to X (GC and
   window colours) are mapped to the nearest colour that exists.
 
@@ -226,8 +251,11 @@ make            # libGL.so, libglpass_x.so, gltri
 ```
 
 The guest and the emulator must come from the same source tree: the command
-numbers are generated, and the protocol version (`GLP_VERSION`) is checked at
-startup. After changing either side, rebuild both.
+numbers are generated. At startup the library sends the ID of its command
+table (`GLP_FN_TABLE_ID`, generated) and the emulator refuses a library built
+from other sources. The program then prints `glpass: this library and the
+emulator come from different glpass sources` and falls back to IRIX's own
+OpenGL. After changing either side, rebuild both.
 
 ## Packaging and installing in IRIX
 
@@ -329,11 +357,16 @@ Tested programs:
 | Program | State |
 |---|---|
 | `gltri` | Works: thousands of frames per second |
-| Quake III Arena (IRIX build) | Runs well: menus, intro, game; host cost about 1.2 ms per frame |
+| Quake III Arena (IRIX build) | Runs: menus, intro, game; host cost about 1.2 ms per frame. Image quality has dropped since the visual changes made for Maya (under investigation), and fullscreen mode shows a normal window. |
 | Maya 6.5 | Usable: viewports in wireframe and smooth shade, tumbling, selection, manipulators, dropdown and panel menus, right-click marking menus. Gaps below. |
 
 Known limitations:
 
+- **Quake III quality and fullscreen.** Quake III asks for 4/4/4-bit colour
+  and renders at that depth; its image is darker than before the Maya
+  visual changes, for a reason not yet found. Its fullscreen mode
+  (`r_fullscreen 1`) reports 640×480 fullscreen but draws a decorated
+  window.
 - **No selection rectangle in Maya.** Maya draws it only in overlay planes.
   With `GLPASS_OVERLAY=1` Maya gets an overlay visual but freezes after
   start, so overlays are off by default.

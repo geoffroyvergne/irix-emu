@@ -382,12 +382,13 @@ void R5000::raiseException(ExcCode code, unsigned coprocessor, bool tlbRefill) {
 
     // Log the first occurrences of each (exception, PC) pair. Exceptions an OS
     // takes all the time (TLB refills, copy-on-write, syscalls, breakpoints,
-    // lazy FPU switching) only with INDY_TRACE_EXCEPTIONS; a TLB fault on the
-    // NULL page is always shown, as it is almost always a bug.
+    // lazy FPU switching) only with INDY_TRACE_EXCEPTIONS; the others (bus
+    // errors from hardware probes, NULL-page faults the kernel turns into
+    // EFAULT) with INDY_VERBOSE too.
     const bool routine = code == ExcCode::Int || code == ExcCode::Sys || code == ExcCode::Bp ||
                          code == ExcCode::CpU || code == ExcCode::Mod ||
                          ((code == ExcCode::TLBL || code == ExcCode::TLBS) && cop0_[kBadVAddr] >= 0x1000);
-    if ((traceExceptions_ ? code != ExcCode::Int : !routine) &&
+    if ((traceExceptions_ ? code != ExcCode::Int : !routine && log::verbose()) &&
         exceptionLog_.first(uint64_t{static_cast<uint8_t>(code)} << 56 ^ currentPc_)) {
         log::tagged("CPU EXCEPTION", "{} at PC {} (BadVAddr {}) -> vector {}",
                     excName(code), mips::formatAddress(currentPc_),
@@ -651,7 +652,7 @@ void R5000::unimplemented(mips::Instruction insn) {
 }
 
 void R5000::unmappedAccess(PhysAddr addr, unsigned bytes, bool isWrite) {
-    if (unmappedWarnings_.first(addr)) {
+    if (log::verbose() && unmappedWarnings_.first(addr)) { // IRIX probes absent hardware so
         log::tagged("CPU WARNING", "Bus error: {}-byte {} at undecoded physical {:#010x} (PC {})",
                     bytes, isWrite ? "write" : "read", addr, mips::formatAddress(currentPc_));
         if (unmappedWarnings_.exhausted()) {

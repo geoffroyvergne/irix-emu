@@ -225,6 +225,16 @@ public:
         };
         switch (op) {
         case GLP_OP_HELLO:
+            if (arg != GLP_FN_TABLE_ID) { // a guest library built from other sources: refuse it
+                if (!tableMismatchLogged_) {
+                    tableMismatchLogged_ = true;
+                    log::warn("GL bridge: the guest glpass library ({:#010x}) was built from other sources than "
+                              "this emulator ({:#010x}); rebuild it in IRIX, see glpass/README.md",
+                              arg, GLP_FN_TABLE_ID);
+                }
+                cpu.setHypercallResult(static_cast<uint64_t>(int64_t{GLP_ERR_TABLE}));
+                return;
+            }
             cpu.setHypercallResult(GLP_VERSION);
             return;
         case GLP_OP_CREATE_CONTEXT:
@@ -966,6 +976,7 @@ private:
     uint32_t current_ = 0;
     uint32_t drawable_ = 0;
     unsigned unknownLogged_ = 0;
+    bool tableMismatchLogged_ = false;
     // Hypercall transfers in progress across page faults.
     struct Transfer {
         uint32_t op = 0;
