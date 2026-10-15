@@ -1,4 +1,0 @@
-/Users/gv/dev/projects/irix-emu/build-pgo-gen/CMakeFiles/indy_core.dir
-/Users/gv/dev/projects/irix-emu/build-pgo-gen/CMakeFiles/indy.dir
-/Users/gv/dev/projects/irix-emu/build-pgo-gen/CMakeFiles/edit_cache.dir
-/Users/gv/dev/projects/irix-emu/build-pgo-gen/CMakeFiles/rebuild_cache.dir

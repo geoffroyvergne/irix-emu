@@ -1,2 +1,0 @@
-indy_core_tests 2 0.0101414
----

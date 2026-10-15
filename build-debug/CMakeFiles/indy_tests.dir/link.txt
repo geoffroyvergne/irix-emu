@@ -1,1 +1,0 @@
-/usr/bin/c++ -g -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names -fsanitize=address,undefined CMakeFiles/indy_tests.dir/tests/CoreTests.cpp.o -o bin/indy_tests  lib/libindy_core.a

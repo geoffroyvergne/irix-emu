@@ -1,0 +1,45 @@
+# Build trees (CMake, PGO instrumented and optimised builds)
+build/
+build-*/
+cmake-build-*/
+CMakeUserPresets.json
+compile_commands.json
+
+# Profile-guided optimisation data
+*.profdata
+*.profraw
+
+# Machine state and media: PROM and NVRAM images, disks, CD images
+*.bin
+*.chd
+*.img
+*.iso
+*.raw
+*.hdd
+
+# Screenshots and image dumps written by the emulator
+*.ppm
+indy-snapshot.ppm
+
+# GL pass-through: objects built inside IRIX (glpass/guest)
+glpass/guest/*.o
+glpass/guest/libGL.so
+glpass/guest/libglpass_x.so
+glpass/guest/gltri
+
+# Compiled objects and libraries
+*.o
+*.a
+*.so
+*.dylib
+
+# Python
+__pycache__/
+*.pyc
+
+# Editors and OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~

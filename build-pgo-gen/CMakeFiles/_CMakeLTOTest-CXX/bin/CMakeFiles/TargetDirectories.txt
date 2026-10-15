@@ -1,4 +1,0 @@
-/Users/gv/dev/projects/irix-emu/build-pgo-gen/CMakeFiles/_CMakeLTOTest-CXX/bin/CMakeFiles/foo.dir
-/Users/gv/dev/projects/irix-emu/build-pgo-gen/CMakeFiles/_CMakeLTOTest-CXX/bin/CMakeFiles/boo.dir
-/Users/gv/dev/projects/irix-emu/build-pgo-gen/CMakeFiles/_CMakeLTOTest-CXX/bin/CMakeFiles/edit_cache.dir
-/Users/gv/dev/projects/irix-emu/build-pgo-gen/CMakeFiles/_CMakeLTOTest-CXX/bin/CMakeFiles/rebuild_cache.dir
