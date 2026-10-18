@@ -2,6 +2,7 @@
 
 #include "indy/core/WarnOnce.hpp"
 #include "indy/cpu/Cpu.hpp"
+#include "indy/cpu/DecodedCache.hpp"
 #include "indy/cpu/Instruction.hpp"
 #include "indy/cpu/Tlb.hpp"
 #include "indy/memory/MemoryBus.hpp"
@@ -26,6 +27,13 @@ namespace indy {
 // arithmetic; MIPS IV: COP1X, multiply-add, RECIP/RSQRT, eight condition codes).
 // Not yet: caches, 64-bit address segments (KX/SX/UX).
 //
+// Dispatch: instructions are decoded once per page of guest code into
+// DecodedOps (a handler and the register fields), kept by DecodedCache, and
+// run through the handler: one indirect call per instruction, no decode
+// switch. Hot instructions have handlers of their own; the others run
+// execute(), the reference semantics. Writes to decoded code (stores, DMA)
+// drop its decoded form (MemoryBus code pages).
+//
 // Fault policy:
 //   * architectural faults raise real MIPS exceptions (vectored via COP0)
 //   * unimplemented instruction  -> warn once per PC, skip it, keep running
@@ -36,8 +44,13 @@ namespace indy {
 class R5000 final : public Cpu {
 public:
     // `traceInstructions`: log this many executed instructions after each reset.
-    explicit R5000(MemoryBus& bus, uint64_t traceInstructions = 0, CpuModel model = CpuModel::R4600)
-        : bus_(bus), model_(model), traceLimit_(traceInstructions) {}
+    // `decoded`: run through the decoded-instruction cache (false: decode
+    // every instruction, the reference path, for comparisons and debugging).
+    explicit R5000(MemoryBus& bus, uint64_t traceInstructions = 0, CpuModel model = CpuModel::R4600,
+                   bool decoded = true);
+    ~R5000() override;
+    R5000(const R5000&) = delete;
+    R5000& operator=(const R5000&) = delete;
 
     [[nodiscard]] CpuModel model() const noexcept { return model_; }
     [[nodiscard]] bool mipsIV() const noexcept { return model_ == CpuModel::R5000; }
@@ -161,6 +174,8 @@ public:
     };
 
 private:
+    friend struct R5000Ops; // the decoded-instruction handlers (R5000Execute.cpp)
+
     enum class Access { Fetch, Load, Store };
 
     // ---- Register file -----------------------------------------------------
@@ -304,35 +319,73 @@ private:
     static constexpr size_t kMicroTlbEntries = 256;
     std::array<MicroTlbEntry, kMicroTlbEntries> microTlb_{};
     uint64_t microTlbGeneration_ = 1;
-    void flushMicroTlb() noexcept { ++microTlbGeneration_; dropFetchCache(); }
+    void flushMicroTlb() noexcept {
+        ++microTlbGeneration_;
+        dropFetchCache();
+        flushFastTables();
+    }
     void invalidateMicroTlb(const Tlb::Entry& replaced) noexcept;
 
-    // Fetch cache: host memory of the 4 KiB page the PC is in, so sequential
-    // instructions skip translation and the bus page lookup. Dropped by
-    // anything that can change translation (COP0 writes, exceptions, ERET,
-    // TLB reads/writes) and by physical memory remaps (bus generation).
+    // Fetch cache: the decoded instructions of the 4 KiB page the PC is in,
+    // so sequential instructions skip translation, the bus page lookup and
+    // decoding. Dropped by anything that can change translation (COP0
+    // writes, exceptions, ERET, TLB reads/writes), by physical memory remaps
+    // (MemoryBus remap hook) and by writes to the page's code.
     VirtAddr fetchPage_ = 1;           // page-aligned PC the cache covers; 1 = none
-    const uint8_t* fetchHost_ = nullptr;
-    uint64_t fetchMapGeneration_ = 0;
+    DecodedOp* fetchOps_ = nullptr;
     void dropFetchCache() noexcept { fetchPage_ = 1; }
 
-    // Data host-page cache: for loads and stores to RAM, the host memory of a
-    // virtual page under a given ASID and mode, so hits skip translation and
-    // the bus lookup. Slots are indexed like the micro-TLB and dropped with
-    // it; `write` is only set once a store passed the TLB (D bit) and the bus
-    // (writable RAM). Devices and unmapped space are never cached.
-    struct HostPageEntry {
-        uint64_t page = ~uint64_t{0};   // vaddr >> 12
-        uint64_t context = 0;           // ASID | mode bits << 8
-        uint64_t generation = 0;        // microTlbGeneration_ when filled
-        uint64_t mapGeneration = 0;     // bus map generation when filled
-        const uint8_t* read = nullptr;
-        uint8_t* write = nullptr;
+    // ---- Decoded instructions (R5000.cpp, R5000Execute.cpp) ------------------
+    bool decodedDispatch_;
+    DecodedCache decoded_;
+    // Storage page of host memory: RAM pages, then PROM pages; npos otherwise.
+    [[nodiscard]] size_t storagePage(const uint8_t* host) const noexcept;
+    // The decoded page for the 4 KiB of host memory at `host` (filled when
+    // new or stale); nullptr when the memory cannot be cached.
+    [[nodiscard]] DecodedOp* decodedPage(const uint8_t* host);
+    void codeWritten(size_t ramPage) noexcept; // MemoryBus code write hook
+    // Drop direct write pointers to host page `host` (it now holds code).
+    void revokeHostWrites(const uint8_t* host) noexcept;
+    static DecodedOp decode(uint32_t raw) noexcept; // R5000Execute.cpp
+    static void undecodedOp(R5000& cpu, DecodedOp& op); // decodes its slot, then runs it
+    bool step();                                    // one instruction or interrupt
+
+    // ---- Fast-path data access (R5000.cpp, R5000Execute.cpp) --------------------
+    // Loads and stores to RAM and PROM go straight to host memory through a
+    // small direct-mapped table per CPU mode (kernel, user), indexed by
+    // virtual page: one tag compare, then host = vaddr + addend. The tag is
+    // the page-aligned virtual address; a load or store compares it with
+    // vaddr & ~(0xFFF - (size - 1)), so a misaligned address never matches
+    // and takes the slow path, which raises the address error. Read and
+    // write tags are separate: a page is readable through the table once a
+    // load translated it, writable once a store did (TLB D bit) and the bus
+    // has RAM there; PROM, devices and decoded code are never writable here.
+    //
+    // The tables hold only what the current translation allows, so they
+    // are flushed or updated where translation changes, never checked per
+    // access: the mode picks the table (Status writes, exceptions, ERET);
+    // an ASID change flushes both; a TLB write drops the pages of the entry
+    // it replaces; a bus remap flushes everything (MemoryBus remap hook).
+    // ERL (reset and error handling: kuseg is an unmapped window then) has a
+    // table of its own; supervisor mode (unused by IRIX) one that always misses.
+    // Everything runs on the emulation thread (devices and DMA included), so
+    // no synchronisation is needed.
+    struct FastPage {
+        uint64_t readTag;  // page-aligned vaddr whose loads may use `addend`; kNoTag: none
+        uint64_t writeTag; // ... stores
+        uintptr_t addend;  // host address - vaddr, for that page
     };
-    std::array<HostPageEntry, kMicroTlbEntries> hostPages_{};
-    [[nodiscard]] uint64_t accessContext() const noexcept;
-    template <bool Store> [[nodiscard]] HostPageEntry* hostPageHit(VirtAddr vaddr) noexcept;
-    template <bool Store> void hostPageFill(VirtAddr vaddr, PhysAddr phys) noexcept;
+    static constexpr uint64_t kNoTag = 1;     // page-aligned addresses never have bit 0 set
+    static constexpr size_t kFastPages = 1024; // per table: 24 KiB
+    enum FastTable : size_t { kFastKernel, kFastUser, kFastErl, kFastNone, kFastTables };
+    std::array<std::array<FastPage, kFastPages>, kFastTables> fastTables_;
+    FastPage* fastTable_ = nullptr;           // the current mode's
+    void selectFastTable() noexcept;          // after a Status change
+    void flushFastTables() noexcept;
+    void invalidateFastPages(uint64_t firstPage, uint64_t pages) noexcept;
+    template <bool Store> void fastFill(VirtAddr vaddr, PhysAddr phys) noexcept;
+    template <BusWord T> [[nodiscard]] bool loadSlow(VirtAddr vaddr, T& out);
+    template <BusWord T> [[nodiscard]] bool storeSlow(VirtAddr vaddr, T value);
 
     bool traceNull_ = false; // INDY_TRACE_NULL: dump state on the first NULL-page access
     bool traceExceptions_ = false; // INDY_TRACE_EXCEPTIONS: also log routine exceptions (TLB refills, ...)

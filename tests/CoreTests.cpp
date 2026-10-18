@@ -2440,6 +2440,214 @@ void textToKeyPresses() {
 
 } // namespace
 
+// ---- Decoded dispatch ---------------------------------------------------------
+
+// A CPU running `code` from RAM (KSEG0) after a boot PROM that jumps to it;
+// the PROM's exception vector (BEV) skips the faulting instruction.
+struct RamProgram {
+    static constexpr uint32_t kCode = physmap::kRamBase + 0x4000;
+    static constexpr uint32_t kData = physmap::kRamBase + 0x8000;
+    TempFile prom;
+    MemoryBus bus;
+    R5000 cpu;
+
+    static std::vector<uint32_t> promWords() {
+        const uint32_t code = 0x8000'0000u | kCode;
+        std::vector<uint32_t> w(0x400 / 4, 0);
+        w[0] = 0x3C19'0000u | (code >> 16);    // lui  $25, hi(code)
+        w[1] = 0x3739'0000u | (code & 0xFFFF); // ori  $25, $25, lo(code)
+        w[2] = 0x0320'0008u;                   // jr   $25
+        w[3] = 0;
+        // General exception vector (BEV): EPC += 4, ERET.
+        w[0x380 / 4 + 0] = 0x401A'7000; // mfc0  $26, $14
+        w[0x380 / 4 + 1] = 0x275A'0004; // addiu $26, $26, 4
+        w[0x380 / 4 + 2] = 0x409A'7000; // mtc0  $26, $14
+        w[0x380 / 4 + 3] = 0x4200'0018; // eret
+        return w;
+    }
+    RamProgram(const std::vector<uint32_t>& code, const std::vector<uint8_t>& data, bool decoded)
+        : prom(beWords(promWords())), cpu(bus, 0, CpuModel::R5000, decoded) {
+        bus.installRam(physmap::kRamBase, 1 * MiB);
+        if (!bus.loadProm(prom.path)) throw std::runtime_error("RamProgram: PROM load failed");
+        for (size_t i = 0; i < code.size(); ++i) (void)bus.write32(kCode + 4 * static_cast<uint32_t>(i), code[i]);
+        for (size_t i = 0; i < data.size(); ++i) (void)bus.write<uint8_t>(kData + static_cast<uint32_t>(i), data[i]);
+        cpu.reset();
+    }
+};
+
+// Random code of the instructions with decoded handlers (and some without),
+// run with decoded dispatch and with the reference decoder: every register,
+// HI/LO, the PC and the data must agree.
+void decodedMatchesReference() {
+    uint64_t state = 0x9E37'79B9'7F4A'7C15u;
+    auto next = [&] { // xorshift64*
+        state ^= state >> 12; state ^= state << 25; state ^= state >> 27;
+        return static_cast<uint32_t>((state * 0x2545'F491'4F6C'DD1Du) >> 32);
+    };
+    auto reg = [&] { uint32_t r; do r = next() % 32; while (r == 16 || r == 26); return r; }; // $16 base, $26 vector
+    static const uint32_t specials[] = {0x00, 0x02, 0x03, 0x04, 0x06, 0x07, 0x38, 0x3A, 0x3B, 0x3C, 0x3E, 0x3F,
+                                        0x14, 0x16, 0x17, 0x21, 0x23, 0x2D, 0x2F, 0x24, 0x25, 0x26, 0x27, 0x2A,
+                                        0x2B, 0x10, 0x12, 0x11, 0x13, 0x18, 0x19, 0x1A, 0x1B, 0x20, 0x22, 0x2C,
+                                        0x0A, 0x0B};
+    static const uint32_t immediates[] = {0x09, 0x19, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x08, 0x18};
+    static const std::pair<uint32_t, unsigned> memory[] = { // opcode, access size
+        {0x20, 1}, {0x24, 1}, {0x21, 2}, {0x25, 2}, {0x23, 4}, {0x27, 4}, {0x37, 8},
+        {0x28, 1}, {0x29, 2}, {0x2B, 4}, {0x3F, 8}, {0x22, 4}, {0x26, 4}};
+    static const uint32_t branches[] = {0x04, 0x05, 0x06, 0x07, 0x14, 0x15, 0x16, 0x17};
+    int mismatches = 0;
+    for (int program = 0; program < 300 && mismatches < 3; ++program) {
+        constexpr int kLength = 160;
+        std::vector<uint32_t> code;
+        code.push_back(0x3C10'0000u | ((0x8000'0000u | RamProgram::kData) >> 16)); // lui $16, hi(data)
+        code.push_back(0x3610'0000u | (RamProgram::kData & 0xFFFF));              // ori $16, $16, lo(data)
+        code.push_back(0x3C01'0040);                                                // lui $1, 0x0040 (BEV)
+        code.push_back(0x4081'6000);                                                // mtc0 $1, $12: ERL off
+        for (uint32_t r = 1; r < 32; ++r) {                                         // registers from data
+            if (r != 16) code.push_back(0xDE00'0000u | (r << 16) | (r * 8));        // ld $r, 8r($16)
+        }
+        const size_t body = code.size();
+        while (code.size() < body + kLength) {
+            const uint32_t kind = next() % 10;
+            const size_t here = code.size();
+            if (kind < 4) { // SPECIAL
+                const uint32_t f = specials[next() % std::size(specials)];
+                code.push_back((reg() << 21) | (reg() << 16) | (reg() << 11) | ((next() % 32) << 6) | f);
+            } else if (kind < 6) {
+                code.push_back((immediates[next() % std::size(immediates)] << 26) | (reg() << 21) | (reg() << 16) |
+                               (next() & 0xFFFF));
+            } else if (kind < 8) { // loads and stores off $16, mostly aligned
+                const auto [opcode, size] = memory[next() % std::size(memory)];
+                uint32_t offset = (next() % 4000) & ~(size - 1);
+                if (next() % 10 == 0) offset |= 1; // an address error
+                code.push_back((opcode << 26) | (16u << 21) | (reg() << 16) | offset);
+            } else if (kind == 8) { // branches, forward, within the program
+                const uint32_t remaining = static_cast<uint32_t>(body + kLength - here);
+                const uint32_t offset = 1 + next() % std::min<uint32_t>(8, std::max<uint32_t>(remaining - 2, 1));
+                if (next() % 3 == 0) { // REGIMM bltz/bgez
+                    code.push_back((0x01u << 26) | (reg() << 21) | ((next() % 2) << 16) | offset);
+                } else {
+                    code.push_back((branches[next() % std::size(branches)] << 26) | (reg() << 21) | (reg() << 16) |
+                                   offset);
+                }
+            } else { // j/jal forward
+                const uint32_t target = 0x8000'0000u | (RamProgram::kCode + 4 * static_cast<uint32_t>(
+                                                            std::min(here + 2 + next() % 8, body + kLength)));
+                code.push_back(((next() % 2 ? 0x02u : 0x03u) << 26) | ((target >> 2) & 0x03FF'FFFF));
+            }
+        }
+        const uint32_t start = 0x8000'0000u | (RamProgram::kCode + 4 * static_cast<uint32_t>(body));
+        code.push_back((0x02u << 26) | ((start >> 2) & 0x03FF'FFFF)); // j body
+        code.push_back(0);
+        std::vector<uint8_t> data(4096);
+        for (auto& b : data) b = static_cast<uint8_t>(next());
+
+        RamProgram decoded(code, data, true), reference(code, data, false);
+        for (int i = 0; i < 3000; ++i) {
+            (void)decoded.cpu.tick();
+            (void)reference.cpu.tick();
+        }
+        bool same = decoded.cpu.pc() == reference.cpu.pc() && decoded.cpu.hi() == reference.cpu.hi() &&
+                    decoded.cpu.lo() == reference.cpu.lo();
+        for (unsigned r = 0; r < 32; ++r) same = same && decoded.cpu.gpr(r) == reference.cpu.gpr(r);
+        const auto a = decoded.bus.ram().subspan(0x8000, 4096), b = reference.bus.ram().subspan(0x8000, 4096);
+        same = same && std::equal(a.begin(), a.end(), b.begin());
+        if (!same) {
+            ++mismatches;
+            std::fprintf(stderr, "  program %d: decoded and reference differ (pc %#llx vs %#llx)\n", program,
+                         static_cast<unsigned long long>(decoded.cpu.pc()),
+                         static_cast<unsigned long long>(reference.cpu.pc()));
+        }
+    }
+    CHECK(mismatches == 0);
+}
+
+// Code written after it was decoded runs as written: by a CPU store into the
+// running page, and by a bus write (as DMA does).
+void decodedCodeFollowsWrites() {
+    const uint32_t a = 0x8000'0000u | RamProgram::kCode; // address of the patched instruction
+    const std::vector<uint32_t> selfModifying = {
+        0x2402'0001,                       // A: addiu $2, $0, 1   (becomes addiu $2, $0, 2)
+        0x3C03'0000u | (a >> 16),          //    lui  $3, hi(A)
+        0x3463'0000u | (a & 0xFFFF),       //    ori  $3, $3, lo(A)
+        0x3C04'2402,                       //    lui  $4, 0x2402
+        0x3484'0002,                       //    ori  $4, $4, 2   = addiu $2, $0, 2
+        0xAC64'0000,                       //    sw   $4, 0($3)
+        0x0800'0000u | ((a >> 2) & 0x03FF'FFFF), // j A
+        0,
+    };
+    RamProgram smc(selfModifying, {}, true);
+    (void)smc.cpu.run(4 + 1); // the PROM's jump, then A
+    CHECK(smc.cpu.gpr(2) == 1u);
+    (void)smc.cpu.run(7 + 1); // the store, the loop back, A again
+    CHECK(smc.cpu.gpr(2) == 2u);
+
+    const std::vector<uint32_t> loop = {
+        0x2402'0001,                       // A: addiu $2, $0, 1
+        0x0800'0000u | ((a >> 2) & 0x03FF'FFFF), // j A
+        0,
+    };
+    RamProgram dma(loop, {}, true);
+    (void)dma.cpu.run(4 + 6);
+    CHECK(dma.cpu.gpr(2) == 1u);
+    (void)dma.bus.write32(RamProgram::kCode, 0x2402'0003); // addiu $2, $0, 3, written by a "device"
+    (void)dma.cpu.run(6);
+    CHECK(dma.cpu.gpr(2) == 3u);
+    const uint8_t addiu4[] = {0x24, 0x02, 0x00, 0x04};     // addiu $2, $0, 4, by a block copy (SCSI DMA)
+    CHECK(dma.bus.writeBytes(RamProgram::kCode, addiu4));
+    (void)dma.cpu.run(6);
+    CHECK(dma.cpu.gpr(2) == 4u);
+}
+
+// The fast-path tables follow translation: a TLB rewrite, a read-only page
+// after a load, a misaligned access and an ASID change all take effect.
+void fastPathFollowsTranslation() {
+    constexpr uint32_t p1 = physmap::kRamBase + 0x10000, p2 = p1 + 0x1000, p3 = p1 + 0x2000;
+    auto lo = [](uint32_t phys, bool dirty) { return (phys >> 12) << 6 | 0x18 | (dirty ? 4u : 0u) | 2u; };
+    auto li = [](unsigned reg, uint32_t value) { // lui/ori pair
+        return std::vector<uint32_t>{0x3C00'0000u | (reg << 16) | (value >> 16),
+                                     0x3400'0000u | (reg << 21) | (reg << 16) | (value & 0xFFFF)};
+    };
+    std::vector<uint32_t> code = {
+        0x3C01'0040, // lui  $1, 0x0040
+        0x4081'6000, // mtc0 $1, Status       (BEV, ERL off)
+    };
+    auto add = [&](const std::vector<uint32_t>& words) { code.insert(code.end(), words.begin(), words.end()); };
+    add(li(8, 0x0040'0001));                       // VPN2 0x00400000, ASID 1
+    add({0x4088'5000});                            // mtc0 $8, EntryHi
+    add(li(9, lo(p1, true))); add({0x4089'1000});  // EntryLo0: p1, writable
+    add(li(9, lo(p2, false))); add({0x4089'1800}); // EntryLo1: p2, read-only (D = 0)
+    add({0x4080'2800, 0x4080'0000, 0x4200'0002});  // PageMask 0, Index 0, tlbwi
+    add({0x3C0A'0040});                            // lui  $10, 0x0040
+    add({0x8D42'0000});                            // lw   $2, 0($10)       p1
+    add(li(9, lo(p3, true))); add({0x4089'1000, 0x4200'0002}); // EntryLo0: p3, tlbwi
+    add({0x8D43'0000});                            // lw   $3, 0($10)       p3 now
+    add({0x8D46'1000});                            // lw   $6, 0x1000($10)  p2: a read entry...
+    add({0x2407'0077, 0xAD47'1000});               // sw   $7, 0x1000($10): ...but TLB modified
+    add({0x400B'6800});                            // mfc0 $11, Cause
+    add({0x2404'FFFF, 0x8D44'0002});               // lw   $4, 2($10): address error, $4 kept
+    add({0x400C'6800});                            // mfc0 $12, Cause
+    add({0x2405'FFFF});                            // addiu $5, $0, -1
+    add(li(8, 0x0040'0002)); add({0x4088'5000});   // EntryHi: ASID 2
+    add({0x8D45'0000});                            // lw   $5, 0($10): TLB miss, $5 kept
+    add({0x400D'6800});                            // mfc0 $13, Cause
+    add({0x1000'FFFF, 0});                         // b .
+    RamProgram run(code, {}, true);
+    (void)run.bus.write32(p1, 0x1111'1111);
+    (void)run.bus.write32(p2, 0x2222'2222);
+    (void)run.bus.write32(p3, 0x3333'3333);
+    (void)run.cpu.run(400);
+    const auto excCode = [](uint64_t cause) { return (cause >> 2) & 31; };
+    CHECK(run.cpu.gpr(2) == 0x1111'1111u);
+    CHECK(run.cpu.gpr(6) == 0x2222'2222u);
+    CHECK(run.cpu.gpr(3) == 0x3333'3333u);          // the rewritten entry, not the old page
+    CHECK(run.bus.read32(p2) == 0x2222'2222u);       // the read-only page kept its value
+    CHECK(excCode(run.cpu.gpr(11)) == 1u);           // TLB modified
+    CHECK(run.cpu.gpr(4) == ~uint64_t{0});
+    CHECK(excCode(run.cpu.gpr(12)) == 4u);           // address error on load
+    CHECK(run.cpu.gpr(5) == ~uint64_t{0});
+    CHECK(excCode(run.cpu.gpr(13)) == 2u);           // TLB miss: ASID 2 has no mapping
+}
+
 int main() {
     const std::pair<const char*, std::function<void()>> tests[] = {
         {"ramIsBigEndian", ramIsBigEndian},
@@ -2531,6 +2739,9 @@ int main() {
         {"chdDiskImageReadWrite", chdDiskImageReadWrite},
         {"wd33c93SatPausesAndResumesDataPhase", wd33c93SatPausesAndResumesDataPhase},
         {"textToKeyPresses", textToKeyPresses},
+        {"decodedMatchesReference", decodedMatchesReference},
+        {"decodedCodeFollowsWrites", decodedCodeFollowsWrites},
+        {"fastPathFollowsTranslation", fastPathFollowsTranslation},
     };
     for (const auto& [name, test] : tests) {
         const int before = g_failures;

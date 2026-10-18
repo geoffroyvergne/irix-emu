@@ -467,3 +467,53 @@ Please implement Phase 17: SDL Mouse Input Mapping to IOC2 Intel 8042:
    - Since the hardware cursor register in Newport isn't fully drawn yet, please implement a simple visual fallback: either let the host system cursor remain visible over the window, or inject a tiny crosshair blit over our SDL VRAM texture using the X/Y coordinates to easily see where the user is pointing.
 
 Please provide the updated modern C++ implementation for the IOC2 input processing and the updated SDL main loop. Once done, we will be fully equipped to insert our virtual IRIX CD image and select "Install System Software"!
+
+# Prompt 18 CPU Performance - Decoded Block Cache & Threaded Interpreter
+Act as an expert in console/computer hardware emulation and high-performance C++ architecture. I want to optimize the core R5000 CPU interpreter of my SGI Indy emulator. Currently, it uses a standard instruction-by-instruction interpreter loop with simple page-caching.
+
+Please design and provide a production-ready C++23 implementation framework for a "Decoded Block Cache" (Dynamic Basic Blocks) and a "Direct-Threaded Interpreter" dispatch system to replace a traditional switch-case loop.
+
+Requirements:
+1. Define a optimized structure for an "EmulatedInstruction" or "DecodedOpcode" that minimizes host cache misses.
+2. Design a "BasicBlock" structure that chains these decoded instructions until a branch, jump, or page boundary is hit.
+3. Implement a Block Cache lookup mechanism (using a fast hashing or multi-tiered array matching the Guest PC) that integrates with our current TLB invalidation policy (flushing affected pages on TLB writes).
+4. Provide a conceptual implementation of the main execution loop using GCC/Clang "Labels as Values" (&& operator) for direct threaded dispatch, showing how it handles branch delay slots and instruction stepping.
+5. Ensure the code remains clean, modular, and adheres to strict modern C++23 standards without external dependencies.
+
+# Prompt 19 Memory Bus & MMU Optimization - Fast-Path Memory Mapping
+
+Act as an expert in low-level emulation and virtual memory management. I need to drastically optimize the software MMU / MemoryBus lookup of my SGI Indy emulator. Currently, context/mode switches (ASID, KSU/EXL/ERL) cause misses in our page caches, and we evaluate memory accesses via software layers.
+
+Please generate a high-performance C++23 design and implementation for a "Fast-Path MMU Lookup Table".
+
+Requirements:
+1. Create a flattened, lightweight page table structure optimized for L1/L2 host CPU cache residency, mapping guest virtual addresses directly to host pointers (uint8_t*).
+2. Separate the structure into a Read LUT (Look-Up Table) and a Write LUT to handle ROM/PROM writes or memory-mapped I/O (MMIO) faults cleanly without branching in the critical path.
+3. Implement a fast-path template function for inline usage: `template<typename T> T readVirtual(uint32_t vaddr)` and `template<typename T> void writeVirtual(uint32_t vaddr, T value)`.
+4. If a fast-path lookup misses (due to MMIO, TLB miss, or permission change), it must gracefully fall back to the slow-path MemoryController/HPC3 decoding.
+5. Provide a thread-safe or synchronization-efficient method to invalidate specific entries or flush the fast-path LUT when the CPU modifies TLB entries or MEMCFG registers.
+
+# Prompt 20 Disk I/O & SCSI DMA Optimization - Asynchronous Disk Backend
+
+Act as an expert in storage systems emulation and asynchronous I/O architectures in C++. I want to optimize the SCSI storage subsystem (WD33C93 and Hard Disk core) of my SGI Indy emulator to eliminate host file system stutters during heavy application loads under IRIX.
+
+Please design a high-performance, asynchronous disk access layer in C++23.
+
+Requirements:
+1. Refactor the Disk Image interface (handling raw and uncompressed CHD formats) to decouple read/write operations from the main EmulationThread.
+2. Implement an asynchronous worker thread pool or use non-blocking C++ execution models to queue disk reads/writes (`READ(10) / WRITE(10)`).
+3. Integrate this with the existing `Scheduler` system: when a SCSI DMA transfer is initiated by the HPC3/MC, the emulation thread should estimate the completion time based on SCSI bus speeds, schedule a future interrupt event, and offload the actual host file I/O to the background worker.
+4. Ensure zero-copy memory usage where possible by transferring data directly between the host file buffers and the emulated Guest RAM pages via physical address mapping.
+5. Provide robust thread-synchronization primitives (lock-free rings or lightweight atomic flags) to signal DMA completion status back to the core emulation loop without blocking.
+
+# Prompt 21 : Graphics Rasterization - SIMD & SDL3 Texture Blitting Optimization
+
+Act as an expert in graphics hardware emulation and SIMD vectorization. I need to speed up the Newport XL8 / REX3 drawing engine emulation in my SGI Indy emulator. Currently, drawing blocks, spans, logic ops, and packing 24-bit colors into 8-bit `BBGGGRRR` format is done sequentially in software, causing high host CPU overhead at 1280x1024 resolution.
+
+Please provide optimized C++23 routines using SIMD vectorization and advanced SDL3 presentation techniques.
+
+Requirements:
+1. Vectorize the Newport REX3 block fill and screen-to-screen copy operations utilizing explicit AVX2 intrinsics (with clean fallback to ARM NEON or standard loops for portability).
+2. Optimize the pixel packing function that converts SGI native modes into host frames. Specifically, optimize the conversion of 24-bit RGB or CI (Color Index) modes through gamma ramps and popup plane overlays.
+3. Redesign the FrameBuffer submission to SDL3. Instead of processing gamma and color mapping pixel-by-pixel on the host CPU, show how to offload the color-indexing lookup and gamma-ramp adjustments to an execution strategy compatible with SDL3's GPU/texture processing pipeline or highly efficient multi-threaded blitting.
+4. Ensure the solution maintains data alignment requirements suitable for high-throughput memory transfers.

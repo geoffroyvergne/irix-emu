@@ -2,7 +2,7 @@
 
 A clean-room emulator of the **Silicon Graphics Indy** (IP24 board, "Guinness" architecture), written in modern C++23 with SDL3.
 
-**Current status:** an R5000 Indy (150 MHz, up to 256 MB, Newport XL8) runs **IRIX 6.5** to the full 4Dwm desktop: the xdm/clogin graphical login, Toolchest menus, window moves, shells, and applications such as Maya 6.5, which starts as far as its licence check. IRIX installs from the original CDs onto a raw disk image, and MAME's uncompressed CHD disks boot as they are. The real Indy boot PROM (5.3 Rev B10) passes its power-on diagnostics. Speed is about that of a real Indy (with the PGO build).
+**Current status:** an R5000 Indy (150 MHz, up to 256 MB, Newport XL8) runs **IRIX 6.5** to the full 4Dwm desktop: the xdm/clogin graphical login, Toolchest menus, window moves, shells and applications. With [glpass](glpass/README.md), host-GPU OpenGL for IRIX programs, 3D applications run: Maya 6.5 (viewports, menus, selection) and Quake III Arena. IRIX installs from the original CDs onto a raw disk image, and MAME's uncompressed CHD disks boot as they are. The real Indy boot PROM (5.3 Rev B10) passes its power-on diagnostics. The CPU interpreter runs decoded instructions with fast-path memory tables. Speed is about that of a real Indy; the heaviest boot phases reach 83–92% with the default build.
 
 ---
 
@@ -126,17 +126,19 @@ Any other address gives a bus error, including empty GIO expansion slots. The PR
 ```
 CMakeLists.txt, cmake/        build configuration (warnings, LTO, sanitizers)
 include/indy/                 public headers of the emulation core
-  core/      System, Scheduler, EmulationThread, FrameBuffer, Commands, Log, MmioDevice
-  cpu/       Cpu interface, R5000 (interpreter + COP0/COP1, optional R4600 mode), Fpu, Tlb, Instruction decode
+  core/      System, Scheduler, EmulationThread, FrameBuffer, Commands, Log, MmioDevice, DisplayOverlay (host GL images on the display)
+  cpu/       Cpu interface, R5000 (interpreter + COP0/COP1, optional R4600 mode), DecodedCache, Fpu, Tlb, Instruction decode
   memory/    MemoryBus, MemoryController (MC), PhysicalMap, PROM image handling
   hpc/       Hpc3, Ioc2, Int3, Pit8254, Ds1386
-  scsi/      ScsiController, Wd33c93, ScsiTarget, CdRomDrive, ScsiDmaPort
+  scsi/      ScsiController, Wd33c93, ScsiTarget, ScsiDisk, DiskImage (raw, CHD), CdRomDrive, ScsiDmaPort, DiskStats
   serial/    Z8530
-  input/     Kbc8042 (8042 + PS/2 keyboard/mouse)
+  input/     Kbc8042 (8042 + PS/2 keyboard/mouse), TextKeys (paste: text to key presses, US/FR layouts)
   graphics/  GraphicsSubsystem, Newport, TestPatternDisplay
 src/                          implementations (same layout)
 src/frontend/                 SDL3 frontend: main.cpp, SdlFrontend, HostTerminal
 tests/CoreTests.cpp           unit tests for the core (no SDL)
+tests/CpuBench.cpp            indy_bench: CPU interpreter speed, without devices or pacing
+glpass/                       host-GPU OpenGL for IRIX programs (own README)
 ```
 
 The core library `indy_core` has **no SDL dependency**. Only `src/frontend` uses SDL.
@@ -145,7 +147,7 @@ The core library `indy_core` has **no SDL dependency**. Only `src/frontend` uses
 
 | Component | Status |
 |---|---|
-| **R5000 CPU** | An R5000PC at 150 MHz (32 KB primary caches, no secondary cache), as in the later Indys: MIPS IV (conditional moves, PREF, indexed FP loads/stores, multiply-add, RECIP/RSQRT, eight FP condition codes) on top of a MIPS III integer interpreter with exact branch delay slots. COP0: 48-entry TLB, exceptions, interrupts IP2–IP7, Count/Compare timer. COP1: register file, moves, loads/stores, branches, and IEEE arithmetic, conversions and compares (`.S/.D/.W/.L`) under the guest rounding mode, with FCR31 cause/flag/enable bits and FPE traps. |
+| **R5000 CPU** | An R5000PC at 150 MHz (32 KB primary caches, no secondary cache), as in the later Indys: MIPS IV (conditional moves, PREF, indexed FP loads/stores, multiply-add, RECIP/RSQRT, eight FP condition codes) on top of a MIPS III integer interpreter with exact branch delay slots. Instructions are decoded once per code page into handlers. Loads and stores go through per-mode tables from virtual page to host memory (see [Current simplifications](#known-limitations-and-roadmap)). COP0: 48-entry TLB, exceptions, interrupts IP2–IP7, Count/Compare timer. COP1: register file, moves, loads/stores, branches, and IEEE arithmetic, conversions and compares (`.S/.D/.W/.L`) under the guest rounding mode, with FCR31 cause/flag/enable bits and FPE traps. |
 | **Memory controller (MC)** | SIMM bank decoding from MEMCFG, with mirroring and the low alias. RPSS counter. Virtual DMA engine (fill, copy, stride, zoom, DMA TLB) with completion interrupt. Bus-error latching and IP6. Semaphores. |
 | **HPC3** | SCSI DMA descriptor chains with interrupts, PBUS routing, RTC/NVRAM window, register files. |
 | **IOC2 / INT3** | Interrupt aggregation into CPU IP2–IP5, including the mappable sources. Board ID `0x26` (Indy). Front panel. |
@@ -204,7 +206,7 @@ tools/build-pgo.sh indy_prom.bin irix.img        # optionally: training seconds 
 ./build-pgo/bin/indy indy_prom.bin --disk irix.img --ram 256
 ```
 
-It takes about two minutes and makes the interpreter about 13% faster (133% of a real Indy unthrottled, against 118%). Re-run it after updating the sources. A stale profile still works but helps less.
+It takes about two minutes. It made the interpreter about 13% faster (133% of a real Indy unthrottled, against 118%), as measured before decoded instructions and fast-path memory tables were added. Its gain on the current interpreter has not been measured yet. Re-run it after updating the sources. A stale profile still works but helps less.
 
 The code builds cleanly with `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion`.
 
@@ -445,6 +447,7 @@ The same text-to-keys conversion is used by `--type`, so scripted typing also ha
 - **Exception log:** `INDY_TRACE_EXCEPTIONS=1` logs the first occurrence of every exception, routine ones included.
 - **Final state:** on shutdown, `Emulation stopped at cycle N, CPU PC …`.
 - **DMA:** `INDY_TRACE_DMA=1` logs the first memory controller DMA transfers (silent otherwise; aborts are always reported).
+- **Disk:** `INDY_TRACE_DISK=1` logs, every 5 seconds, the host time disk I/O takes on the emulation thread: image reads and writes (total and the slowest command), and the SCSI DMA copies to and from guest memory.
 - **Graphics bring-up:** `INDY_TRACE_GFX=<n>` traces Newport register and DCB traffic.
 - **Plane sets:** `INDY_TRACE_PLANES=1` logs the first pixel the X server writes to each Newport plane set (RGB/CI, overlay, popup, CID), and every 65536th write to the overlay planes, which the XL8 does not have.
 - **Scripted input:** `INDY_INPUT_FILE=<file>`: lines appended to the file while the emulator runs are input, `mouse <dx> <dy> [<buttons>]` (PS/2 deltas, +dy up; buttons L=1 R=2 M=4) or `type <text>` (typed with the `--keymap` layout). With `kill -USR1` screenshots, tests can drive and check a running session.
@@ -461,7 +464,11 @@ ctest --test-dir build --output-on-failure   # or: ./build/bin/indy_tests
 - the memory bus and MC (bank mapping, RPSS, DMA, bus errors);
 - the SCSI stack (CD-ROM and disk commands, HPC3 DMA chains, WD33C93 select-and-transfer and phase-by-phase sessions);
 - serial, the 8042 keyboard/mouse, INT3, the 8254 and the RTC/NVRAM;
-- the Newport (register read-back, DCB devices, rasterizer, hardware cursor).
+- the Newport (register read-back, DCB devices, rasterizer, hardware cursor);
+- decoded dispatch against the reference decoder, on random code, and code written after it was decoded;
+- the fast-path tables after a TLB rewrite, a read-only page, a misaligned access and an ASID change.
+
+`indy_bench [seconds]` measures the CPU interpreter alone, in millions of guest instructions per second, with no devices and no pacing. It runs three workloads: two kernel loops in KSEG0, and a user-mode loop on TLB-mapped memory with a syscall every 64 iterations. `INDY_BENCH_CHECK=1` also prints where each workload ended and what it counted, to check it ran as intended.
 
 Many tests replay the exact register sequences the real PROM performs. Run them in the sanitizer build too (see [Building](#building)).
 
@@ -471,15 +478,25 @@ Many tests replay the exact register sequences the real PROM performs. Run them 
 
 1. Use the installed system: the 4Dwm desktop after login, applications, and the remaining overlay and application CDs. IRIX 6.5 now installs, boots from disk and reaches the X login.
 2. Ethernet (SEEQ 80C03 through HPC3) and audio (HAL2).
-3. Performance: a decoded-block cache or JIT for the interpreter. With the PGO build, the heaviest IRIX phases (kernel start-up, boot scripts, starting a desktop session) run at 75–95% of a real Indy; everything else keeps up.
+3. Performance: the interpreter now runs decoded instructions with fast-path memory tables (see below). With the default build, the heaviest boot phases run at 83–92% of a real Indy, against 65–68% before, and a gcc build inside IRIX takes 23% less host time. Larger gains would need fused-instruction blocks or a JIT.
 4. Graphics: dithering and shaded (Gouraud) spans, the XL24 board, then an HLE path to OpenGL/Vulkan for 3D.
 
 **Current simplifications**
 
 - CPU timing is one instruction per cycle; caches are not modelled.
 - Count and Random are computed from an instruction counter when read, and the Count = Compare interrupt is a precomputed deadline.
-- The interpreter keeps three translation caches, all invisible to the guest: a 256-entry micro-TLB in front of the 48-entry TLB, the host page of the current code page for instruction fetch, and a host-page cache for loads and stores to RAM. Context and mode switches (ASID, KSU/EXL/ERL) simply miss. TLB writes drop the affected pages, and memory remaps drop everything.
-- SCSI targets have a single logical unit (LUN 0) and complete commands instantly, without disconnecting or reselecting. A select-and-transfer whose data phase outlasts the transfer count pauses ("unexpected phase") and resumes when the driver re-issues it, as on the real chip.
+- The interpreter keeps three translation caches, all invisible to the guest: a 256-entry micro-TLB in front of the 48-entry TLB, the decoded instructions of the current code page for instruction fetch, and fast-path tables for loads and stores. TLB writes drop the affected pages, and memory remaps drop everything (the memory bus calls the CPU back).
+- **Fast-path data access:** each CPU mode (kernel, user, ERL) has a 1024-entry direct-mapped table from virtual page to host memory, with separate read and write tags.
+  - An access is one tag compare, alignment included (a misaligned address never matches), then `host = vaddr + addend`.
+  - Entries hold only what translation allows: readable after a load translated the page; writable after a store did (TLB D bit) on RAM that holds no decoded code. PROM, devices and decoded code always take the slow path.
+  - Nothing is checked per access. The mode selects the table (Status writes, exceptions, `ERET`), an ASID change flushes, a TLB write drops the replaced pages, and a remap flushes all.
+- **Decoded instructions:** each 4 KiB page of guest code is decoded once into 16-byte slots (a handler and the register fields), one per word, indexed by the PC.
+  - Hot instructions have handlers of their own; the others run the reference `execute()`.
+  - Pages are keyed by RAM or PROM storage, so TLB changes never invalidate them and RAM mirrors share them.
+  - A write to a decoded page drops its decoded form: CPU stores, device DMA and hypercall copies all go through the memory bus, which tracks code pages. The CPU keeps no direct write pointers to them.
+  - Branch delay slots and exceptions work as before, and any PC is an entry point.
+  - `R5000(..., decoded = false)` runs the reference decoder; the `decodedMatchesReference` test runs random code both ways and compares.
+- SCSI targets have a single logical unit (LUN 0) and complete commands instantly, without disconnecting or reselecting. Disk images are read synchronously on the emulation thread. Measured with `INDY_TRACE_DISK` while booting IRIX and starting Maya from a cold disk, this takes about 0.4% of the thread's time, with no command over 3.5 ms (one early boot read took 17 ms). SCSI DMA copies whole runs within a page at once. A select-and-transfer whose data phase outlasts the transfer count pauses ("unexpected phase") and resumes when the driver re-issues it, as on the real chip.
 - Some behaviour follows the PROM where the references are silent. These spots are marked `ASSUMPTION` or explained in comments; for example, untranslated MC DMA addresses are treated as physical.
 
 ## Legal

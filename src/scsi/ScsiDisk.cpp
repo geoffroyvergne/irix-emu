@@ -1,5 +1,7 @@
 #include "indy/scsi/ScsiDisk.hpp"
 
+#include "indy/scsi/DiskStats.hpp"
+
 #include "indy/core/Log.hpp"
 
 #include <format>
@@ -130,9 +132,11 @@ ScsiCommandResult ScsiDisk::read(uint64_t lba, uint32_t blocks) {
         return checkCondition(kSenseIllegalRequest, kAscLbaOutOfRange);
     }
     std::vector<uint8_t> data(size_t{blocks} * kBlockSize);
+    const auto start = DiskStats::Clock::now();
     if (!image_->read(lba * kBlockSize, data)) {
         return checkCondition(kSenseMediumError, kAscUnrecoveredRead);
     }
+    if (DiskStats::enabled()) DiskStats::get().image(start, data.size(), false);
     return good(std::move(data));
 }
 
@@ -142,9 +146,11 @@ ScsiCommandResult ScsiDisk::write(uint64_t lba, uint32_t blocks, std::span<const
     }
     // Only whole blocks actually received are written.
     const size_t bytes = std::min(data.size(), size_t{blocks} * kBlockSize) / kBlockSize * kBlockSize;
+    const auto start = DiskStats::Clock::now();
     if (!image_->write(lba * kBlockSize, data.first(bytes))) {
         return checkCondition(kSenseMediumError, 0x0C); // write error
     }
+    if (DiskStats::enabled()) DiskStats::get().image(start, bytes, true);
     return good();
 }
 

@@ -74,6 +74,7 @@ add_library(indy_core STATIC
     src/core/Scheduler.cpp
     src/core/System.cpp
     src/core/EmulationThread.cpp
+    src/cpu/DecodedCache.cpp
     src/cpu/R5000.cpp
     src/cpu/R5000Execute.cpp
     src/cpu/Fpu.cpp
@@ -166,4 +167,7 @@ if(INDY_BUILD_TESTS)
     add_executable(indy_tests tests/CoreTests.cpp)
     target_link_libraries(indy_tests PRIVATE indy::core indy::options)
     add_test(NAME indy_core_tests COMMAND indy_tests)
+    # CPU interpreter speed, without devices or pacing: indy_bench [seconds]
+    add_executable(indy_bench tests/CpuBench.cpp)
+    target_link_libraries(indy_bench PRIVATE indy::core indy::options)
 endif()

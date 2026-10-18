@@ -102,56 +102,68 @@ void R5000::trap(bool condition) {
 // Memory access
 // ---------------------------------------------------------------------------
 
-uint64_t R5000::accessContext() const noexcept {
-    constexpr uint64_t kModeBits = 0x1E; // Status KSU (4:3), ERL (2), EXL (1): what decides the mode
-    return (cop0_[kEntryHi] & 0xFF) | ((cop0_[kStatus] & kModeBits) << 8);
+// Fast path: one tag compare in the current mode's table, then host memory
+// (see FastPage). The tag compare includes the alignment bits, so a
+// misaligned access always takes the slow path, which raises the error.
+template <BusWord T>
+bool R5000::load(VirtAddr vaddr, T& out) {
+    const FastPage& e = fastTable_[(vaddr >> 12) % kFastPages];
+    if ((vaddr & ~uint64_t{0xFFF - (sizeof(T) - 1)}) == e.readTag) [[likely]] {
+        T raw;
+        std::memcpy(&raw, reinterpret_cast<const void*>(static_cast<uintptr_t>(vaddr) + e.addend), sizeof(T));
+        out = std::endian::native == std::endian::little ? std::byteswap(raw) : raw;
+        return true;
+    }
+    return loadSlow(vaddr, out);
 }
 
-template <bool Store>
-R5000::HostPageEntry* R5000::hostPageHit(VirtAddr vaddr) noexcept {
-    HostPageEntry& e = hostPages_[(vaddr >> 12) % kMicroTlbEntries];
-    const bool usable = Store ? e.write != nullptr : e.read != nullptr;
-    if (usable && e.page == (vaddr >> 12) && e.generation == microTlbGeneration_ &&
-        e.mapGeneration == bus_.mapGeneration() && e.context == accessContext()) [[likely]] {
-        return &e;
+template <BusWord T>
+bool R5000::store(VirtAddr vaddr, T value) {
+    const FastPage& e = fastTable_[(vaddr >> 12) % kFastPages];
+    if ((vaddr & ~uint64_t{0xFFF - (sizeof(T) - 1)}) == e.writeTag) [[likely]] {
+        const T raw = std::endian::native == std::endian::little ? std::byteswap(value) : value;
+        std::memcpy(reinterpret_cast<void*>(static_cast<uintptr_t>(vaddr) + e.addend), &raw, sizeof(T));
+        return true;
     }
-    return nullptr;
+    return storeSlow(vaddr, value);
 }
 
+// Enters a page the access just translated (and the bus maps to host
+// memory) in the current mode's table: readable after a load, readable and
+// writable after a store, unless it holds decoded code (its writes must go
+// through the bus, which drops the decoded instructions).
 template <bool Store>
-void R5000::hostPageFill(VirtAddr vaddr, PhysAddr phys) noexcept {
-    HostPageEntry& e = hostPages_[(vaddr >> 12) % kMicroTlbEntries];
-    const uint64_t context = accessContext();
-    if (e.page != (vaddr >> 12) || e.context != context || e.generation != microTlbGeneration_ ||
-        e.mapGeneration != bus_.mapGeneration()) {
-        e = HostPageEntry{.page = vaddr >> 12, .context = context, .generation = microTlbGeneration_,
-                          .mapGeneration = bus_.mapGeneration()};
-    }
+void R5000::fastFill(VirtAddr vaddr, PhysAddr phys) noexcept {
+    if (fastTable_ == fastTables_[kFastNone].data()) return;
+    FastPage& e = fastTable_[(vaddr >> 12) % kFastPages];
+    const uint64_t page = vaddr & ~uint64_t{0xFFF};
     if constexpr (Store) {
-        e.write = bus_.writableHostPage4k(phys);
-        if (e.read == nullptr) e.read = e.write;
+        uint8_t* host = bus_.writableHostPage4k(phys);
+        if (host == nullptr) return;
+        e.readTag = page;
+        e.addend = reinterpret_cast<uintptr_t>(host) - static_cast<uintptr_t>(page);
+        e.writeTag = bus_.isCode(bus_.ramPage(host)) ? kNoTag : page;
     } else {
-        e.read = bus_.hostPage4k(phys);
+        const uint8_t* host = bus_.hostPage4k(phys);
+        if (host == nullptr) return;
+        const uintptr_t addend = reinterpret_cast<uintptr_t>(host) - static_cast<uintptr_t>(page);
+        if (e.readTag != page || e.addend != addend) e.writeTag = kNoTag; // another page: no write right
+        e.readTag = page;
+        e.addend = addend;
     }
 }
 
 template <BusWord T>
-bool R5000::load(VirtAddr vaddr, T& out) {
+bool R5000::loadSlow(VirtAddr vaddr, T& out) {
     if (vaddr % sizeof(T) != 0) [[unlikely]] {
         raiseAddressError(vaddr, Access::Load);
         return false;
-    }
-    if (const HostPageEntry* hit = hostPageHit<false>(vaddr)) [[likely]] {
-        T raw;
-        std::memcpy(&raw, hit->read + (vaddr & 0xFFF), sizeof(T));
-        out = std::endian::native == std::endian::little ? std::byteswap(raw) : raw;
-        return true;
     }
     const auto phys = translate(vaddr, Access::Load);
     if (!phys) [[unlikely]] {
         return false; // exception raised
     }
-    hostPageFill<false>(vaddr, *phys);
+    fastFill<false>(vaddr, *phys);
     if (!bus_.read(*phys, out)) [[unlikely]] {
         unmappedAccess(*phys, sizeof(T), /*isWrite=*/false);
         if (busErrorHook_) busErrorHook_(*phys, false);
@@ -162,26 +174,22 @@ bool R5000::load(VirtAddr vaddr, T& out) {
 }
 
 template <BusWord T>
-bool R5000::store(VirtAddr vaddr, T value) {
+bool R5000::storeSlow(VirtAddr vaddr, T value) {
     if (vaddr % sizeof(T) != 0) [[unlikely]] {
         raiseAddressError(vaddr, Access::Store);
         return false;
-    }
-    if (HostPageEntry* hit = hostPageHit<true>(vaddr)) [[likely]] {
-        const T raw = std::endian::native == std::endian::little ? std::byteswap(value) : value;
-        std::memcpy(hit->write + (vaddr & 0xFFF), &raw, sizeof(T));
-        return true;
     }
     const auto phys = translate(vaddr, Access::Store);
     if (!phys) [[unlikely]] {
         return false; // exception raised
     }
-    hostPageFill<true>(vaddr, *phys);
     if (!bus_.write(*phys, value)) [[unlikely]] {
         // Posted write: the CPU moves on; the board reports it asynchronously.
         unmappedAccess(*phys, sizeof(T), /*isWrite=*/true);
         if (busErrorHook_) busErrorHook_(*phys, true);
+        return true;
     }
+    fastFill<true>(vaddr, *phys); // after the write: a write to decoded code has unmarked the page
     return true;
 }
 
@@ -919,6 +927,225 @@ void R5000::executeFpuOperation(Instruction insn) {
     } else {
         writeFpr32(fd, static_cast<uint32_t>(r.value));
     }
+}
+
+// ---------------------------------------------------------------------------
+// Decoded dispatch
+//
+// Handlers for the instructions IRIX runs most, each the same semantics as
+// its case above, with the register fields decoded once (DecodedOp). Every
+// other instruction runs execute() through `generic`. tests/CoreTests.cpp
+// (decodedMatchesReference) runs random code both ways and compares.
+// ---------------------------------------------------------------------------
+
+struct R5000Ops {
+    using Op = DecodedOp;
+    static int64_t simm(const Op& op) noexcept { return static_cast<int16_t>(op.raw); }
+    static uint64_t imm(const Op& op) noexcept { return op.raw & 0xFFFF; }
+
+    static void generic(R5000& c, Op& op) { c.execute(Instruction{op.raw}); }
+    static void nop(R5000&, Op&) noexcept {}
+
+    // ---- SPECIAL: shifts -------------------------------------------------------
+    static void sll(R5000& c, Op& op) noexcept { c.setGpr(op.rd, sx32(u32(c.gpr_[op.rt]) << op.sa)); }
+    static void srl(R5000& c, Op& op) noexcept { c.setGpr(op.rd, sx32(u32(c.gpr_[op.rt]) >> op.sa)); }
+    static void sra(R5000& c, Op& op) noexcept {
+        c.setGpr(op.rd, sx32(static_cast<uint32_t>(s32(c.gpr_[op.rt]) >> op.sa)));
+    }
+    static void sllv(R5000& c, Op& op) noexcept {
+        c.setGpr(op.rd, sx32(u32(c.gpr_[op.rt]) << (c.gpr_[op.rs] & 31)));
+    }
+    static void srlv(R5000& c, Op& op) noexcept {
+        c.setGpr(op.rd, sx32(u32(c.gpr_[op.rt]) >> (c.gpr_[op.rs] & 31)));
+    }
+    static void srav(R5000& c, Op& op) noexcept {
+        c.setGpr(op.rd, sx32(static_cast<uint32_t>(s32(c.gpr_[op.rt]) >> (c.gpr_[op.rs] & 31))));
+    }
+    static void dsll(R5000& c, Op& op) noexcept { c.setGpr(op.rd, c.gpr_[op.rt] << op.sa); }
+    static void dsrl(R5000& c, Op& op) noexcept { c.setGpr(op.rd, c.gpr_[op.rt] >> op.sa); }
+    static void dsra(R5000& c, Op& op) noexcept { c.setGpr(op.rd, static_cast<uint64_t>(s64(c.gpr_[op.rt]) >> op.sa)); }
+    static void dsll32(R5000& c, Op& op) noexcept { c.setGpr(op.rd, c.gpr_[op.rt] << (op.sa + 32)); }
+    static void dsrl32(R5000& c, Op& op) noexcept { c.setGpr(op.rd, c.gpr_[op.rt] >> (op.sa + 32)); }
+    static void dsra32(R5000& c, Op& op) noexcept {
+        c.setGpr(op.rd, static_cast<uint64_t>(s64(c.gpr_[op.rt]) >> (op.sa + 32)));
+    }
+
+    // ---- SPECIAL: arithmetic, logic, HI/LO, register jumps --------------------
+    static void addu(R5000& c, Op& op) noexcept { c.setGpr(op.rd, sx32(c.gpr_[op.rs] + c.gpr_[op.rt])); }
+    static void subu(R5000& c, Op& op) noexcept { c.setGpr(op.rd, sx32(c.gpr_[op.rs] - c.gpr_[op.rt])); }
+    static void daddu(R5000& c, Op& op) noexcept { c.setGpr(op.rd, c.gpr_[op.rs] + c.gpr_[op.rt]); }
+    static void dsubu(R5000& c, Op& op) noexcept { c.setGpr(op.rd, c.gpr_[op.rs] - c.gpr_[op.rt]); }
+    static void and_(R5000& c, Op& op) noexcept { c.setGpr(op.rd, c.gpr_[op.rs] & c.gpr_[op.rt]); }
+    static void or_(R5000& c, Op& op) noexcept { c.setGpr(op.rd, c.gpr_[op.rs] | c.gpr_[op.rt]); }
+    static void xor_(R5000& c, Op& op) noexcept { c.setGpr(op.rd, c.gpr_[op.rs] ^ c.gpr_[op.rt]); }
+    static void nor(R5000& c, Op& op) noexcept { c.setGpr(op.rd, ~(c.gpr_[op.rs] | c.gpr_[op.rt])); }
+    static void slt(R5000& c, Op& op) noexcept { c.setGpr(op.rd, s64(c.gpr_[op.rs]) < s64(c.gpr_[op.rt]) ? 1 : 0); }
+    static void sltu(R5000& c, Op& op) noexcept { c.setGpr(op.rd, c.gpr_[op.rs] < c.gpr_[op.rt] ? 1 : 0); }
+    static void mfhi(R5000& c, Op& op) noexcept { c.setGpr(op.rd, c.hi_); }
+    static void mflo(R5000& c, Op& op) noexcept { c.setGpr(op.rd, c.lo_); }
+    static void mthi(R5000& c, Op& op) noexcept { c.hi_ = c.gpr_[op.rs]; }
+    static void mtlo(R5000& c, Op& op) noexcept { c.lo_ = c.gpr_[op.rs]; }
+    static void mult(R5000& c, Op& op) noexcept {
+        const int64_t product = int64_t{s32(c.gpr_[op.rs])} * int64_t{s32(c.gpr_[op.rt])};
+        c.lo_ = sx32(static_cast<uint64_t>(product));
+        c.hi_ = sx32(static_cast<uint64_t>(product >> 32));
+    }
+    static void multu(R5000& c, Op& op) noexcept {
+        const uint64_t product = uint64_t{u32(c.gpr_[op.rs])} * uint64_t{u32(c.gpr_[op.rt])};
+        c.lo_ = sx32(product);
+        c.hi_ = sx32(product >> 32);
+    }
+    static void jr(R5000& c, Op& op) noexcept { c.jump(c.gpr_[op.rs]); }
+    static void jalr(R5000& c, Op& op) noexcept {
+        const uint64_t target = c.gpr_[op.rs]; // read before the link: jalr $ra, $ra
+        c.link(op.rd);
+        c.jump(target);
+    }
+
+    // ---- Immediates --------------------------------------------------------------
+    static void addiu(R5000& c, Op& op) noexcept {
+        c.setGpr(op.rt, sx32(c.gpr_[op.rs] + static_cast<uint64_t>(simm(op))));
+    }
+    static void daddiu(R5000& c, Op& op) noexcept { c.setGpr(op.rt, c.gpr_[op.rs] + static_cast<uint64_t>(simm(op))); }
+    static void slti(R5000& c, Op& op) noexcept { c.setGpr(op.rt, s64(c.gpr_[op.rs]) < simm(op) ? 1 : 0); }
+    static void sltiu(R5000& c, Op& op) noexcept {
+        c.setGpr(op.rt, c.gpr_[op.rs] < static_cast<uint64_t>(simm(op)) ? 1 : 0);
+    }
+    static void andi(R5000& c, Op& op) noexcept { c.setGpr(op.rt, c.gpr_[op.rs] & imm(op)); }
+    static void ori(R5000& c, Op& op) noexcept { c.setGpr(op.rt, c.gpr_[op.rs] | imm(op)); }
+    static void xori(R5000& c, Op& op) noexcept { c.setGpr(op.rt, c.gpr_[op.rs] ^ imm(op)); }
+    static void lui(R5000& c, Op& op) noexcept { c.setGpr(op.rt, sx32(imm(op) << 16)); }
+
+    // ---- Branches and jumps (pc_ is the delay slot) --------------------------------
+    static void beq(R5000& c, Op& op) noexcept { c.branch(c.gpr_[op.rs] == c.gpr_[op.rt], simm(op)); }
+    static void bne(R5000& c, Op& op) noexcept { c.branch(c.gpr_[op.rs] != c.gpr_[op.rt], simm(op)); }
+    static void blez(R5000& c, Op& op) noexcept { c.branch(s64(c.gpr_[op.rs]) <= 0, simm(op)); }
+    static void bgtz(R5000& c, Op& op) noexcept { c.branch(s64(c.gpr_[op.rs]) > 0, simm(op)); }
+    static void bltz(R5000& c, Op& op) noexcept { c.branch(s64(c.gpr_[op.rs]) < 0, simm(op)); }
+    static void bgez(R5000& c, Op& op) noexcept { c.branch(s64(c.gpr_[op.rs]) >= 0, simm(op)); }
+    static void beql(R5000& c, Op& op) noexcept { c.branchLikely(c.gpr_[op.rs] == c.gpr_[op.rt], simm(op)); }
+    static void bnel(R5000& c, Op& op) noexcept { c.branchLikely(c.gpr_[op.rs] != c.gpr_[op.rt], simm(op)); }
+    static void blezl(R5000& c, Op& op) noexcept { c.branchLikely(s64(c.gpr_[op.rs]) <= 0, simm(op)); }
+    static void bgtzl(R5000& c, Op& op) noexcept { c.branchLikely(s64(c.gpr_[op.rs]) > 0, simm(op)); }
+    static void j(R5000& c, Op& op) noexcept {
+        c.jump((c.pc_ & ~uint64_t{0x0FFF'FFFF}) | (uint64_t{op.raw & 0x03FF'FFFF} << 2));
+    }
+    static void jal(R5000& c, Op& op) noexcept {
+        c.link(31);
+        c.jump((c.pc_ & ~uint64_t{0x0FFF'FFFF}) | (uint64_t{op.raw & 0x03FF'FFFF} << 2));
+    }
+
+    // ---- Aligned loads and stores ----------------------------------------------------
+    template <BusWord T, bool SignExtend>
+    static void load(R5000& c, Op& op) {
+        T value;
+        if (!c.load(c.gpr_[op.rs] + static_cast<uint64_t>(simm(op)), value)) return; // exception raised
+        if constexpr (SignExtend) {
+            c.setGpr(op.rt, static_cast<uint64_t>(static_cast<int64_t>(static_cast<std::make_signed_t<T>>(value))));
+        } else {
+            c.setGpr(op.rt, value);
+        }
+    }
+    template <BusWord T>
+    static void store(R5000& c, Op& op) {
+        (void)c.store(c.gpr_[op.rs] + static_cast<uint64_t>(simm(op)), static_cast<T>(c.gpr_[op.rt]));
+    }
+
+    static DecodedHandler special(uint32_t raw) noexcept {
+        using namespace mips::fn;
+        switch (raw & 0x3F) {
+        case Sll:    return ((raw >> 11) & 0x1F) == 0 ? &nop : &sll; // nop, ssnop, ehb: no effect
+        case Srl:    return &srl;
+        case Sra:    return &sra;
+        case Sllv:   return &sllv;
+        case Srlv:   return &srlv;
+        case Srav:   return &srav;
+        case Dsll:   return &dsll;
+        case Dsrl:   return &dsrl;
+        case Dsra:   return &dsra;
+        case Dsll32: return &dsll32;
+        case Dsrl32: return &dsrl32;
+        case Dsra32: return &dsra32;
+        case Addu:   return &addu;
+        case Subu:   return &subu;
+        case Daddu:  return &daddu;
+        case Dsubu:  return &dsubu;
+        case And:    return &and_;
+        case Or:     return &or_;
+        case Xor:    return &xor_;
+        case Nor:    return &nor;
+        case Slt:    return &slt;
+        case Sltu:   return &sltu;
+        case Mfhi:   return &mfhi;
+        case Mflo:   return &mflo;
+        case Mthi:   return &mthi;
+        case Mtlo:   return &mtlo;
+        case Mult:   return &mult;
+        case Multu:  return &multu;
+        case Jr:     return &jr;
+        case Jalr:   return &jalr;
+        default:     return &generic; // traps, overflow arithmetic, division, syscalls, hypercall, MIPS IV
+        }
+    }
+
+    static DecodedHandler handler(uint32_t raw) noexcept {
+        using namespace mips::op;
+        if (raw == 0) return &nop;
+        switch (raw >> 26) {
+        case Special: return special(raw);
+        case RegImm:
+            switch ((raw >> 16) & 0x1F) {
+            case mips::regimm::Bltz: return &bltz;
+            case mips::regimm::Bgez: return &bgez;
+            default:                 return &generic;
+            }
+        case J:      return &j;
+        case Jal:    return &jal;
+        case Beq:    return &beq;
+        case Bne:    return &bne;
+        case Blez:   return &blez;
+        case Bgtz:   return &bgtz;
+        case Beql:   return &beql;
+        case Bnel:   return &bnel;
+        case Blezl:  return &blezl;
+        case Bgtzl:  return &bgtzl;
+        case Addiu:  return &addiu;
+        case Daddiu: return &daddiu;
+        case Slti:   return &slti;
+        case Sltiu:  return &sltiu;
+        case Andi:   return &andi;
+        case Ori:    return &ori;
+        case Xori:   return &xori;
+        case Lui:    return &lui;
+        case Lb:     return &load<uint8_t, true>;
+        case Lbu:    return &load<uint8_t, false>;
+        case Lh:     return &load<uint16_t, true>;
+        case Lhu:    return &load<uint16_t, false>;
+        case Lw:     return &load<uint32_t, true>;
+        case Lwu:    return &load<uint32_t, false>;
+        case Ld:     return &load<uint64_t, false>;
+        case Sb:     return &store<uint8_t>;
+        case Sh:     return &store<uint16_t>;
+        case Sw:     return &store<uint32_t>;
+        case Sd:     return &store<uint64_t>;
+        default:     return &generic; // COP0/COP1, unaligned and linked accesses, overflow arithmetic, ...
+        }
+    }
+};
+
+DecodedOp R5000::decode(uint32_t raw) noexcept {
+    const Instruction insn{raw};
+    return DecodedOp{.handler = R5000Ops::handler(raw),
+                     .raw = raw,
+                     .rs = static_cast<uint8_t>(insn.rs()),
+                     .rt = static_cast<uint8_t>(insn.rt()),
+                     .rd = static_cast<uint8_t>(insn.rd()),
+                     .sa = static_cast<uint8_t>(insn.shamt())};
+}
+
+void R5000::undecodedOp(R5000& cpu, DecodedOp& op) {
+    op = decode(op.raw);
+    op.handler(cpu, op);
 }
 
 } // namespace indy

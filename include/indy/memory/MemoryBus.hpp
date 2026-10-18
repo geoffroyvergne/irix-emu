@@ -11,6 +11,7 @@
 #include <cstring>
 #include <expected>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <span>
 #include <string>
@@ -109,6 +110,30 @@ public:
         return page.host != nullptr && page.writable ? page.host + (addr & kPageMask & ~PhysAddr{0xFFF}) : nullptr;
     }
     [[nodiscard]] uint64_t mapGeneration() const noexcept { return mapGeneration_; }
+    // Called whenever the map changes (RAM windows, PROM, devices): holders
+    // of host pointers drop them (they are fetched again on next use).
+    using RemapHook = std::function<void()>;
+    void setRemapHook(RemapHook hook) { remapHook_ = std::move(hook); }
+
+    // ---- Code pages ----------------------------------------------------------
+    // RAM pages (4 KiB of RAM storage) the CPU holds decoded instructions for.
+    // A write to one through the bus (CPU stores that missed its host-page
+    // cache, device DMA) unmarks it and calls the hook with its RAM storage
+    // page number, so the decoded instructions are dropped. The CPU does not
+    // keep direct write pointers to code pages, so every write is seen here.
+    using CodeWriteHook = std::function<void(size_t ramPage)>;
+    void setCodeWriteHook(CodeWriteHook hook) { codeWriteHook_ = std::move(hook); }
+    // The RAM storage page of host memory `host`, or npos outside RAM.
+    static constexpr size_t kNotRam = ~size_t{0};
+    [[nodiscard]] size_t ramPage(const uint8_t* host) const noexcept {
+        const uint8_t* base = ramBase_;
+        if (base == nullptr || host < base || host >= base + (codePages_.size() << 12)) return kNotRam;
+        return static_cast<size_t>(host - base) >> 12;
+    }
+    void markCode(size_t page) noexcept {
+        if (page < codePages_.size()) codePages_[page] = 1;
+    }
+    [[nodiscard]] bool isCode(size_t page) const noexcept { return page < codePages_.size() && codePages_[page] != 0; }
 
     [[nodiscard]] std::optional<uint32_t> read32(PhysAddr addr) {
         uint32_t value;
@@ -159,7 +184,11 @@ public:
                 return false;
             }
             const T raw = toGuest(value);
-            std::memcpy(page.host + (addr & kPageMask), &raw, sizeof(T));
+            uint8_t* host = page.host + (addr & kPageMask);
+            std::memcpy(host, &raw, sizeof(T));
+            if (const size_t code = static_cast<size_t>(host - ramBase_) >> 12; codePages_[code] != 0) [[unlikely]] {
+                codeWritten(code); // writable host pages are RAM
+            }
             return true;
         }
         if (page.floating) {
@@ -169,6 +198,40 @@ public:
             return page.device->write(static_cast<uint32_t>(addr - page.deviceBase), sizeOf<T>(), value);
         }
         return false;
+    }
+
+    // Byte streams (DMA): `data` copied to physical `addr`, all within one
+    // 4 KiB page. RAM takes one memcpy (and the code-page check); anything
+    // else goes byte by byte, as write<uint8_t> would. False on a bus error.
+    [[nodiscard]] bool writeBytes(PhysAddr addr, std::span<const uint8_t> data) {
+        assert(((addr & 0xFFF) + data.size()) <= 0x1000 && "writeBytes: one 4 KiB page at most");
+        if (addr < kAddressSpace && !data.empty()) {
+            const Page& page = pages_[addr >> kPageShift];
+            if (page.host != nullptr && page.writable) [[likely]] {
+                uint8_t* host = page.host + (addr & kPageMask);
+                std::memcpy(host, data.data(), data.size());
+                if (const size_t code = static_cast<size_t>(host - ramBase_) >> 12; codePages_[code] != 0) {
+                    codeWritten(code);
+                }
+                return true;
+            }
+        }
+        bool ok = true;
+        for (size_t i = 0; i < data.size(); ++i) ok = write<uint8_t>(addr + i, data[i]) && ok;
+        return ok;
+    }
+    [[nodiscard]] bool readBytes(PhysAddr addr, std::span<uint8_t> out) {
+        assert(((addr & 0xFFF) + out.size()) <= 0x1000 && "readBytes: one 4 KiB page at most");
+        if (addr < kAddressSpace && !out.empty()) {
+            const Page& page = pages_[addr >> kPageShift];
+            if (page.host != nullptr) [[likely]] {
+                std::memcpy(out.data(), page.host + (addr & kPageMask), out.size());
+                return true;
+            }
+        }
+        bool ok = true;
+        for (size_t i = 0; i < out.size(); ++i) ok = read<uint8_t>(addr + i, out[i]) && ok;
+        return ok;
     }
 
 private:
@@ -199,6 +262,16 @@ private:
     template <BusWord T>
     static constexpr T toGuest(T value) noexcept { return fromGuest(value); }
 
+    void remapped() {
+        ++mapGeneration_;
+        if (remapHook_) remapHook_();
+    }
+
+    void codeWritten(size_t page) {
+        codePages_[page] = 0;
+        if (codeWriteHook_) codeWriteHook_(page);
+    }
+
     void mapMemory(PhysAddr base, std::span<uint8_t> backing, bool writable);
     void unmap(PhysAddr base, uint64_t size);
     void requireFree(size_t firstPage, size_t lastPage) const;
@@ -207,6 +280,10 @@ private:
     uint64_t mapGeneration_ = 0; // bumped whenever pages_ changes
     std::optional<Ram> ram_;
     std::vector<uint8_t> prom_; // page-padded with 0xFF (erased EPROM)
+    uint8_t* ramBase_ = nullptr;     // RAM storage
+    std::vector<uint8_t> codePages_; // per 4 KiB of RAM storage: decoded by the CPU
+    CodeWriteHook codeWriteHook_;
+    RemapHook remapHook_;
     uint64_t promSize_ = 0;     // bytes actually loaded
 };
 

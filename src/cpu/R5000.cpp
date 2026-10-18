@@ -99,8 +99,28 @@ constexpr std::string_view excName(R5000::ExcCode code) {
 // Reset & run loop
 // ---------------------------------------------------------------------------
 
+R5000::R5000(MemoryBus& bus, uint64_t traceInstructions, CpuModel model, bool decoded)
+    : bus_(bus), model_(model), traceLimit_(traceInstructions), decodedDispatch_(decoded) {
+    bus_.setCodeWriteHook([this](size_t ramPage) { codeWritten(ramPage); });
+    bus_.setRemapHook([this] {
+        // Host pointers may now be wrong: drop them all. Decoded pages are
+        // only marked stale (a handler may be running from one).
+        dropFetchCache();
+        flushFastTables();
+        decoded_.invalidateAll();
+    });
+    for (auto& table : fastTables_) table.fill({kNoTag, kNoTag, 0});
+    fastTable_ = fastTables_[kFastNone].data();
+}
+
+R5000::~R5000() {
+    bus_.setCodeWriteHook(nullptr);
+    bus_.setRemapHook(nullptr);
+}
+
 void R5000::reset() {
     dropFetchCache();
+    decoded_.clear();
     gpr_.fill(0);
     hi_ = 0;
     lo_ = 0;
@@ -138,6 +158,7 @@ void R5000::reset() {
     exceptionLog_.clear();
     traceNull_ = std::getenv("INDY_TRACE_NULL") != nullptr;
     flushMicroTlb();
+    selectFastTable();
     traceExceptions_ = std::getenv("INDY_TRACE_EXCEPTIONS") != nullptr;
     tracePc_.reset();
     if (const char* env = std::getenv("INDY_TRACE_PC"); env != nullptr && *env != '\0') {
@@ -172,13 +193,98 @@ Cycles R5000::run(Cycles budget) {
     // Placeholder timing: one instruction per cycle. Time keeps passing while
     // halted so the scheduler and devices still run.
     for (runElapsed_ = 0; runElapsed_ < budget && !halted_; ++runElapsed_) {
-        tick();
+        (void)step();
     }
     runElapsed_ = 0;
     return budget;
 }
 
-bool R5000::tick() {
+bool R5000::tick() { return step(); }
+
+// ---------------------------------------------------------------------------
+// Decoded instructions
+// ---------------------------------------------------------------------------
+
+namespace {
+constexpr size_t kPromPages = physmap::kPromMaxSize >> 12;
+} // namespace
+
+size_t R5000::storagePage(const uint8_t* host) const noexcept {
+    if (const size_t ram = bus_.ramPage(host); ram != MemoryBus::kNotRam) return ram;
+    const std::span<const uint8_t> prom = bus_.prom();
+    if (!prom.empty() && host >= prom.data() && host < prom.data() + kPromPages * 4096) {
+        return bus_.ram().size() / 4096 + static_cast<size_t>(host - prom.data()) / 4096;
+    }
+    return MemoryBus::kNotRam;
+}
+
+DecodedOp* R5000::decodedPage(const uint8_t* host) {
+    if (!decodedDispatch_) return nullptr;
+    const size_t id = storagePage(host);
+    if (id == MemoryBus::kNotRam) return nullptr;
+    if (const size_t pages = bus_.ram().size() / 4096 + kPromPages; decoded_.capacity() != pages) {
+        decoded_.resize(pages); // RAM installed or resized since the last fetch
+    }
+    DecodedCache::Page* page = decoded_.find(id);
+    if (page == nullptr || page->stale) {
+        bool full = false;
+        page = &decoded_.fill(id, host, &undecodedOp, full);
+        if (const size_t ram = bus_.ramPage(host); ram != MemoryBus::kNotRam) {
+            bus_.markCode(ram);     // writes to it now drop the decoded form...
+            revokeHostWrites(host); // ...including stores that bypassed the bus
+        }
+    }
+    return page->ops.data();
+}
+
+void R5000::codeWritten(size_t ramPage) noexcept {
+    decoded_.invalidate(ramPage); // RAM storage pages are their own decoded page ids
+    dropFetchCache();             // the next fetch fills the page again
+}
+
+void R5000::revokeHostWrites(const uint8_t* host) noexcept {
+    const auto page = reinterpret_cast<uintptr_t>(host);
+    for (auto& table : fastTables_) {
+        for (FastPage& e : table) {
+            if (e.writeTag != kNoTag && static_cast<uintptr_t>(e.writeTag) + e.addend == page) e.writeTag = kNoTag;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Fast-path data access tables
+// ---------------------------------------------------------------------------
+
+void R5000::selectFastTable() noexcept {
+    const uint64_t status = cop0_[kStatus];
+    const uint64_t ksu = (status >> kStatusKsuShift) & 3;
+    FastTable table = kFastNone; // supervisor mode: always the slow path
+    if ((status & kStatusERL) != 0) table = kFastErl; // kuseg is an unmapped window
+    else if ((status & kStatusEXL) != 0 || ksu == 0) table = kFastKernel;
+    else if (ksu == 2) table = kFastUser;
+    fastTable_ = fastTables_[table].data();
+}
+
+void R5000::flushFastTables() noexcept {
+    fastTables_[kFastKernel].fill({kNoTag, kNoTag, 0});
+    fastTables_[kFastUser].fill({kNoTag, kNoTag, 0});
+    fastTables_[kFastErl].fill({kNoTag, kNoTag, 0});
+}
+
+void R5000::invalidateFastPages(uint64_t firstPage, uint64_t pages) noexcept {
+    if (pages >= kFastPages) {
+        flushFastTables();
+        return;
+    }
+    for (uint64_t i = 0; i < pages; ++i) {
+        const size_t slot = (firstPage + i) % kFastPages;
+        fastTables_[kFastKernel][slot] = {kNoTag, kNoTag, 0};
+        fastTables_[kFastUser][slot] = {kNoTag, kNoTag, 0};
+        fastTables_[kFastErl][slot] = {kNoTag, kNoTag, 0};
+    }
+}
+
+bool R5000::step() {
     if (halted_) {
         return false;
     }
@@ -194,46 +300,53 @@ bool R5000::tick() {
         return true;
     }
 
-    // ---- Fetch -------------------------------------------------------------
+    // ---- Fetch: the decoded slot of the PC (or, outside cacheable memory,
+    // the word itself) ---------------------------------------------------------
     const VirtAddr pc = pc_;
     if ((pc & 3) != 0) [[unlikely]] {
         raiseAddressError(pc, Access::Fetch);
         advanceTimers();
         return true;
     }
-    uint32_t word;
-    if ((pc & ~VirtAddr{0xFFF}) == fetchPage_ && bus_.mapGeneration() == fetchMapGeneration_) [[likely]] {
-        uint32_t raw;
-        std::memcpy(&raw, fetchHost_ + (pc & 0xFFF), sizeof raw);
-        word = std::endian::native == std::endian::little ? std::byteswap(raw) : raw;
+    DecodedOp* op = nullptr;
+    uint32_t word = 0;
+    if ((pc & ~VirtAddr{0xFFF}) == fetchPage_) [[likely]] {
+        op = &fetchOps_[(pc & 0xFFF) >> 2];
+        word = op->raw;
     } else {
         const auto phys = translate(pc, Access::Fetch);
         if (!phys) [[unlikely]] {
             advanceTimers();
             return !halted_;
         }
-        const auto fetched = bus_.read32(*phys);
-        if (!fetched) [[unlikely]] {
-            if ((cop0_[kStatus] & kStatusEXL) != 0) {
-                // The exception handler itself cannot be fetched: nothing can recover.
-                const bool noProm = bus_.prom().empty() && *phys >= physmap::kPromBase &&
-                                    *phys < physmap::kPromBase + physmap::kPromMaxSize;
-                halt(std::format("instruction bus error at PC {} (physical {:#010x}) inside an exception handler{}",
-                                 mips::formatAddress(pc), *phys,
-                                 noProm ? " - no PROM image is loaded, so nothing is mapped at 0x1FC00000" : ""));
-                return false;
+        if (const uint8_t* host = bus_.hostPage4k(*phys); host != nullptr) {
+            if (DecodedOp* page = decodedPage(host)) { // RAM or PROM: cache the decoded page
+                fetchPage_ = pc & ~VirtAddr{0xFFF};
+                fetchOps_ = page;
+                op = &page[(pc & 0xFFF) >> 2];
+                word = op->raw;
             }
-            log::tagged("CPU WARNING", "Instruction fetch from unmapped physical {:#010x} (PC {})",
-                        *phys, mips::formatAddress(pc));
-            raiseException(ExcCode::IBE);
-            advanceTimers();
-            return true;
         }
-        word = *fetched;
-        if (const uint8_t* host = bus_.hostPage4k(*phys)) { // RAM or PROM: cache the page
-            fetchPage_ = pc & ~VirtAddr{0xFFF};
-            fetchHost_ = host;
-            fetchMapGeneration_ = bus_.mapGeneration();
+        if (op == nullptr) {
+            const auto fetched = bus_.read32(*phys);
+            if (!fetched) [[unlikely]] {
+                if ((cop0_[kStatus] & kStatusEXL) != 0) {
+                    // The exception handler itself cannot be fetched: nothing can recover.
+                    const bool noProm = bus_.prom().empty() && *phys >= physmap::kPromBase &&
+                                        *phys < physmap::kPromBase + physmap::kPromMaxSize;
+                    halt(std::format("instruction bus error at PC {} (physical {:#010x}) inside an exception "
+                                     "handler{}",
+                                     mips::formatAddress(pc), *phys,
+                                     noProm ? " - no PROM image is loaded, so nothing is mapped at 0x1FC00000" : ""));
+                    return false;
+                }
+                log::tagged("CPU WARNING", "Instruction fetch from unmapped physical {:#010x} (PC {})",
+                            *phys, mips::formatAddress(pc));
+                raiseException(ExcCode::IBE);
+                advanceTimers();
+                return true;
+            }
+            word = *fetched;
         }
     }
 
@@ -253,7 +366,11 @@ bool R5000::tick() {
     pc_      = nextPc_;
     nextPc_ += 4;
 
-    execute(mips::Instruction{word});
+    if (op != nullptr) [[likely]] {
+        op->handler(*this, *op);
+    } else {
+        execute(mips::Instruction{word}); // not cacheable memory, or the reference path
+    }
     ++executed_;
     advanceTimers();
 
@@ -360,6 +477,7 @@ void R5000::raiseException(ExcCode code, unsigned coprocessor, bool tlbRefill) {
             vectorOffset = kVectorTlbRefill;
         }
         status |= kStatusEXL;
+        selectFastTable(); // kernel mode now
     }
     cause = (cause & ~(kCauseExcCodeMask | kCauseCeMask)) |
             (uint64_t{static_cast<uint8_t>(code)} << 2) | (uint64_t{coprocessor & 3} << 28);
@@ -485,7 +603,12 @@ void R5000::writeCop0(unsigned reg, uint64_t value) {
         r = value & kIndexMask;
         randomBase_ = ticks_; // writing Wired resets Random to 47
         return;
-    case kEntryHi:  r = value & Tlb::kEntryHiMask; return;
+    case kEntryHi: {
+        const uint64_t asid = r & kEntryHiAsid;
+        r = value & Tlb::kEntryHiMask;
+        if ((r & kEntryHiAsid) != asid) flushFastTables(); // another address space
+        return;
+    }
     case kCount:
         countValue_ = static_cast<uint32_t>(value);
         countTick_ = ticks_;
@@ -496,7 +619,10 @@ void R5000::writeCop0(unsigned reg, uint64_t value) {
         cop0_[kCause] &= ~kCauseTimerIp; // writing Compare acknowledges the timer
         scheduleTimer();
         return;
-    case kStatus:   r = value & 0xFFFF'FFFF; return;
+    case kStatus:
+        r = value & 0xFFFF'FFFF;
+        selectFastTable();
+        return;
     case kCause:    r = (r & ~kCauseWritableMask) | (value & kCauseWritableMask); return;
     case kConfig:   r = (r & ~kConfigWritableMask) | (value & kConfigWritableMask); return;
     default:        r = value; return;
@@ -506,6 +632,7 @@ void R5000::writeCop0(unsigned reg, uint64_t value) {
 void R5000::tlbRead() {
     dropFetchCache(); // loads EntryHi, including the ASID
     const Tlb::Entry& e = tlb_.entry(static_cast<unsigned>(cop0_[kIndex] & kIndexMask));
+    if ((e.entryHi & kEntryHiAsid) != (cop0_[kEntryHi] & kEntryHiAsid)) flushFastTables(); // the ASID changes
     cop0_[kPageMask] = e.pageMask;
     cop0_[kEntryHi]  = e.entryHi;
     cop0_[kEntryLo0] = e.entryLo0;
@@ -528,8 +655,8 @@ void R5000::invalidateMicroTlb(const Tlb::Entry& replaced) noexcept {
     const auto first = static_cast<uint32_t>(replaced.entryHi) >> 12 & ~static_cast<uint32_t>(pages - 1);
     for (uint64_t i = 0; i < pages; ++i) {
         microTlb_[(first + i) % kMicroTlbEntries].generation = 0;
-        hostPages_[(first + i) % kMicroTlbEntries].generation = 0;
     }
+    invalidateFastPages(first, pages);
 }
 
 void R5000::tlbProbe() {
@@ -551,6 +678,7 @@ void R5000::eret() {
     nextPc_        = pc_ + 4;
     branchPending_ = false;
     llBit_         = false;
+    selectFastTable(); // back to the interrupted mode
 }
 
 void R5000::setInterruptLine(unsigned line, bool asserted) {

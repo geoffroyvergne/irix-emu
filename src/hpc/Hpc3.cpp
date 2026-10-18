@@ -1,5 +1,7 @@
 #include "indy/hpc/Hpc3.hpp"
 
+#include "indy/scsi/DiskStats.hpp"
+
 #include "indy/core/Log.hpp"
 
 #include <algorithm>
@@ -69,12 +71,29 @@ bool Hpc3::ScsiDma::ready() {
 }
 
 size_t Hpc3::ScsiDma::toMemory(std::span<const uint8_t> bytes) {
+    const auto start = DiskStats::Clock::now();
+    struct Report {
+        DiskStats::Clock::time_point start;
+        const size_t& done;
+        ~Report() { if (DiskStats::enabled()) DiskStats::get().dma(start, done); }
+    };
     size_t done = 0;
+    const Report report{start, done};
     while (done < bytes.size() && ready()) {
-        (void)bus->write<uint8_t>(address(), bytes[done]);
-        ++cbp;
-        ++done;
-        if (--count == 0) {
+        if ((ctrl & kSctrlEndian) == 0) {
+            // A run within the buffer and the page: copied at once.
+            const size_t n = std::min({bytes.size() - done, size_t{count}, size_t{0x1000 - (cbp & 0xFFFu)}});
+            (void)bus->writeBytes(cbp, bytes.subspan(done, n));
+            cbp += static_cast<uint32_t>(n);
+            done += n;
+            count -= static_cast<uint32_t>(n);
+        } else { // byte-swapped transfers: each byte at its own (swapped) address
+            (void)bus->write<uint8_t>(address(), bytes[done]);
+            ++cbp;
+            ++done;
+            --count;
+        }
+        if (count == 0) {
             endOfBuffer();
         }
     }
@@ -82,14 +101,30 @@ size_t Hpc3::ScsiDma::toMemory(std::span<const uint8_t> bytes) {
 }
 
 size_t Hpc3::ScsiDma::fromMemory(std::span<uint8_t> bytes) {
+    const auto start = DiskStats::Clock::now();
+    struct Report {
+        DiskStats::Clock::time_point start;
+        const size_t& done;
+        ~Report() { if (DiskStats::enabled()) DiskStats::get().dma(start, done); }
+    };
     size_t done = 0;
+    const Report report{start, done};
     while (done < bytes.size() && ready()) {
-        uint8_t b = 0;
-        (void)bus->read<uint8_t>(address(), b);
-        bytes[done] = b;
-        ++cbp;
-        ++done;
-        if (--count == 0) {
+        if ((ctrl & kSctrlEndian) == 0) {
+            const size_t n = std::min({bytes.size() - done, size_t{count}, size_t{0x1000 - (cbp & 0xFFFu)}});
+            (void)bus->readBytes(cbp, bytes.subspan(done, n));
+            cbp += static_cast<uint32_t>(n);
+            done += n;
+            count -= static_cast<uint32_t>(n);
+        } else {
+            uint8_t b = 0;
+            (void)bus->read<uint8_t>(address(), b);
+            bytes[done] = b;
+            ++cbp;
+            ++done;
+            --count;
+        }
+        if (count == 0) {
             endOfBuffer();
         }
     }
