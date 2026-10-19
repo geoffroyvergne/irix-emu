@@ -1,5 +1,9 @@
 // Core unit tests. Dependency-free on purpose: run with `ctest --test-dir build`.
 
+#include "HypercallResume.hpp"
+#ifdef __APPLE__
+#include "TextureFormat.hpp"
+#endif
 #include "indy/cpu/AddressSpace.hpp"
 #include "indy/cpu/Fpu.hpp"
 #include "indy/cpu/R5000.hpp"
@@ -2648,6 +2652,64 @@ void fastPathFollowsTranslation() {
     CHECK(excCode(run.cpu.gpr(13)) == 2u);           // TLB miss: ASID 2 has no mapping
 }
 
+// A hypercall interrupted by a page fault resumes where it stopped, and no
+// other call (another context, another process on context 0, a call after
+// one that was abandoned) ever sees its state.
+#ifdef __APPLE__
+// Low-precision sized texture formats are stored at 8 bits on the host;
+// every other format (unsized, 8 bits or more, depth) is passed through.
+void textureFormatsKeepDarkValues() {
+    CHECK(hostTextureFormat(GL_RGB5) == GL_RGB8);
+    CHECK(hostTextureFormat(GL_RGB4) == GL_RGB8);
+    CHECK(hostTextureFormat(GL_R3_G3_B2) == GL_RGB8);
+    CHECK(hostTextureFormat(GL_RGBA4) == GL_RGBA8);
+    CHECK(hostTextureFormat(GL_RGB5_A1) == GL_RGBA8);
+    CHECK(hostTextureFormat(GL_RGBA2) == GL_RGBA8);
+    CHECK(hostTextureFormat(GL_ALPHA4) == GL_ALPHA8);
+    CHECK(hostTextureFormat(GL_LUMINANCE4) == GL_LUMINANCE8);
+    CHECK(hostTextureFormat(GL_LUMINANCE4_ALPHA4) == GL_LUMINANCE8_ALPHA8);
+    CHECK(hostTextureFormat(GL_LUMINANCE6_ALPHA2) == GL_LUMINANCE8_ALPHA8);
+    CHECK(hostTextureFormat(GL_INTENSITY4) == GL_INTENSITY8);
+    for (const GLint kept : {3, 4, GL_RGB, GL_RGBA, GL_RGB8, GL_RGBA8, GL_RGB10_A2, GL_RGBA12, GL_LUMINANCE,
+                             GL_ALPHA8, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT24}) {
+        CHECK(hostTextureFormat(kept) == kept);
+    }
+}
+#endif
+
+void hypercallResumeIsolation() {
+    HypercallResumes resumes;
+    const HypercallKey submit5{1, (4u << 8) | 4u, 0x1000'0000u, 3 * 4096};
+    HypercallResume& a = resumes.enter(5, submit5); // context 5 starts a submit...
+    a.request.resize(3 * 4096);
+    a.requestDone = 4096; // ...a fault stops it after one page
+    a.request[0] = 0xAB;
+    HypercallResume& other = resumes.enter(7, {1, (7u << 8) | 4u, 0x1000'0000u, 3 * 4096}); // context 7 meanwhile
+    CHECK(other.requestDone == 0 && other.request.empty());
+    resumes.finish(7);
+    HypercallResume& again = resumes.enter(5, submit5); // the re-executed call
+    CHECK(again.requestDone == 4096 && again.request.size() == 3 * 4096 && again.request[0] == 0xAB);
+    resumes.finish(5);
+    CHECK(!resumes.inProgress(5));
+    CHECK(resumes.enter(5, submit5).requestDone == 0); // the same call made again starts afresh
+
+    // Context 0 (no context) is shared by every process: the address space tells them apart.
+    const HypercallKey swapA{1, 5u, 0x7FFF'0000u, 28}, swapB{2, 5u, 0x7FFF'0000u, 28};
+    resumes.enter(0, swapA).requestDone = 16;
+    CHECK(resumes.enter(0, swapB).requestDone == 0); // another process: not the first one's copy
+    resumes.finish(0);
+
+    // A query abandoned with its reply computed (its thread killed during a
+    // fault): the next call on the context gets none of it.
+    const HypercallKey query5{1, (5u << 8) | 7u, 0x2000'0000u, 16};
+    HypercallResume& q = resumes.enter(5, query5);
+    q.reply.assign(64, 0x11);
+    q.replyReady = true;
+    q.result = 42;
+    HypercallResume& next = resumes.enter(5, {1, (5u << 8) | 7u, 0x2000'0040u, 16});
+    CHECK(!next.replyReady && next.reply.empty() && next.result == 0);
+}
+
 int main() {
     const std::pair<const char*, std::function<void()>> tests[] = {
         {"ramIsBigEndian", ramIsBigEndian},
@@ -2742,6 +2804,10 @@ int main() {
         {"decodedMatchesReference", decodedMatchesReference},
         {"decodedCodeFollowsWrites", decodedCodeFollowsWrites},
         {"fastPathFollowsTranslation", fastPathFollowsTranslation},
+        {"hypercallResumeIsolation", hypercallResumeIsolation},
+#ifdef __APPLE__
+        {"textureFormatsKeepDarkValues", textureFormatsKeepDarkValues},
+#endif
     };
     for (const auto& [name, test] : tests) {
         const int before = g_failures;

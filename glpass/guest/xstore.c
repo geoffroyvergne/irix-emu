@@ -26,28 +26,78 @@
  * It also passes XSetErrorHandler and XDestroyWindow to glpass, when the
  * program uses it: glpass keeps the X errors its own requests cause, and
  * forgets a window the moment it is destroyed.
+ *
+ * Threads: programs call X from several threads (Maya's sprocs) and libGL
+ * reads the noted colours from its GL threads, so the tables are under one
+ * spin lock, held for table updates only, never across an Xlib call: colour
+ * stores are prepared under it and sent after. Entries are never freed (a
+ * reader may hold one): a colormap the program frees, or one of a display
+ * it closes, is marked dead (id 0) and its entry reused later, so nothing is
+ * ever stored into a colormap that no longer exists.
+ *
+ * Round trips: only XQueryColors when a program creates an AllocAll
+ * colormap, and XParseColor for XStoreNamedColor, both on the program's own
+ * connection, which a grab the program holds does not block.
  */
 #include <X11/Xlib.h>
 
 #include <dlfcn.h>
+#ifdef __sgi
+#include <abi_mutex.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "glpass_xstore.h"
 
-static struct glpass_colormap *colormaps;
-static unsigned long generation = 1;
+static struct glpass_colormap *volatile colormaps;
+static volatile unsigned long generation = 1;
+
+#ifdef __sgi
+static abilock_t tables_lock; /* zero: UNLOCKED */
+#define TABLES_LOCK() spin_lock(&tables_lock)
+#define TABLES_UNLOCK() release_lock(&tables_lock)
+#else
+#define TABLES_LOCK() ((void)0)
+#define TABLES_UNLOCK() ((void)0)
+#endif
 
 unsigned long glpass_colormap_generation(void) { return generation; }
 
+/* Lock-free for readers: entries are published complete and never freed. */
 struct glpass_colormap *glpass_find_colormap(unsigned long id)
 {
     struct glpass_colormap *m;
+    if (!id) return 0;
     for (m = colormaps; m; m = m->next) {
         if (m->id == id) return m;
     }
     return 0;
+}
+
+/* The entry for `id`, made (or a dead one reused) if new. Under the lock. */
+static struct glpass_colormap *colormap_entry(Display *dpy, unsigned long id)
+{
+    struct glpass_colormap *m, *dead = 0;
+    for (m = colormaps; m; m = m->next) {
+        if (m->id == id) return m;
+        if (!m->id && !dead) dead = m;
+    }
+    if (dead) {
+        memset(dead->rgb, 0, sizeof dead->rgb);
+        memset(dead->set, 0, sizeof dead->set);
+        dead->dpy = dpy;
+        dead->id = id;
+        return dead;
+    }
+    m = (struct glpass_colormap *)calloc(1, sizeof *m);
+    if (!m) return 0;
+    m->id = id;
+    m->dpy = dpy;
+    m->next = colormaps;
+    colormaps = m; /* published after it is complete */
+    return m;
 }
 
 /* libX11's own function `name`. */
@@ -103,19 +153,30 @@ struct cells {
     unsigned char taken[256];                 /* cells given to high pixels */
     unsigned short cell[GLPASS_PALETTE_SIZE]; /* high pixel -> cell (0: none) */
     int mirrored;                             /* holds the default colormap's colours */
+    int size;                                 /* its cells (0: unknown, taken as 256) */
     unsigned char mirror[256][3];
     struct cells *next;
 };
 
 static struct cells *cell_maps;
 
+/* Under the lock. Dead entries (colormap 0) are reused. */
 static struct cells *cells_of(unsigned long colormap, int create)
 {
-    struct cells *c;
+    struct cells *c, *dead = 0;
+    if (!colormap) return 0;
     for (c = cell_maps; c; c = c->next) {
         if (c->colormap == colormap) return c;
+        if (!c->colormap && !dead) dead = c;
     }
     if (!create) return 0;
+    if (dead) {
+        struct cells *next = dead->next;
+        memset(dead, 0, sizeof *dead);
+        dead->next = next;
+        dead->colormap = colormap;
+        return dead;
+    }
     c = (struct cells *)calloc(1, sizeof *c);
     if (!c) return 0;
     c->colormap = colormap;
@@ -124,20 +185,34 @@ static struct cells *cells_of(unsigned long colormap, int create)
     return c;
 }
 
-/* Stores high pixel `pixel`'s colour into its cell. */
-static void store_cell(struct cells *c, const struct glpass_colormap *m, unsigned long pixel)
+/* A colour store for X, prepared under the lock and sent after it. */
+struct pending_store {
+    Display *dpy; /* 0: nothing to send */
+    Colormap colormap;
+    XColor color;
+};
+
+/* High pixel `pixel`'s colour for its cell. Under the lock. */
+static void prepare_store(struct pending_store *out, const struct cells *c, const struct glpass_colormap *m,
+                          unsigned long pixel)
+{
+    out->dpy = 0;
+    if (!c->dpy || !c->cell[pixel]) return;
+    out->dpy = c->dpy;
+    out->colormap = (Colormap)c->colormap;
+    out->color.pixel = c->cell[pixel];
+    out->color.red = (unsigned short)(m->rgb[pixel][0] * 257u);
+    out->color.green = (unsigned short)(m->rgb[pixel][1] * 257u);
+    out->color.blue = (unsigned short)(m->rgb[pixel][2] * 257u);
+    out->color.flags = DoRed | DoGreen | DoBlue;
+}
+
+static void send_store(struct pending_store *store)
 {
     static int (*real)(Display *, Colormap, XColor *);
-    XColor color;
-    if (!c->dpy || !c->cell[pixel]) return;
+    if (!store->dpy) return;
     if (!real) real = (int (*)(Display *, Colormap, XColor *))x11_function("XStoreColor");
-    if (!real) return;
-    color.pixel = c->cell[pixel];
-    color.red = (unsigned short)(m->rgb[pixel][0] * 257u);
-    color.green = (unsigned short)(m->rgb[pixel][1] * 257u);
-    color.blue = (unsigned short)(m->rgb[pixel][2] * 257u);
-    color.flags = DoRed | DoGreen | DoBlue;
-    real(c->dpy, (Colormap)c->colormap, &color);
+    if (real) real(store->dpy, store->colormap, &store->color);
 }
 
 /* The pixel to hand X for `pixel`: an 8-bit cell for a 12-bit pixel the
@@ -163,14 +238,28 @@ static void trace_pixel(const char *function, unsigned long pixel)
     fprintf(stderr, "glpass_x: %s pixel %lu\n", function, pixel);
 }
 
+static unsigned long remap_locked(Display *dpy, unsigned long pixel, struct pending_store *store);
+
 static unsigned long remap(Display *dpy, unsigned long pixel)
+{
+    struct pending_store store;
+    unsigned long result;
+    if (pixel < 256 || pixel >= GLPASS_PALETTE_SIZE) return pixel; /* the common case: no lock */
+    store.dpy = 0;
+    TABLES_LOCK();
+    result = remap_locked(dpy, pixel, &store);
+    TABLES_UNLOCK();
+    send_store(&store);
+    return result;
+}
+
+static unsigned long remap_locked(Display *dpy, unsigned long pixel, struct pending_store *store)
 {
     struct glpass_colormap *m;
     struct cells *c;
     int i;
-    if (pixel < 256 || pixel >= GLPASS_PALETTE_SIZE) return pixel;
-    for (m = colormaps; m; m = m->next) { /* the newest colormap holding it */
-        if (m->set[pixel]) break;
+    for (m = colormaps; m; m = m->next) { /* the newest live colormap holding it */
+        if (m->id && m->set[pixel]) break;
     }
     if (!m) return pixel;
     c = cells_of(m->id, 1);
@@ -192,32 +281,29 @@ static unsigned long remap(Display *dpy, unsigned long pixel)
         return (unsigned long)found;
     }
     if (!c->cell[pixel]) {
-        for (i = 255; i > 0; --i) { /* from the top: programs use the low cells */
+        for (i = (c->size > 0 && c->size <= 256 ? c->size : 256) - 1; i > 0; --i) { /* from the top: programs use the low cells */
             if (!c->own[i] && !c->taken[i]) break;
         }
         if (i == 0) return pixel & 0xFF; /* none left */
         c->taken[i] = 1;
         c->cell[pixel] = (unsigned short)i;
-        store_cell(c, m, pixel);
+        prepare_store(store, c, m, pixel);
     }
     return c->cell[pixel];
 }
 
 /* ---- Colour stores --------------------------------------------------------------- */
 
-static void note_color(Colormap id, const XColor *color)
+/* Notes a stored colour. Under the lock; a high pixel with a cell of its
+   own gets its cell's store prepared. */
+static void note_color(Display *dpy, Colormap id, const XColor *color, struct pending_store *store)
 {
     struct glpass_colormap *m;
     struct cells *c;
-    if (color->pixel >= GLPASS_PALETTE_SIZE) return;
-    m = glpass_find_colormap(id);
-    if (!m) {
-        m = (struct glpass_colormap *)calloc(1, sizeof *m);
-        if (!m) return;
-        m->id = id;
-        m->next = colormaps;
-        colormaps = m;
-    }
+    store->dpy = 0;
+    if (color->pixel >= GLPASS_PALETTE_SIZE || !id) return;
+    m = colormap_entry(dpy, id);
+    if (!m) return;
     if (color->flags & DoRed) m->rgb[color->pixel][0] = (unsigned char)(color->red >> 8);
     if (color->flags & DoGreen) m->rgb[color->pixel][1] = (unsigned char)(color->green >> 8);
     if (color->flags & DoBlue) m->rgb[color->pixel][2] = (unsigned char)(color->blue >> 8);
@@ -228,15 +314,26 @@ static void note_color(Colormap id, const XColor *color)
     if (color->pixel < 256) {
         c->own[color->pixel] = 1; /* the program's own cell: not for high pixels */
     } else {
-        store_cell(c, m, color->pixel); /* a high pixel's cell follows its colour */
+        prepare_store(store, c, m, color->pixel); /* a high pixel's cell follows its colour */
+    }
+}
+
+static void note_colors(Display *dpy, Colormap id, const XColor *colors, int ncolors)
+{
+    struct pending_store store;
+    int i;
+    for (i = 0; i < ncolors; ++i) {
+        TABLES_LOCK();
+        note_color(dpy, id, &colors[i], &store);
+        TABLES_UNLOCK();
+        send_store(&store);
     }
 }
 
 int XStoreColors(Display *dpy, Colormap colormap, XColor *colors, int ncolors)
 {
     static int (*real)(Display *, Colormap, XColor *, int);
-    int i;
-    for (i = 0; i < ncolors; ++i) note_color(colormap, &colors[i]);
+    note_colors(dpy, colormap, colors, ncolors);
     if (!real) real = (int (*)(Display *, Colormap, XColor *, int))x11_function("XStoreColors");
     return real ? real(dpy, colormap, colors, ncolors) : 0;
 }
@@ -244,7 +341,7 @@ int XStoreColors(Display *dpy, Colormap colormap, XColor *colors, int ncolors)
 int XStoreColor(Display *dpy, Colormap colormap, XColor *color)
 {
     static int (*real)(Display *, Colormap, XColor *);
-    note_color(colormap, color);
+    note_colors(dpy, colormap, color, 1);
     if (!real) real = (int (*)(Display *, Colormap, XColor *))x11_function("XStoreColor");
     return real ? real(dpy, colormap, color) : 0;
 }
@@ -258,7 +355,7 @@ int XStoreNamedColor(Display *dpy, Colormap colormap, _Xconst char *name, unsign
     if (parse && parse(dpy, colormap, name, &color)) {
         color.pixel = pixel;
         color.flags = (char)flags;
-        note_color(colormap, &color);
+        note_colors(dpy, colormap, &color, 1);
     }
     if (!real) {
         real = (int (*)(Display *, Colormap, _Xconst char *, unsigned long, int))x11_function("XStoreNamedColor");
@@ -348,6 +445,15 @@ static XSetWindowAttributes *remap_window_values(Display *dpy, unsigned long mas
     return copy;
 }
 
+/* glpass forgets that an ID belonged to a destroyed window once a new one
+   has it (the server reuses the IDs of closed connections). */
+static Window window_created(Window w)
+{
+    void (*created)(unsigned long) = (void (*)(unsigned long))glpass_function("glpass_window_created");
+    if (created && w) created((unsigned long)w);
+    return w;
+}
+
 int XChangeWindowAttributes(Display *dpy, Window w, unsigned long mask, XSetWindowAttributes *values)
 {
     static int (*real)(Display *, Window, unsigned long, XSetWindowAttributes *);
@@ -370,9 +476,9 @@ Window XCreateWindow(Display *dpy, Window parent, int x, int y, unsigned int wid
         real = (Window (*)(Display *, Window, int, int, unsigned int, unsigned int, unsigned int, int, unsigned int,
                            Visual *, unsigned long, XSetWindowAttributes *))x11_function("XCreateWindow");
     }
-    return real ? real(dpy, parent, x, y, width, height, border_width, depth, class_, visual, mask,
-                       remap_window_values(dpy, mask, values, &copy))
-                : 0;
+    return window_created(real ? real(dpy, parent, x, y, width, height, border_width, depth, class_, visual, mask,
+                                      remap_window_values(dpy, mask, values, &copy))
+                               : 0);
 }
 
 Window XCreateSimpleWindow(Display *dpy, Window parent, int x, int y, unsigned int width, unsigned int height,
@@ -384,7 +490,8 @@ Window XCreateSimpleWindow(Display *dpy, Window parent, int x, int y, unsigned i
         real = (Window (*)(Display *, Window, int, int, unsigned int, unsigned int, unsigned int, unsigned long,
                            unsigned long))x11_function("XCreateSimpleWindow");
     }
-    return real ? real(dpy, parent, x, y, width, height, border_width, remap(dpy, border), remap(dpy, background)) : 0;
+    return window_created(
+        real ? real(dpy, parent, x, y, width, height, border_width, remap(dpy, border), remap(dpy, background)) : 0);
 }
 
 /* A program's own PseudoColor colormap (Maya's colour-index one) starts with
@@ -406,27 +513,85 @@ Colormap XCreateColormap(Display *dpy, Window w, Visual *visual, int alloc)
         return DefaultColormap(dpy, DefaultScreen(dpy));
     }
     colormap = real(dpy, w, visual, alloc);
+    if (colormap != None && visual && visual->map_entries > 0 && visual->map_entries < 256) {
+        struct cells *c; /* a small colormap (the overlay planes'): high pixels get cells within it */
+        TABLES_LOCK();
+        c = cells_of(colormap, 1);
+        if (c) c->size = visual->map_entries;
+        TABLES_UNLOCK();
+    }
     if (colormap != None && alloc == AllocAll && visual && visual->class == PseudoColor && visual->map_entries == 256) {
         XColor colors[256];
-        struct cells *c = cells_of(colormap, 1);
+        struct cells *c;
         int i;
         if (!query) query = (int (*)(Display *, Colormap, XColor *, int))x11_function("XQueryColors");
         if (!store) store = (int (*)(Display *, Colormap, XColor *, int))x11_function("XStoreColors");
-        if (query && store && c) {
+        if (query && store) {
             for (i = 0; i < 256; ++i) colors[i].pixel = (unsigned long)i;
-            query(dpy, DefaultColormap(dpy, DefaultScreen(dpy)), colors, 256);
-            for (i = 0; i < 256; ++i) {
-                colors[i].flags = DoRed | DoGreen | DoBlue;
-                c->mirror[i][0] = (unsigned char)(colors[i].red >> 8);
-                c->mirror[i][1] = (unsigned char)(colors[i].green >> 8);
-                c->mirror[i][2] = (unsigned char)(colors[i].blue >> 8);
-            }
+            query(dpy, DefaultColormap(dpy, DefaultScreen(dpy)), colors, 256); /* the program's connection */
+            for (i = 0; i < 256; ++i) colors[i].flags = DoRed | DoGreen | DoBlue;
             store(dpy, colormap, colors, 256);
-            c->mirrored = 1;
-            c->dpy = dpy;
+            TABLES_LOCK();
+            c = cells_of(colormap, 1);
+            if (c) {
+                for (i = 0; i < 256; ++i) {
+                    c->mirror[i][0] = (unsigned char)(colors[i].red >> 8);
+                    c->mirror[i][1] = (unsigned char)(colors[i].green >> 8);
+                    c->mirror[i][2] = (unsigned char)(colors[i].blue >> 8);
+                }
+                c->mirrored = 1;
+                c->dpy = dpy;
+            }
+            TABLES_UNLOCK();
         }
     }
     return colormap;
+}
+
+/* A colormap the program frees: nothing is noted or stored for it any more
+   (its entries go dead, to be reused). The default colormap, which
+   XCreateColormap may have handed out, is never freed. */
+int XFreeColormap(Display *dpy, Colormap colormap)
+{
+    static int (*real)(Display *, Colormap);
+    struct glpass_colormap *m;
+    struct cells *c;
+    if (!real) real = (int (*)(Display *, Colormap))x11_function("XFreeColormap");
+    if (colormap != DefaultColormap(dpy, DefaultScreen(dpy))) {
+        TABLES_LOCK();
+        for (m = colormaps; m; m = m->next) {
+            if (m->id == colormap) m->id = 0;
+        }
+        for (c = cell_maps; c; c = c->next) {
+            if (c->colormap == colormap) c->colormap = 0;
+        }
+        ++generation;
+        TABLES_UNLOCK();
+    }
+    return real ? real(dpy, colormap) : 0;
+}
+
+/* A display the program closes: its colormaps go with it, and the tables
+   keep no pointer to it. */
+int XCloseDisplay(Display *dpy)
+{
+    static int (*real)(Display *);
+    struct glpass_colormap *m;
+    struct cells *c;
+    if (!real) real = (int (*)(Display *))x11_function("XCloseDisplay");
+    TABLES_LOCK();
+    for (m = colormaps; m; m = m->next) {
+        if (m->dpy == dpy) m->id = 0;
+    }
+    ++generation;
+    for (c = cell_maps; c; c = c->next) {
+        if (c->dpy == dpy) {
+            c->dpy = 0;
+            c->colormap = 0;
+        }
+    }
+    TABLES_UNLOCK();
+    return real ? real(dpy) : 0;
 }
 
 /* ---- GLPASS_TRACE=1: the program's line and rectangle drawing ------------------- */

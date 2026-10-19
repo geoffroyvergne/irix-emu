@@ -28,17 +28,19 @@ void glActiveTextureARB(GLenum texture)
 
 void glAlphaFragmentOp1ATI(GLenum op, GLuint dst, GLuint dstMod, GLuint arg1, GLuint arg1Rep, GLuint arg1Mod)
 {
+    static int logged;
     (void)op;
     (void)dst;
     (void)dstMod;
     (void)arg1;
     (void)arg1Rep;
     (void)arg1Mod;
-    glp_unimplemented("glAlphaFragmentOp1ATI");
+    glp_unimplemented("glAlphaFragmentOp1ATI", &logged);
 }
 
 void glAlphaFragmentOp2ATI(GLenum op, GLuint dst, GLuint dstMod, GLuint arg1, GLuint arg1Rep, GLuint arg1Mod, GLuint arg2, GLuint arg2Rep, GLuint arg2Mod)
 {
+    static int logged;
     (void)op;
     (void)dst;
     (void)dstMod;
@@ -48,11 +50,12 @@ void glAlphaFragmentOp2ATI(GLenum op, GLuint dst, GLuint dstMod, GLuint arg1, GL
     (void)arg2;
     (void)arg2Rep;
     (void)arg2Mod;
-    glp_unimplemented("glAlphaFragmentOp2ATI");
+    glp_unimplemented("glAlphaFragmentOp2ATI", &logged);
 }
 
 void glAlphaFragmentOp3ATI(GLenum op, GLuint dst, GLuint dstMod, GLuint arg1, GLuint arg1Rep, GLuint arg1Mod, GLuint arg2, GLuint arg2Rep, GLuint arg2Mod, GLuint arg3, GLuint arg3Rep, GLuint arg3Mod)
 {
+    static int logged;
     (void)op;
     (void)dst;
     (void)dstMod;
@@ -65,7 +68,7 @@ void glAlphaFragmentOp3ATI(GLenum op, GLuint dst, GLuint dstMod, GLuint arg1, GL
     (void)arg3;
     (void)arg3Rep;
     (void)arg3Mod;
-    glp_unimplemented("glAlphaFragmentOp3ATI");
+    glp_unimplemented("glAlphaFragmentOp3ATI", &logged);
 }
 
 void glAlphaFunc(GLenum func, GLclampf ref)
@@ -79,63 +82,72 @@ void glAlphaFunc(GLenum func, GLclampf ref)
 
 void glArrayObjectATI(GLenum array, GLint size, GLenum type, GLsizei stride, GLuint buffer, GLuint offset)
 {
+    static int logged;
     (void)array;
     (void)size;
     (void)type;
     (void)stride;
     (void)buffer;
     (void)offset;
-    glp_unimplemented("glArrayObjectATI");
+    glp_unimplemented("glArrayObjectATI", &logged);
 }
 
 void glAsyncMarkerSGIX(GLuint marker)
 {
+    static int logged;
     (void)marker;
-    glp_unimplemented("glAsyncMarkerSGIX");
+    glp_unimplemented("glAsyncMarkerSGIX", &logged);
 }
 
 void glBeginFragmentShaderATI(void)
 {
-    glp_unimplemented("glBeginFragmentShaderATI");
+    static int logged;
+    glp_unimplemented("glBeginFragmentShaderATI", &logged);
 }
 
 void glBeginOcclusionQueryNV(GLuint id)
 {
+    static int logged;
     (void)id;
-    glp_unimplemented("glBeginOcclusionQueryNV");
+    glp_unimplemented("glBeginOcclusionQueryNV", &logged);
 }
 
 void glBeginVertexShaderEXT(void)
 {
-    glp_unimplemented("glBeginVertexShaderEXT");
+    static int logged;
+    glp_unimplemented("glBeginVertexShaderEXT", &logged);
 }
 
 void glBindFragmentShaderATI(GLuint id)
 {
+    static int logged;
     (void)id;
-    glp_unimplemented("glBindFragmentShaderATI");
+    glp_unimplemented("glBindFragmentShaderATI", &logged);
 }
 
 GLuint glBindLightParameterEXT(GLenum light, GLenum value)
 {
+    static int logged;
     (void)light;
     (void)value;
-    glp_unimplemented("glBindLightParameterEXT");
+    glp_unimplemented("glBindLightParameterEXT", &logged);
     return (GLuint)0;
 }
 
 GLuint glBindMaterialParameterEXT(GLenum face, GLenum value)
 {
+    static int logged;
     (void)face;
     (void)value;
-    glp_unimplemented("glBindMaterialParameterEXT");
+    glp_unimplemented("glBindMaterialParameterEXT", &logged);
     return (GLuint)0;
 }
 
 GLuint glBindParameterEXT(GLenum value)
 {
+    static int logged;
     (void)value;
-    glp_unimplemented("glBindParameterEXT");
+    glp_unimplemented("glBindParameterEXT", &logged);
     return (GLuint)0;
 }
 
@@ -150,10 +162,11 @@ void glBindProgramARB(GLenum target, GLuint program)
 
 GLuint glBindTexGenParameterEXT(GLenum unit, GLenum coord, GLenum value)
 {
+    static int logged;
     (void)unit;
     (void)coord;
     (void)value;
-    glp_unimplemented("glBindTexGenParameterEXT");
+    glp_unimplemented("glBindTexGenParameterEXT", &logged);
     return (GLuint)0;
 }
 
@@ -177,16 +190,18 @@ void glBindTextureEXT(GLenum target, GLuint texture)
 
 GLuint glBindTextureUnitParameterEXT(GLenum unit, GLenum value)
 {
+    static int logged;
     (void)unit;
     (void)value;
-    glp_unimplemented("glBindTextureUnitParameterEXT");
+    glp_unimplemented("glBindTextureUnitParameterEXT", &logged);
     return (GLuint)0;
 }
 
 void glBindVertexShaderEXT(GLuint id)
 {
+    static int logged;
     (void)id;
-    glp_unimplemented("glBindVertexShaderEXT");
+    glp_unimplemented("glBindVertexShaderEXT", &logged);
 }
 
 void glBlendColor(GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha)
@@ -296,26 +311,11 @@ void glClearStencil(GLint s)
     p[0] = (unsigned int)(int)(s);
 }
 
-void glClientActiveTexture(GLenum texture)
-{
-    unsigned int *p;
-    GLP_TRACE(GLP_FN_glClientActiveTexture, "glClientActiveTexture");
-    p = glp_put(GLP_FN_glClientActiveTexture, 1);
-    p[0] = (unsigned int)(texture);
-}
-
-void glClientActiveTextureARB(GLenum texture)
-{
-    unsigned int *p;
-    GLP_TRACE(GLP_FN_glClientActiveTextureARB, "glClientActiveTextureARB");
-    p = glp_put(GLP_FN_glClientActiveTextureARB, 1);
-    p[0] = (unsigned int)(texture);
-}
-
 void glClientActiveVertexStreamATI(GLenum stream)
 {
+    static int logged;
     (void)stream;
-    glp_unimplemented("glClientActiveVertexStreamATI");
+    glp_unimplemented("glClientActiveVertexStreamATI", &logged);
 }
 
 void glClipPlane(GLenum plane, const GLdouble *equation)
@@ -323,6 +323,7 @@ void glClipPlane(GLenum plane, const GLdouble *equation)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glClipPlane, "glClipPlane");
+    if (!equation) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glClipPlane, 9);
     p[0] = (unsigned int)(plane);
     for (i = 0; i < 4; ++i) { glp_dbits(&p[1 + i * 2], equation[i]); }
@@ -343,6 +344,7 @@ void glColor3bv(const GLbyte *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glColor3bv, "glColor3bv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glColor3bv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -362,6 +364,7 @@ void glColor3dv(const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glColor3dv, "glColor3dv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glColor3dv, 6);
     for (i = 0; i < 3; ++i) { glp_dbits(&p[0 + i * 2], v[i]); }
 }
@@ -381,6 +384,7 @@ void glColor3fv(const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glColor3fv, "glColor3fv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glColor3fv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = glp_fbits(v[i]); }
 }
@@ -400,6 +404,7 @@ void glColor3iv(const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glColor3iv, "glColor3iv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glColor3iv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -419,6 +424,7 @@ void glColor3sv(const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glColor3sv, "glColor3sv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glColor3sv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -438,6 +444,7 @@ void glColor3ubv(const GLubyte *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glColor3ubv, "glColor3ubv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glColor3ubv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(v[i]); }
 }
@@ -457,6 +464,7 @@ void glColor3uiv(const GLuint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glColor3uiv, "glColor3uiv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glColor3uiv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(v[i]); }
 }
@@ -476,6 +484,7 @@ void glColor3usv(const GLushort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glColor3usv, "glColor3usv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glColor3usv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(v[i]); }
 }
@@ -496,6 +505,7 @@ void glColor4bv(const GLbyte *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glColor4bv, "glColor4bv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glColor4bv, 4);
     for (i = 0; i < 4; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -516,6 +526,7 @@ void glColor4dv(const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glColor4dv, "glColor4dv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glColor4dv, 8);
     for (i = 0; i < 4; ++i) { glp_dbits(&p[0 + i * 2], v[i]); }
 }
@@ -536,6 +547,7 @@ void glColor4fv(const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glColor4fv, "glColor4fv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glColor4fv, 4);
     for (i = 0; i < 4; ++i) { p[0 + i * 1] = glp_fbits(v[i]); }
 }
@@ -556,6 +568,7 @@ void glColor4iv(const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glColor4iv, "glColor4iv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glColor4iv, 4);
     for (i = 0; i < 4; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -576,6 +589,7 @@ void glColor4sv(const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glColor4sv, "glColor4sv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glColor4sv, 4);
     for (i = 0; i < 4; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -596,6 +610,7 @@ void glColor4ubv(const GLubyte *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glColor4ubv, "glColor4ubv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glColor4ubv, 4);
     for (i = 0; i < 4; ++i) { p[0 + i * 1] = (unsigned int)(v[i]); }
 }
@@ -616,6 +631,7 @@ void glColor4uiv(const GLuint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glColor4uiv, "glColor4uiv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glColor4uiv, 4);
     for (i = 0; i < 4; ++i) { p[0 + i * 1] = (unsigned int)(v[i]); }
 }
@@ -636,12 +652,14 @@ void glColor4usv(const GLushort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glColor4usv, "glColor4usv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glColor4usv, 4);
     for (i = 0; i < 4; ++i) { p[0 + i * 1] = (unsigned int)(v[i]); }
 }
 
 void glColorFragmentOp1ATI(GLenum op, GLuint dst, GLuint dstMask, GLuint dstMod, GLuint arg1, GLuint arg1Rep, GLuint arg1Mod)
 {
+    static int logged;
     (void)op;
     (void)dst;
     (void)dstMask;
@@ -649,11 +667,12 @@ void glColorFragmentOp1ATI(GLenum op, GLuint dst, GLuint dstMask, GLuint dstMod,
     (void)arg1;
     (void)arg1Rep;
     (void)arg1Mod;
-    glp_unimplemented("glColorFragmentOp1ATI");
+    glp_unimplemented("glColorFragmentOp1ATI", &logged);
 }
 
 void glColorFragmentOp2ATI(GLenum op, GLuint dst, GLuint dstMask, GLuint dstMod, GLuint arg1, GLuint arg1Rep, GLuint arg1Mod, GLuint arg2, GLuint arg2Rep, GLuint arg2Mod)
 {
+    static int logged;
     (void)op;
     (void)dst;
     (void)dstMask;
@@ -664,11 +683,12 @@ void glColorFragmentOp2ATI(GLenum op, GLuint dst, GLuint dstMask, GLuint dstMod,
     (void)arg2;
     (void)arg2Rep;
     (void)arg2Mod;
-    glp_unimplemented("glColorFragmentOp2ATI");
+    glp_unimplemented("glColorFragmentOp2ATI", &logged);
 }
 
 void glColorFragmentOp3ATI(GLenum op, GLuint dst, GLuint dstMask, GLuint dstMod, GLuint arg1, GLuint arg1Rep, GLuint arg1Mod, GLuint arg2, GLuint arg2Rep, GLuint arg2Mod, GLuint arg3, GLuint arg3Rep, GLuint arg3Mod)
 {
+    static int logged;
     (void)op;
     (void)dst;
     (void)dstMask;
@@ -682,7 +702,7 @@ void glColorFragmentOp3ATI(GLenum op, GLuint dst, GLuint dstMask, GLuint dstMod,
     (void)arg3;
     (void)arg3Rep;
     (void)arg3Mod;
-    glp_unimplemented("glColorFragmentOp3ATI");
+    glp_unimplemented("glColorFragmentOp3ATI", &logged);
 }
 
 void glColorMask(GLboolean red, GLboolean green, GLboolean blue, GLboolean alpha)
@@ -707,71 +727,79 @@ void glColorMaterial(GLenum face, GLenum mode)
 
 void glColorSubTable(GLenum target, GLsizei start, GLsizei count, GLenum format, GLenum type, const GLvoid *data)
 {
+    static int logged;
     (void)target;
     (void)start;
     (void)count;
     (void)format;
     (void)type;
     (void)data;
-    glp_unimplemented("glColorSubTable");
+    glp_unimplemented("glColorSubTable", &logged);
 }
 
 void glColorTable(GLenum target, GLenum internalformat, GLsizei width, GLenum format, GLenum type, const GLvoid *table)
 {
+    static int logged;
     (void)target;
     (void)internalformat;
     (void)width;
     (void)format;
     (void)type;
     (void)table;
-    glp_unimplemented("glColorTable");
+    glp_unimplemented("glColorTable", &logged);
 }
 
 void glColorTableParameterfv(GLenum target, GLenum pname, const GLfloat *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glColorTableParameterfv");
+    glp_unimplemented("glColorTableParameterfv", &logged);
 }
 
 void glColorTableParameterfvSGI(GLenum target, GLenum pname, const GLfloat *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glColorTableParameterfvSGI");
+    glp_unimplemented("glColorTableParameterfvSGI", &logged);
 }
 
 void glColorTableParameteriv(GLenum target, GLenum pname, const GLint *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glColorTableParameteriv");
+    glp_unimplemented("glColorTableParameteriv", &logged);
 }
 
 void glColorTableParameterivSGI(GLenum target, GLenum pname, const GLint *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glColorTableParameterivSGI");
+    glp_unimplemented("glColorTableParameterivSGI", &logged);
 }
 
 void glColorTableSGI(GLenum target, GLenum internalformat, GLsizei width, GLenum format, GLenum type, const GLvoid *table)
 {
+    static int logged;
     (void)target;
     (void)internalformat;
     (void)width;
     (void)format;
     (void)type;
     (void)table;
-    glp_unimplemented("glColorTableSGI");
+    glp_unimplemented("glColorTableSGI", &logged);
 }
 
 void glCompressedTexImage1D(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLint border, GLsizei imageSize, const GLvoid *data)
 {
+    static int logged;
     (void)target;
     (void)level;
     (void)internalformat;
@@ -779,11 +807,12 @@ void glCompressedTexImage1D(GLenum target, GLint level, GLenum internalformat, G
     (void)border;
     (void)imageSize;
     (void)data;
-    glp_unimplemented("glCompressedTexImage1D");
+    glp_unimplemented("glCompressedTexImage1D", &logged);
 }
 
 void glCompressedTexImage1DARB(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLint border, GLsizei imageSize, const GLvoid *data)
 {
+    static int logged;
     (void)target;
     (void)level;
     (void)internalformat;
@@ -791,11 +820,12 @@ void glCompressedTexImage1DARB(GLenum target, GLint level, GLenum internalformat
     (void)border;
     (void)imageSize;
     (void)data;
-    glp_unimplemented("glCompressedTexImage1DARB");
+    glp_unimplemented("glCompressedTexImage1DARB", &logged);
 }
 
 void glCompressedTexImage2D(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLint border, GLsizei imageSize, const GLvoid *data)
 {
+    static int logged;
     (void)target;
     (void)level;
     (void)internalformat;
@@ -804,11 +834,12 @@ void glCompressedTexImage2D(GLenum target, GLint level, GLenum internalformat, G
     (void)border;
     (void)imageSize;
     (void)data;
-    glp_unimplemented("glCompressedTexImage2D");
+    glp_unimplemented("glCompressedTexImage2D", &logged);
 }
 
 void glCompressedTexImage2DARB(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLint border, GLsizei imageSize, const GLvoid *data)
 {
+    static int logged;
     (void)target;
     (void)level;
     (void)internalformat;
@@ -817,11 +848,12 @@ void glCompressedTexImage2DARB(GLenum target, GLint level, GLenum internalformat
     (void)border;
     (void)imageSize;
     (void)data;
-    glp_unimplemented("glCompressedTexImage2DARB");
+    glp_unimplemented("glCompressedTexImage2DARB", &logged);
 }
 
 void glCompressedTexImage3D(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLsizei imageSize, const GLvoid *data)
 {
+    static int logged;
     (void)target;
     (void)level;
     (void)internalformat;
@@ -831,11 +863,12 @@ void glCompressedTexImage3D(GLenum target, GLint level, GLenum internalformat, G
     (void)border;
     (void)imageSize;
     (void)data;
-    glp_unimplemented("glCompressedTexImage3D");
+    glp_unimplemented("glCompressedTexImage3D", &logged);
 }
 
 void glCompressedTexImage3DARB(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLsizei imageSize, const GLvoid *data)
 {
+    static int logged;
     (void)target;
     (void)level;
     (void)internalformat;
@@ -845,11 +878,12 @@ void glCompressedTexImage3DARB(GLenum target, GLint level, GLenum internalformat
     (void)border;
     (void)imageSize;
     (void)data;
-    glp_unimplemented("glCompressedTexImage3DARB");
+    glp_unimplemented("glCompressedTexImage3DARB", &logged);
 }
 
 void glCompressedTexSubImage1D(GLenum target, GLint level, GLint xoffset, GLsizei width, GLenum format, GLsizei imageSize, const GLvoid *data)
 {
+    static int logged;
     (void)target;
     (void)level;
     (void)xoffset;
@@ -857,11 +891,12 @@ void glCompressedTexSubImage1D(GLenum target, GLint level, GLint xoffset, GLsize
     (void)format;
     (void)imageSize;
     (void)data;
-    glp_unimplemented("glCompressedTexSubImage1D");
+    glp_unimplemented("glCompressedTexSubImage1D", &logged);
 }
 
 void glCompressedTexSubImage1DARB(GLenum target, GLint level, GLint xoffset, GLsizei width, GLenum format, GLsizei imageSize, const GLvoid *data)
 {
+    static int logged;
     (void)target;
     (void)level;
     (void)xoffset;
@@ -869,11 +904,12 @@ void glCompressedTexSubImage1DARB(GLenum target, GLint level, GLint xoffset, GLs
     (void)format;
     (void)imageSize;
     (void)data;
-    glp_unimplemented("glCompressedTexSubImage1DARB");
+    glp_unimplemented("glCompressedTexSubImage1DARB", &logged);
 }
 
 void glCompressedTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLsizei imageSize, const GLvoid *data)
 {
+    static int logged;
     (void)target;
     (void)level;
     (void)xoffset;
@@ -883,11 +919,12 @@ void glCompressedTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint 
     (void)format;
     (void)imageSize;
     (void)data;
-    glp_unimplemented("glCompressedTexSubImage2D");
+    glp_unimplemented("glCompressedTexSubImage2D", &logged);
 }
 
 void glCompressedTexSubImage2DARB(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLsizei imageSize, const GLvoid *data)
 {
+    static int logged;
     (void)target;
     (void)level;
     (void)xoffset;
@@ -897,11 +934,12 @@ void glCompressedTexSubImage2DARB(GLenum target, GLint level, GLint xoffset, GLi
     (void)format;
     (void)imageSize;
     (void)data;
-    glp_unimplemented("glCompressedTexSubImage2DARB");
+    glp_unimplemented("glCompressedTexSubImage2DARB", &logged);
 }
 
 void glCompressedTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLsizei imageSize, const GLvoid *data)
 {
+    static int logged;
     (void)target;
     (void)level;
     (void)xoffset;
@@ -913,11 +951,12 @@ void glCompressedTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint 
     (void)format;
     (void)imageSize;
     (void)data;
-    glp_unimplemented("glCompressedTexSubImage3D");
+    glp_unimplemented("glCompressedTexSubImage3D", &logged);
 }
 
 void glCompressedTexSubImage3DARB(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLsizei imageSize, const GLvoid *data)
 {
+    static int logged;
     (void)target;
     (void)level;
     (void)xoffset;
@@ -929,33 +968,36 @@ void glCompressedTexSubImage3DARB(GLenum target, GLint level, GLint xoffset, GLi
     (void)format;
     (void)imageSize;
     (void)data;
-    glp_unimplemented("glCompressedTexSubImage3DARB");
+    glp_unimplemented("glCompressedTexSubImage3DARB", &logged);
 }
 
 void glConvolutionFilter1D(GLenum target, GLenum internalformat, GLsizei width, GLenum format, GLenum type, const GLvoid *image)
 {
+    static int logged;
     (void)target;
     (void)internalformat;
     (void)width;
     (void)format;
     (void)type;
     (void)image;
-    glp_unimplemented("glConvolutionFilter1D");
+    glp_unimplemented("glConvolutionFilter1D", &logged);
 }
 
 void glConvolutionFilter1DEXT(GLenum target, GLenum internalformat, GLsizei width, GLenum format, GLenum type, const GLvoid *image)
 {
+    static int logged;
     (void)target;
     (void)internalformat;
     (void)width;
     (void)format;
     (void)type;
     (void)image;
-    glp_unimplemented("glConvolutionFilter1DEXT");
+    glp_unimplemented("glConvolutionFilter1DEXT", &logged);
 }
 
 void glConvolutionFilter2D(GLenum target, GLenum internalformat, GLsizei width, GLsizei height, GLenum format, GLenum type, const GLvoid *image)
 {
+    static int logged;
     (void)target;
     (void)internalformat;
     (void)width;
@@ -963,11 +1005,12 @@ void glConvolutionFilter2D(GLenum target, GLenum internalformat, GLsizei width, 
     (void)format;
     (void)type;
     (void)image;
-    glp_unimplemented("glConvolutionFilter2D");
+    glp_unimplemented("glConvolutionFilter2D", &logged);
 }
 
 void glConvolutionFilter2DEXT(GLenum target, GLenum internalformat, GLsizei width, GLsizei height, GLenum format, GLenum type, const GLvoid *image)
 {
+    static int logged;
     (void)target;
     (void)internalformat;
     (void)width;
@@ -975,7 +1018,7 @@ void glConvolutionFilter2DEXT(GLenum target, GLenum internalformat, GLsizei widt
     (void)format;
     (void)type;
     (void)image;
-    glp_unimplemented("glConvolutionFilter2DEXT");
+    glp_unimplemented("glConvolutionFilter2DEXT", &logged);
 }
 
 void glConvolutionParameterf(GLenum target, GLenum pname, GLfloat params)
@@ -1000,18 +1043,20 @@ void glConvolutionParameterfEXT(GLenum target, GLenum pname, GLfloat params)
 
 void glConvolutionParameterfv(GLenum target, GLenum pname, const GLfloat *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glConvolutionParameterfv");
+    glp_unimplemented("glConvolutionParameterfv", &logged);
 }
 
 void glConvolutionParameterfvEXT(GLenum target, GLenum pname, const GLfloat *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glConvolutionParameterfvEXT");
+    glp_unimplemented("glConvolutionParameterfvEXT", &logged);
 }
 
 void glConvolutionParameteri(GLenum target, GLenum pname, GLint params)
@@ -1036,18 +1081,20 @@ void glConvolutionParameteriEXT(GLenum target, GLenum pname, GLint params)
 
 void glConvolutionParameteriv(GLenum target, GLenum pname, const GLint *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glConvolutionParameteriv");
+    glp_unimplemented("glConvolutionParameteriv", &logged);
 }
 
 void glConvolutionParameterivEXT(GLenum target, GLenum pname, const GLint *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glConvolutionParameterivEXT");
+    glp_unimplemented("glConvolutionParameterivEXT", &logged);
 }
 
 void glCopyColorSubTable(GLenum target, GLsizei start, GLint x, GLint y, GLsizei width)
@@ -1304,12 +1351,14 @@ void glCullFace(GLenum mode)
 
 void glDeformSGIX(GLbitfield mask)
 {
+    static int logged;
     (void)mask;
-    glp_unimplemented("glDeformSGIX");
+    glp_unimplemented("glDeformSGIX", &logged);
 }
 
 void glDeformationMap3dSGIX(GLenum target, GLdouble u1, GLdouble u2, GLint ustride, GLint uorder, GLdouble v1, GLdouble v2, GLint vstride, GLint vorder, GLdouble w1, GLdouble w2, GLint wstride, GLint worder, const GLdouble *points)
 {
+    static int logged;
     (void)target;
     (void)u1;
     (void)u2;
@@ -1324,11 +1373,12 @@ void glDeformationMap3dSGIX(GLenum target, GLdouble u1, GLdouble u2, GLint ustri
     (void)wstride;
     (void)worder;
     (void)points;
-    glp_unimplemented("glDeformationMap3dSGIX");
+    glp_unimplemented("glDeformationMap3dSGIX", &logged);
 }
 
 void glDeformationMap3fSGIX(GLenum target, GLfloat u1, GLfloat u2, GLint ustride, GLint uorder, GLfloat v1, GLfloat v2, GLint vstride, GLint vorder, GLfloat w1, GLfloat w2, GLint wstride, GLint worder, const GLfloat *points)
 {
+    static int logged;
     (void)target;
     (void)u1;
     (void)u2;
@@ -1343,63 +1393,52 @@ void glDeformationMap3fSGIX(GLenum target, GLfloat u1, GLfloat u2, GLint ustride
     (void)wstride;
     (void)worder;
     (void)points;
-    glp_unimplemented("glDeformationMap3fSGIX");
+    glp_unimplemented("glDeformationMap3fSGIX", &logged);
 }
 
 void glDeleteAsyncMarkersSGIX(GLuint marker, GLsizei range)
 {
+    static int logged;
     (void)marker;
     (void)range;
-    glp_unimplemented("glDeleteAsyncMarkersSGIX");
+    glp_unimplemented("glDeleteAsyncMarkersSGIX", &logged);
 }
 
 void glDeleteFragmentShaderATI(GLuint id)
 {
+    static int logged;
     (void)id;
-    glp_unimplemented("glDeleteFragmentShaderATI");
-}
-
-void glDeleteLists(GLuint list, GLsizei range)
-{
-    unsigned int *p;
-    GLP_TRACE(GLP_FN_glDeleteLists, "glDeleteLists");
-    p = glp_put(GLP_FN_glDeleteLists, 2);
-    p[0] = (unsigned int)(list);
-    p[1] = (unsigned int)(int)(range);
+    glp_unimplemented("glDeleteFragmentShaderATI", &logged);
 }
 
 void glDeleteObjectBufferATI(GLuint buffer)
 {
+    static int logged;
     (void)buffer;
-    glp_unimplemented("glDeleteObjectBufferATI");
+    glp_unimplemented("glDeleteObjectBufferATI", &logged);
 }
 
 void glDeleteOcclusionQueriesNV(GLsizei n, const GLuint *ids)
 {
+    static int logged;
     (void)n;
     (void)ids;
-    glp_unimplemented("glDeleteOcclusionQueriesNV");
+    glp_unimplemented("glDeleteOcclusionQueriesNV", &logged);
 }
 
 void glDeleteProgramsARB(GLsizei n, const GLuint *programs)
 {
+    static int logged;
     (void)n;
     (void)programs;
-    glp_unimplemented("glDeleteProgramsARB");
+    glp_unimplemented("glDeleteProgramsARB", &logged);
 }
 
 void glDeleteVertexShaderEXT(GLuint id)
 {
+    static int logged;
     (void)id;
-    glp_unimplemented("glDeleteVertexShaderEXT");
-}
-
-void glDepthFunc(GLenum func)
-{
-    unsigned int *p;
-    GLP_TRACE(GLP_FN_glDepthFunc, "glDepthFunc");
-    p = glp_put(GLP_FN_glDepthFunc, 1);
-    p[0] = (unsigned int)(func);
+    glp_unimplemented("glDeleteVertexShaderEXT", &logged);
 }
 
 void glDepthMask(GLboolean flag)
@@ -1421,16 +1460,18 @@ void glDepthRange(GLclampd near, GLclampd far)
 
 void glDetailTexFuncSGIS(GLenum target, GLsizei n, const GLfloat *points)
 {
+    static int logged;
     (void)target;
     (void)n;
     (void)points;
-    glp_unimplemented("glDetailTexFuncSGIS");
+    glp_unimplemented("glDetailTexFuncSGIS", &logged);
 }
 
 void glDisableVariantClientStateEXT(GLuint id)
 {
+    static int logged;
     (void)id;
-    glp_unimplemented("glDisableVariantClientStateEXT");
+    glp_unimplemented("glDisableVariantClientStateEXT", &logged);
 }
 
 void glDisableVertexAttribArrayARB(GLuint index)
@@ -1443,25 +1484,28 @@ void glDisableVertexAttribArrayARB(GLuint index)
 
 void glDrawBuffersATI(GLsizei n, const GLenum *bufs)
 {
+    static int logged;
     (void)n;
     (void)bufs;
-    glp_unimplemented("glDrawBuffersATI");
+    glp_unimplemented("glDrawBuffersATI", &logged);
 }
 
 void glDrawElementArrayATI(GLenum mode, GLsizei count)
 {
+    static int logged;
     (void)mode;
     (void)count;
-    glp_unimplemented("glDrawElementArrayATI");
+    glp_unimplemented("glDrawElementArrayATI", &logged);
 }
 
 void glDrawRangeElementArrayATI(GLenum mode, GLuint start, GLuint end, GLsizei count)
 {
+    static int logged;
     (void)mode;
     (void)start;
     (void)end;
     (void)count;
-    glp_unimplemented("glDrawRangeElementArrayATI");
+    glp_unimplemented("glDrawRangeElementArrayATI", &logged);
 }
 
 void glEdgeFlag(GLboolean flag)
@@ -1477,21 +1521,24 @@ void glEdgeFlagv(const GLboolean *flag)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glEdgeFlagv, "glEdgeFlagv");
+    if (!flag) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glEdgeFlagv, 1);
     for (i = 0; i < 1; ++i) { p[0 + i * 1] = (unsigned int)(flag[i]); }
 }
 
 void glElementPointerATI(GLenum type, const GLvoid *pointer)
 {
+    static int logged;
     (void)type;
     (void)pointer;
-    glp_unimplemented("glElementPointerATI");
+    glp_unimplemented("glElementPointerATI", &logged);
 }
 
 void glEnableVariantClientStateEXT(GLuint id)
 {
+    static int logged;
     (void)id;
-    glp_unimplemented("glEnableVariantClientStateEXT");
+    glp_unimplemented("glEnableVariantClientStateEXT", &logged);
 }
 
 void glEnableVertexAttribArrayARB(GLuint index)
@@ -1504,17 +1551,20 @@ void glEnableVertexAttribArrayARB(GLuint index)
 
 void glEndFragmentShaderATI(void)
 {
-    glp_unimplemented("glEndFragmentShaderATI");
+    static int logged;
+    glp_unimplemented("glEndFragmentShaderATI", &logged);
 }
 
 void glEndOcclusionQueryNV(void)
 {
-    glp_unimplemented("glEndOcclusionQueryNV");
+    static int logged;
+    glp_unimplemented("glEndOcclusionQueryNV", &logged);
 }
 
 void glEndVertexShaderEXT(void)
 {
-    glp_unimplemented("glEndVertexShaderEXT");
+    static int logged;
+    glp_unimplemented("glEndVertexShaderEXT", &logged);
 }
 
 void glEvalCoord1d(GLdouble u)
@@ -1530,6 +1580,7 @@ void glEvalCoord1dv(const GLdouble *u)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glEvalCoord1dv, "glEvalCoord1dv");
+    if (!u) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glEvalCoord1dv, 2);
     for (i = 0; i < 1; ++i) { glp_dbits(&p[0 + i * 2], u[i]); }
 }
@@ -1547,6 +1598,7 @@ void glEvalCoord1fv(const GLfloat *u)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glEvalCoord1fv, "glEvalCoord1fv");
+    if (!u) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glEvalCoord1fv, 1);
     for (i = 0; i < 1; ++i) { p[0 + i * 1] = glp_fbits(u[i]); }
 }
@@ -1565,6 +1617,7 @@ void glEvalCoord2dv(const GLdouble *u)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glEvalCoord2dv, "glEvalCoord2dv");
+    if (!u) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glEvalCoord2dv, 4);
     for (i = 0; i < 2; ++i) { glp_dbits(&p[0 + i * 2], u[i]); }
 }
@@ -1583,6 +1636,7 @@ void glEvalCoord2fv(const GLfloat *u)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glEvalCoord2fv, "glEvalCoord2fv");
+    if (!u) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glEvalCoord2fv, 2);
     for (i = 0; i < 2; ++i) { p[0 + i * 1] = glp_fbits(u[i]); }
 }
@@ -1628,38 +1682,43 @@ void glEvalPoint2(GLint i, GLint j)
 
 void glExtractComponentEXT(GLuint res, GLuint src, GLuint num)
 {
+    static int logged;
     (void)res;
     (void)src;
     (void)num;
-    glp_unimplemented("glExtractComponentEXT");
+    glp_unimplemented("glExtractComponentEXT", &logged);
 }
 
 GLint glFinishAsyncSGIX(GLuint *markerp)
 {
+    static int logged;
     (void)markerp;
-    glp_unimplemented("glFinishAsyncSGIX");
+    glp_unimplemented("glFinishAsyncSGIX", &logged);
     return (GLint)0;
 }
 
 void glFlushRasterSGIX(void)
 {
-    glp_unimplemented("glFlushRasterSGIX");
+    static int logged;
+    glp_unimplemented("glFlushRasterSGIX", &logged);
 }
 
 void glFogCoordPointer(GLenum type, GLsizei stride, const GLvoid *pointer)
 {
+    static int logged;
     (void)type;
     (void)stride;
     (void)pointer;
-    glp_unimplemented("glFogCoordPointer");
+    glp_unimplemented("glFogCoordPointer", &logged);
 }
 
 void glFogCoordPointerEXT(GLenum type, GLsizei stride, const GLvoid *pointer)
 {
+    static int logged;
     (void)type;
     (void)stride;
     (void)pointer;
-    glp_unimplemented("glFogCoordPointerEXT");
+    glp_unimplemented("glFogCoordPointerEXT", &logged);
 }
 
 void glFogCoordd(GLdouble coord)
@@ -1683,6 +1742,7 @@ void glFogCoorddv(const GLdouble *coord)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glFogCoorddv, "glFogCoorddv");
+    if (!coord) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glFogCoorddv, 2);
     for (i = 0; i < 1; ++i) { glp_dbits(&p[0 + i * 2], coord[i]); }
 }
@@ -1692,6 +1752,7 @@ void glFogCoorddvEXT(const GLdouble *coord)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glFogCoorddvEXT, "glFogCoorddvEXT");
+    if (!coord) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glFogCoorddvEXT, 2);
     for (i = 0; i < 1; ++i) { glp_dbits(&p[0 + i * 2], coord[i]); }
 }
@@ -1717,6 +1778,7 @@ void glFogCoordfv(const GLfloat *coord)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glFogCoordfv, "glFogCoordfv");
+    if (!coord) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glFogCoordfv, 1);
     for (i = 0; i < 1; ++i) { p[0 + i * 1] = glp_fbits(coord[i]); }
 }
@@ -1726,15 +1788,17 @@ void glFogCoordfvEXT(const GLfloat *coord)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glFogCoordfvEXT, "glFogCoordfvEXT");
+    if (!coord) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glFogCoordfvEXT, 1);
     for (i = 0; i < 1; ++i) { p[0 + i * 1] = glp_fbits(coord[i]); }
 }
 
 void glFogFuncSGIS(GLsizei n, const GLfloat *points)
 {
+    static int logged;
     (void)n;
     (void)points;
-    glp_unimplemented("glFogFuncSGIS");
+    glp_unimplemented("glFogFuncSGIS", &logged);
 }
 
 void glFogf(GLenum pname, GLfloat param)
@@ -1751,6 +1815,7 @@ void glFogfv(GLenum pname, const GLfloat *params)
     unsigned int *p;
     int i, n = glp_pname_count(GLP_GROUP_FOG, pname);
     GLP_TRACE(GLP_FN_glFogfv, "glFogfv");
+    if (!params) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glFogfv, 2 + n * 1);
     p[0] = (unsigned int)(pname);
     p[1] = (unsigned int)n;
@@ -1771,6 +1836,7 @@ void glFogiv(GLenum pname, const GLint *params)
     unsigned int *p;
     int i, n = glp_pname_count(GLP_GROUP_FOG, pname);
     GLP_TRACE(GLP_FN_glFogiv, "glFogiv");
+    if (!params) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glFogiv, 2 + n * 1);
     p[0] = (unsigned int)(pname);
     p[1] = (unsigned int)n;
@@ -1779,107 +1845,121 @@ void glFogiv(GLenum pname, const GLint *params)
 
 void glFragmentColorMaterialSGIX(GLenum face, GLenum mode)
 {
+    static int logged;
     (void)face;
     (void)mode;
-    glp_unimplemented("glFragmentColorMaterialSGIX");
+    glp_unimplemented("glFragmentColorMaterialSGIX", &logged);
 }
 
 void glFragmentLightModelfSGIX(GLenum pname, GLfloat param)
 {
+    static int logged;
     (void)pname;
     (void)param;
-    glp_unimplemented("glFragmentLightModelfSGIX");
+    glp_unimplemented("glFragmentLightModelfSGIX", &logged);
 }
 
 void glFragmentLightModelfvSGIX(GLenum pname, const GLfloat *params)
 {
+    static int logged;
     (void)pname;
     (void)params;
-    glp_unimplemented("glFragmentLightModelfvSGIX");
+    glp_unimplemented("glFragmentLightModelfvSGIX", &logged);
 }
 
 void glFragmentLightModeliSGIX(GLenum pname, GLint param)
 {
+    static int logged;
     (void)pname;
     (void)param;
-    glp_unimplemented("glFragmentLightModeliSGIX");
+    glp_unimplemented("glFragmentLightModeliSGIX", &logged);
 }
 
 void glFragmentLightModelivSGIX(GLenum pname, const GLint *params)
 {
+    static int logged;
     (void)pname;
     (void)params;
-    glp_unimplemented("glFragmentLightModelivSGIX");
+    glp_unimplemented("glFragmentLightModelivSGIX", &logged);
 }
 
 void glFragmentLightfSGIX(GLenum light, GLenum pname, GLfloat param)
 {
+    static int logged;
     (void)light;
     (void)pname;
     (void)param;
-    glp_unimplemented("glFragmentLightfSGIX");
+    glp_unimplemented("glFragmentLightfSGIX", &logged);
 }
 
 void glFragmentLightfvSGIX(GLenum light, GLenum pname, const GLfloat *params)
 {
+    static int logged;
     (void)light;
     (void)pname;
     (void)params;
-    glp_unimplemented("glFragmentLightfvSGIX");
+    glp_unimplemented("glFragmentLightfvSGIX", &logged);
 }
 
 void glFragmentLightiSGIX(GLenum light, GLenum pname, GLint param)
 {
+    static int logged;
     (void)light;
     (void)pname;
     (void)param;
-    glp_unimplemented("glFragmentLightiSGIX");
+    glp_unimplemented("glFragmentLightiSGIX", &logged);
 }
 
 void glFragmentLightivSGIX(GLenum light, GLenum pname, const GLint *params)
 {
+    static int logged;
     (void)light;
     (void)pname;
     (void)params;
-    glp_unimplemented("glFragmentLightivSGIX");
+    glp_unimplemented("glFragmentLightivSGIX", &logged);
 }
 
 void glFragmentMaterialfSGIX(GLenum face, GLenum pname, GLfloat param)
 {
+    static int logged;
     (void)face;
     (void)pname;
     (void)param;
-    glp_unimplemented("glFragmentMaterialfSGIX");
+    glp_unimplemented("glFragmentMaterialfSGIX", &logged);
 }
 
 void glFragmentMaterialfvSGIX(GLenum face, GLenum pname, const GLfloat *params)
 {
+    static int logged;
     (void)face;
     (void)pname;
     (void)params;
-    glp_unimplemented("glFragmentMaterialfvSGIX");
+    glp_unimplemented("glFragmentMaterialfvSGIX", &logged);
 }
 
 void glFragmentMaterialiSGIX(GLenum face, GLenum pname, GLint param)
 {
+    static int logged;
     (void)face;
     (void)pname;
     (void)param;
-    glp_unimplemented("glFragmentMaterialiSGIX");
+    glp_unimplemented("glFragmentMaterialiSGIX", &logged);
 }
 
 void glFragmentMaterialivSGIX(GLenum face, GLenum pname, const GLint *params)
 {
+    static int logged;
     (void)face;
     (void)pname;
     (void)params;
-    glp_unimplemented("glFragmentMaterialivSGIX");
+    glp_unimplemented("glFragmentMaterialivSGIX", &logged);
 }
 
 void glFrameZoomSGIX(GLint factor)
 {
+    static int logged;
     (void)factor;
-    glp_unimplemented("glFrameZoomSGIX");
+    glp_unimplemented("glFrameZoomSGIX", &logged);
 }
 
 void glFrontFace(GLenum mode)
@@ -1905,684 +1985,769 @@ void glFrustum(GLdouble left, GLdouble right, GLdouble bottom, GLdouble top, GLd
 
 GLuint glGenAsyncMarkersSGIX(GLsizei range)
 {
+    static int logged;
     (void)range;
-    glp_unimplemented("glGenAsyncMarkersSGIX");
+    glp_unimplemented("glGenAsyncMarkersSGIX", &logged);
     return (GLuint)0;
 }
 
 GLuint glGenFragmentShadersATI(GLuint range)
 {
+    static int logged;
     (void)range;
-    glp_unimplemented("glGenFragmentShadersATI");
+    glp_unimplemented("glGenFragmentShadersATI", &logged);
     return (GLuint)0;
 }
 
 void glGenOcclusionQueriesNV(GLsizei n, GLuint *ids)
 {
+    static int logged;
     (void)n;
     (void)ids;
-    glp_unimplemented("glGenOcclusionQueriesNV");
+    glp_unimplemented("glGenOcclusionQueriesNV", &logged);
 }
 
 void glGenProgramsARB(GLsizei n, GLuint *programs)
 {
+    static int logged;
     (void)n;
     (void)programs;
-    glp_unimplemented("glGenProgramsARB");
+    glp_unimplemented("glGenProgramsARB", &logged);
 }
 
 GLuint glGenSymbolsEXT(GLenum datatype, GLenum storagetype, GLenum range, GLuint components)
 {
+    static int logged;
     (void)datatype;
     (void)storagetype;
     (void)range;
     (void)components;
-    glp_unimplemented("glGenSymbolsEXT");
+    glp_unimplemented("glGenSymbolsEXT", &logged);
     return (GLuint)0;
 }
 
 GLuint glGenVertexShadersEXT(GLuint range)
 {
+    static int logged;
     (void)range;
-    glp_unimplemented("glGenVertexShadersEXT");
+    glp_unimplemented("glGenVertexShadersEXT", &logged);
     return (GLuint)0;
 }
 
 void glGetArrayObjectfvATI(GLenum array, GLenum pname, GLfloat *params)
 {
+    static int logged;
     (void)array;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetArrayObjectfvATI");
+    glp_unimplemented("glGetArrayObjectfvATI", &logged);
 }
 
 void glGetArrayObjectivATI(GLenum array, GLenum pname, GLint *params)
 {
+    static int logged;
     (void)array;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetArrayObjectivATI");
+    glp_unimplemented("glGetArrayObjectivATI", &logged);
 }
 
 void glGetColorTable(GLenum target, GLenum format, GLenum type, GLvoid *table)
 {
+    static int logged;
     (void)target;
     (void)format;
     (void)type;
     (void)table;
-    glp_unimplemented("glGetColorTable");
+    glp_unimplemented("glGetColorTable", &logged);
 }
 
 void glGetColorTableParameterfv(GLenum target, GLenum pname, GLfloat *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetColorTableParameterfv");
+    glp_unimplemented("glGetColorTableParameterfv", &logged);
 }
 
 void glGetColorTableParameterfvSGI(GLenum target, GLenum pname, GLfloat *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetColorTableParameterfvSGI");
+    glp_unimplemented("glGetColorTableParameterfvSGI", &logged);
 }
 
 void glGetColorTableParameteriv(GLenum target, GLenum pname, GLint *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetColorTableParameteriv");
+    glp_unimplemented("glGetColorTableParameteriv", &logged);
 }
 
 void glGetColorTableParameterivSGI(GLenum target, GLenum pname, GLint *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetColorTableParameterivSGI");
+    glp_unimplemented("glGetColorTableParameterivSGI", &logged);
 }
 
 void glGetColorTableSGI(GLenum target, GLenum format, GLenum type, GLvoid *table)
 {
+    static int logged;
     (void)target;
     (void)format;
     (void)type;
     (void)table;
-    glp_unimplemented("glGetColorTableSGI");
+    glp_unimplemented("glGetColorTableSGI", &logged);
 }
 
 void glGetCompressedTexImage(GLenum target, GLint level, GLvoid *img)
 {
+    static int logged;
     (void)target;
     (void)level;
     (void)img;
-    glp_unimplemented("glGetCompressedTexImage");
+    glp_unimplemented("glGetCompressedTexImage", &logged);
 }
 
 void glGetCompressedTexImageARB(GLenum target, GLint level, GLvoid *img)
 {
+    static int logged;
     (void)target;
     (void)level;
     (void)img;
-    glp_unimplemented("glGetCompressedTexImageARB");
+    glp_unimplemented("glGetCompressedTexImageARB", &logged);
 }
 
 void glGetConvolutionFilter(GLenum target, GLenum format, GLenum type, GLvoid *image)
 {
+    static int logged;
     (void)target;
     (void)format;
     (void)type;
     (void)image;
-    glp_unimplemented("glGetConvolutionFilter");
+    glp_unimplemented("glGetConvolutionFilter", &logged);
 }
 
 void glGetConvolutionFilterEXT(GLenum target, GLenum format, GLenum type, GLvoid *image)
 {
+    static int logged;
     (void)target;
     (void)format;
     (void)type;
     (void)image;
-    glp_unimplemented("glGetConvolutionFilterEXT");
+    glp_unimplemented("glGetConvolutionFilterEXT", &logged);
 }
 
 void glGetConvolutionParameterfv(GLenum target, GLenum pname, GLfloat *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetConvolutionParameterfv");
+    glp_unimplemented("glGetConvolutionParameterfv", &logged);
 }
 
 void glGetConvolutionParameterfvEXT(GLenum target, GLenum pname, GLfloat *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetConvolutionParameterfvEXT");
+    glp_unimplemented("glGetConvolutionParameterfvEXT", &logged);
 }
 
 void glGetConvolutionParameteriv(GLenum target, GLenum pname, GLint *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetConvolutionParameteriv");
+    glp_unimplemented("glGetConvolutionParameteriv", &logged);
 }
 
 void glGetConvolutionParameterivEXT(GLenum target, GLenum pname, GLint *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetConvolutionParameterivEXT");
+    glp_unimplemented("glGetConvolutionParameterivEXT", &logged);
 }
 
 void glGetDetailTexFuncSGIS(GLenum target, GLfloat *points)
 {
+    static int logged;
     (void)target;
     (void)points;
-    glp_unimplemented("glGetDetailTexFuncSGIS");
+    glp_unimplemented("glGetDetailTexFuncSGIS", &logged);
 }
 
 void glGetFogFuncSGIS(const GLfloat *points)
 {
+    static int logged;
     (void)points;
-    glp_unimplemented("glGetFogFuncSGIS");
+    glp_unimplemented("glGetFogFuncSGIS", &logged);
 }
 
 void glGetFragmentLightfvSGIX(GLenum light, GLenum pname, GLfloat *params)
 {
+    static int logged;
     (void)light;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetFragmentLightfvSGIX");
+    glp_unimplemented("glGetFragmentLightfvSGIX", &logged);
 }
 
 void glGetFragmentLightivSGIX(GLenum light, GLenum pname, GLint *params)
 {
+    static int logged;
     (void)light;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetFragmentLightivSGIX");
+    glp_unimplemented("glGetFragmentLightivSGIX", &logged);
 }
 
 void glGetFragmentMaterialfvSGIX(GLenum face, GLenum pname, GLfloat *params)
 {
+    static int logged;
     (void)face;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetFragmentMaterialfvSGIX");
+    glp_unimplemented("glGetFragmentMaterialfvSGIX", &logged);
 }
 
 void glGetFragmentMaterialivSGIX(GLenum face, GLenum pname, GLint *params)
 {
+    static int logged;
     (void)face;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetFragmentMaterialivSGIX");
+    glp_unimplemented("glGetFragmentMaterialivSGIX", &logged);
 }
 
 void glGetHistogram(GLenum target, GLboolean reset, GLenum format, GLenum type, GLvoid *values)
 {
+    static int logged;
     (void)target;
     (void)reset;
     (void)format;
     (void)type;
     (void)values;
-    glp_unimplemented("glGetHistogram");
+    glp_unimplemented("glGetHistogram", &logged);
 }
 
 void glGetHistogramEXT(GLenum target, GLboolean reset, GLenum format, GLenum type, GLvoid *values)
 {
+    static int logged;
     (void)target;
     (void)reset;
     (void)format;
     (void)type;
     (void)values;
-    glp_unimplemented("glGetHistogramEXT");
+    glp_unimplemented("glGetHistogramEXT", &logged);
 }
 
 void glGetHistogramParameterfv(GLenum target, GLenum pname, GLfloat *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetHistogramParameterfv");
+    glp_unimplemented("glGetHistogramParameterfv", &logged);
 }
 
 void glGetHistogramParameterfvEXT(GLenum target, GLenum pname, GLfloat *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetHistogramParameterfvEXT");
+    glp_unimplemented("glGetHistogramParameterfvEXT", &logged);
 }
 
 void glGetHistogramParameteriv(GLenum target, GLenum pname, GLint *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetHistogramParameteriv");
+    glp_unimplemented("glGetHistogramParameteriv", &logged);
 }
 
 void glGetHistogramParameterivEXT(GLenum target, GLenum pname, GLint *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetHistogramParameterivEXT");
+    glp_unimplemented("glGetHistogramParameterivEXT", &logged);
 }
 
 GLint glGetInstrumentsSGIX(void)
 {
-    glp_unimplemented("glGetInstrumentsSGIX");
+    static int logged;
+    glp_unimplemented("glGetInstrumentsSGIX", &logged);
     return (GLint)0;
 }
 
 void glGetInvariantBooleanvEXT(GLuint id, GLenum value, GLboolean *data)
 {
+    static int logged;
     (void)id;
     (void)value;
     (void)data;
-    glp_unimplemented("glGetInvariantBooleanvEXT");
+    glp_unimplemented("glGetInvariantBooleanvEXT", &logged);
 }
 
 void glGetInvariantFloatvEXT(GLuint id, GLenum value, GLfloat *data)
 {
+    static int logged;
     (void)id;
     (void)value;
     (void)data;
-    glp_unimplemented("glGetInvariantFloatvEXT");
+    glp_unimplemented("glGetInvariantFloatvEXT", &logged);
 }
 
 void glGetInvariantIntegervEXT(GLuint id, GLenum value, GLint *data)
 {
+    static int logged;
     (void)id;
     (void)value;
     (void)data;
-    glp_unimplemented("glGetInvariantIntegervEXT");
+    glp_unimplemented("glGetInvariantIntegervEXT", &logged);
 }
 
 void glGetListParameterfvSGIX(GLuint list, GLenum pname, GLfloat *params)
 {
+    static int logged;
     (void)list;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetListParameterfvSGIX");
+    glp_unimplemented("glGetListParameterfvSGIX", &logged);
 }
 
 void glGetListParameterivSGIX(GLuint list, GLenum pname, GLint *params)
 {
+    static int logged;
     (void)list;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetListParameterivSGIX");
+    glp_unimplemented("glGetListParameterivSGIX", &logged);
 }
 
 void glGetLocalConstantBooleanvEXT(GLuint id, GLenum value, GLboolean *data)
 {
+    static int logged;
     (void)id;
     (void)value;
     (void)data;
-    glp_unimplemented("glGetLocalConstantBooleanvEXT");
+    glp_unimplemented("glGetLocalConstantBooleanvEXT", &logged);
 }
 
 void glGetLocalConstantFloatvEXT(GLuint id, GLenum value, GLfloat *data)
 {
+    static int logged;
     (void)id;
     (void)value;
     (void)data;
-    glp_unimplemented("glGetLocalConstantFloatvEXT");
+    glp_unimplemented("glGetLocalConstantFloatvEXT", &logged);
 }
 
 void glGetLocalConstantIntegervEXT(GLuint id, GLenum value, GLint *data)
 {
+    static int logged;
     (void)id;
     (void)value;
     (void)data;
-    glp_unimplemented("glGetLocalConstantIntegervEXT");
+    glp_unimplemented("glGetLocalConstantIntegervEXT", &logged);
 }
 
 void glGetMapdv(GLenum target, GLenum query, GLdouble *v)
 {
+    static int logged;
     (void)target;
     (void)query;
     (void)v;
-    glp_unimplemented("glGetMapdv");
+    glp_unimplemented("glGetMapdv", &logged);
 }
 
 void glGetMapfv(GLenum target, GLenum query, GLfloat *v)
 {
+    static int logged;
     (void)target;
     (void)query;
     (void)v;
-    glp_unimplemented("glGetMapfv");
+    glp_unimplemented("glGetMapfv", &logged);
 }
 
 void glGetMapiv(GLenum target, GLenum query, GLint *v)
 {
+    static int logged;
     (void)target;
     (void)query;
     (void)v;
-    glp_unimplemented("glGetMapiv");
+    glp_unimplemented("glGetMapiv", &logged);
 }
 
 void glGetMinmax(GLenum target, GLboolean reset, GLenum format, GLenum type, GLvoid *values)
 {
+    static int logged;
     (void)target;
     (void)reset;
     (void)format;
     (void)type;
     (void)values;
-    glp_unimplemented("glGetMinmax");
+    glp_unimplemented("glGetMinmax", &logged);
 }
 
 void glGetMinmaxEXT(GLenum target, GLboolean reset, GLenum format, GLenum type, GLvoid *values)
 {
+    static int logged;
     (void)target;
     (void)reset;
     (void)format;
     (void)type;
     (void)values;
-    glp_unimplemented("glGetMinmaxEXT");
+    glp_unimplemented("glGetMinmaxEXT", &logged);
 }
 
 void glGetMinmaxParameterfv(GLenum target, GLenum pname, GLfloat *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetMinmaxParameterfv");
+    glp_unimplemented("glGetMinmaxParameterfv", &logged);
 }
 
 void glGetMinmaxParameterfvEXT(GLenum target, GLenum pname, GLfloat *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetMinmaxParameterfvEXT");
+    glp_unimplemented("glGetMinmaxParameterfvEXT", &logged);
 }
 
 void glGetMinmaxParameteriv(GLenum target, GLenum pname, GLint *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetMinmaxParameteriv");
+    glp_unimplemented("glGetMinmaxParameteriv", &logged);
 }
 
 void glGetMinmaxParameterivEXT(GLenum target, GLenum pname, GLint *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetMinmaxParameterivEXT");
+    glp_unimplemented("glGetMinmaxParameterivEXT", &logged);
 }
 
 void glGetObjectBufferfvATI(GLuint buffer, GLenum pname, GLfloat *params)
 {
+    static int logged;
     (void)buffer;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetObjectBufferfvATI");
+    glp_unimplemented("glGetObjectBufferfvATI", &logged);
 }
 
 void glGetObjectBufferivATI(GLuint buffer, GLenum pname, GLint *params)
 {
+    static int logged;
     (void)buffer;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetObjectBufferivATI");
+    glp_unimplemented("glGetObjectBufferivATI", &logged);
 }
 
 void glGetOcclusionQueryivNV(GLuint id, GLenum pname, GLint *params)
 {
+    static int logged;
     (void)id;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetOcclusionQueryivNV");
+    glp_unimplemented("glGetOcclusionQueryivNV", &logged);
 }
 
 void glGetOcclusionQueryuivNV(GLuint id, GLenum pname, GLuint *params)
 {
+    static int logged;
     (void)id;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetOcclusionQueryuivNV");
+    glp_unimplemented("glGetOcclusionQueryuivNV", &logged);
 }
 
 void glGetPixelMapfv(GLenum map, GLfloat *values)
 {
+    static int logged;
     (void)map;
     (void)values;
-    glp_unimplemented("glGetPixelMapfv");
+    glp_unimplemented("glGetPixelMapfv", &logged);
 }
 
 void glGetPixelMapuiv(GLenum map, GLuint *values)
 {
+    static int logged;
     (void)map;
     (void)values;
-    glp_unimplemented("glGetPixelMapuiv");
+    glp_unimplemented("glGetPixelMapuiv", &logged);
 }
 
 void glGetPixelMapusv(GLenum map, GLushort *values)
 {
+    static int logged;
     (void)map;
     (void)values;
-    glp_unimplemented("glGetPixelMapusv");
+    glp_unimplemented("glGetPixelMapusv", &logged);
 }
 
 void glGetPixelTexGenParameterfvSGIS(GLenum pname, GLfloat *params)
 {
+    static int logged;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetPixelTexGenParameterfvSGIS");
+    glp_unimplemented("glGetPixelTexGenParameterfvSGIS", &logged);
 }
 
 void glGetPixelTexGenParameterivSGIS(GLenum pname, GLint *params)
 {
+    static int logged;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetPixelTexGenParameterivSGIS");
+    glp_unimplemented("glGetPixelTexGenParameterivSGIS", &logged);
 }
 
 void glGetProgramEnvParameterdvARB(GLenum target, GLuint index, GLdouble *params)
 {
+    static int logged;
     (void)target;
     (void)index;
     (void)params;
-    glp_unimplemented("glGetProgramEnvParameterdvARB");
+    glp_unimplemented("glGetProgramEnvParameterdvARB", &logged);
 }
 
 void glGetProgramEnvParameterfvARB(GLenum target, GLuint index, GLfloat *params)
 {
+    static int logged;
     (void)target;
     (void)index;
     (void)params;
-    glp_unimplemented("glGetProgramEnvParameterfvARB");
+    glp_unimplemented("glGetProgramEnvParameterfvARB", &logged);
 }
 
 void glGetProgramLocalParameterdvARB(GLenum target, GLuint index, GLdouble *params)
 {
+    static int logged;
     (void)target;
     (void)index;
     (void)params;
-    glp_unimplemented("glGetProgramLocalParameterdvARB");
+    glp_unimplemented("glGetProgramLocalParameterdvARB", &logged);
 }
 
 void glGetProgramLocalParameterfvARB(GLenum target, GLuint index, GLfloat *params)
 {
+    static int logged;
     (void)target;
     (void)index;
     (void)params;
-    glp_unimplemented("glGetProgramLocalParameterfvARB");
+    glp_unimplemented("glGetProgramLocalParameterfvARB", &logged);
 }
 
 void glGetProgramStringARB(GLenum target, GLenum pname, GLvoid *string)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)string;
-    glp_unimplemented("glGetProgramStringARB");
+    glp_unimplemented("glGetProgramStringARB", &logged);
 }
 
 void glGetProgramivARB(GLenum target, GLenum pname, GLint *params)
 {
+    static int logged;
     (void)target;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetProgramivARB");
+    glp_unimplemented("glGetProgramivARB", &logged);
 }
 
 void glGetSeparableFilter(GLenum target, GLenum format, GLenum type, GLvoid *row, GLvoid *column, GLvoid *span)
 {
+    static int logged;
     (void)target;
     (void)format;
     (void)type;
     (void)row;
     (void)column;
     (void)span;
-    glp_unimplemented("glGetSeparableFilter");
+    glp_unimplemented("glGetSeparableFilter", &logged);
 }
 
 void glGetSeparableFilterEXT(GLenum target, GLenum format, GLenum type, GLvoid *row, GLvoid *column, GLvoid *span)
 {
+    static int logged;
     (void)target;
     (void)format;
     (void)type;
     (void)row;
     (void)column;
     (void)span;
-    glp_unimplemented("glGetSeparableFilterEXT");
+    glp_unimplemented("glGetSeparableFilterEXT", &logged);
 }
 
 void glGetSharpenTexFuncSGIS(GLenum target, GLfloat *points)
 {
+    static int logged;
     (void)target;
     (void)points;
-    glp_unimplemented("glGetSharpenTexFuncSGIS");
+    glp_unimplemented("glGetSharpenTexFuncSGIS", &logged);
 }
 
 void glGetTexBumpParameterfvATI(GLenum pname, GLfloat *param)
 {
+    static int logged;
     (void)pname;
     (void)param;
-    glp_unimplemented("glGetTexBumpParameterfvATI");
+    glp_unimplemented("glGetTexBumpParameterfvATI", &logged);
 }
 
 void glGetTexBumpParameterivATI(GLenum pname, GLint *param)
 {
+    static int logged;
     (void)pname;
     (void)param;
-    glp_unimplemented("glGetTexBumpParameterivATI");
+    glp_unimplemented("glGetTexBumpParameterivATI", &logged);
 }
 
 void glGetTexFilterFuncSGIS(GLenum target, GLenum filter, GLfloat *weights)
 {
+    static int logged;
     (void)target;
     (void)filter;
     (void)weights;
-    glp_unimplemented("glGetTexFilterFuncSGIS");
+    glp_unimplemented("glGetTexFilterFuncSGIS", &logged);
 }
 
 void glGetVariantArrayObjectfvATI(GLuint id, GLenum pname, GLfloat *params)
 {
+    static int logged;
     (void)id;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetVariantArrayObjectfvATI");
+    glp_unimplemented("glGetVariantArrayObjectfvATI", &logged);
 }
 
 void glGetVariantArrayObjectivATI(GLuint id, GLenum pname, GLint *params)
 {
+    static int logged;
     (void)id;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetVariantArrayObjectivATI");
+    glp_unimplemented("glGetVariantArrayObjectivATI", &logged);
 }
 
 void glGetVariantBooleanvEXT(GLuint id, GLenum value, GLboolean *data)
 {
+    static int logged;
     (void)id;
     (void)value;
     (void)data;
-    glp_unimplemented("glGetVariantBooleanvEXT");
+    glp_unimplemented("glGetVariantBooleanvEXT", &logged);
 }
 
 void glGetVariantFloatvEXT(GLuint id, GLenum value, GLfloat *data)
 {
+    static int logged;
     (void)id;
     (void)value;
     (void)data;
-    glp_unimplemented("glGetVariantFloatvEXT");
+    glp_unimplemented("glGetVariantFloatvEXT", &logged);
 }
 
 void glGetVariantIntegervEXT(GLuint id, GLenum value, GLint *data)
 {
+    static int logged;
     (void)id;
     (void)value;
     (void)data;
-    glp_unimplemented("glGetVariantIntegervEXT");
+    glp_unimplemented("glGetVariantIntegervEXT", &logged);
 }
 
 void glGetVariantPointervEXT(GLuint id, GLenum value, GLvoid* *data)
 {
+    static int logged;
     (void)id;
     (void)value;
     (void)data;
-    glp_unimplemented("glGetVariantPointervEXT");
+    glp_unimplemented("glGetVariantPointervEXT", &logged);
 }
 
 void glGetVertexAttribArrayObjectfvATI(GLuint index, GLenum pname, GLfloat *params)
 {
+    static int logged;
     (void)index;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetVertexAttribArrayObjectfvATI");
+    glp_unimplemented("glGetVertexAttribArrayObjectfvATI", &logged);
 }
 
 void glGetVertexAttribArrayObjectivATI(GLuint index, GLenum pname, GLint *params)
 {
+    static int logged;
     (void)index;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetVertexAttribArrayObjectivATI");
+    glp_unimplemented("glGetVertexAttribArrayObjectivATI", &logged);
 }
 
 void glGetVertexAttribPointervARB(GLuint index, GLenum pname, GLvoid* *pointer)
 {
+    static int logged;
     (void)index;
     (void)pname;
     (void)pointer;
-    glp_unimplemented("glGetVertexAttribPointervARB");
+    glp_unimplemented("glGetVertexAttribPointervARB", &logged);
 }
 
 void glGetVertexAttribdvARB(GLuint index, GLenum pname, GLdouble *params)
 {
+    static int logged;
     (void)index;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetVertexAttribdvARB");
+    glp_unimplemented("glGetVertexAttribdvARB", &logged);
 }
 
 void glGetVertexAttribfvARB(GLuint index, GLenum pname, GLfloat *params)
 {
+    static int logged;
     (void)index;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetVertexAttribfvARB");
+    glp_unimplemented("glGetVertexAttribfvARB", &logged);
 }
 
 void glGetVertexAttribivARB(GLuint index, GLenum pname, GLint *params)
 {
+    static int logged;
     (void)index;
     (void)pname;
     (void)params;
-    glp_unimplemented("glGetVertexAttribivARB");
+    glp_unimplemented("glGetVertexAttribivARB", &logged);
 }
 
 void glHint(GLenum target, GLenum mode)
@@ -2626,60 +2791,68 @@ void glInitNames(void)
 
 void glInsertComponentEXT(GLuint res, GLuint src, GLuint num)
 {
+    static int logged;
     (void)res;
     (void)src;
     (void)num;
-    glp_unimplemented("glInsertComponentEXT");
+    glp_unimplemented("glInsertComponentEXT", &logged);
 }
 
 void glInstrumentsBufferSGIX(GLsizei size, GLint *buffer)
 {
+    static int logged;
     (void)size;
     (void)buffer;
-    glp_unimplemented("glInstrumentsBufferSGIX");
+    glp_unimplemented("glInstrumentsBufferSGIX", &logged);
 }
 
 GLboolean glIsAsyncMarkerSGIX(GLuint marker)
 {
+    static int logged;
     (void)marker;
-    glp_unimplemented("glIsAsyncMarkerSGIX");
+    glp_unimplemented("glIsAsyncMarkerSGIX", &logged);
     return (GLboolean)0;
 }
 
 GLboolean glIsObjectBufferATI(GLuint buffer)
 {
+    static int logged;
     (void)buffer;
-    glp_unimplemented("glIsObjectBufferATI");
+    glp_unimplemented("glIsObjectBufferATI", &logged);
     return (GLboolean)0;
 }
 
 GLboolean glIsOcclusionQueryNV(GLuint id)
 {
+    static int logged;
     (void)id;
-    glp_unimplemented("glIsOcclusionQueryNV");
+    glp_unimplemented("glIsOcclusionQueryNV", &logged);
     return (GLboolean)0;
 }
 
 GLboolean glIsProgramARB(GLuint program)
 {
+    static int logged;
     (void)program;
-    glp_unimplemented("glIsProgramARB");
+    glp_unimplemented("glIsProgramARB", &logged);
     return (GLboolean)0;
 }
 
 GLboolean glIsVariantEnabledEXT(GLuint id, GLenum cap)
 {
+    static int logged;
     (void)id;
     (void)cap;
-    glp_unimplemented("glIsVariantEnabledEXT");
+    glp_unimplemented("glIsVariantEnabledEXT", &logged);
     return (GLboolean)0;
 }
 
 void glLightEnviSGIX(GLenum pname, GLint param)
 {
+    static int logged;
     (void)pname;
     (void)param;
-    glp_unimplemented("glLightEnviSGIX");
+    glp_unimplemented("glLightEnviSGIX", &logged);
 }
 
 void glLightModelf(GLenum pname, GLfloat param)
@@ -2696,6 +2869,7 @@ void glLightModelfv(GLenum pname, const GLfloat *params)
     unsigned int *p;
     int i, n = glp_pname_count(GLP_GROUP_LIGHTMODEL, pname);
     GLP_TRACE(GLP_FN_glLightModelfv, "glLightModelfv");
+    if (!params) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glLightModelfv, 2 + n * 1);
     p[0] = (unsigned int)(pname);
     p[1] = (unsigned int)n;
@@ -2716,6 +2890,7 @@ void glLightModeliv(GLenum pname, const GLint *params)
     unsigned int *p;
     int i, n = glp_pname_count(GLP_GROUP_LIGHTMODEL, pname);
     GLP_TRACE(GLP_FN_glLightModeliv, "glLightModeliv");
+    if (!params) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glLightModeliv, 2 + n * 1);
     p[0] = (unsigned int)(pname);
     p[1] = (unsigned int)n;
@@ -2737,6 +2912,7 @@ void glLightfv(GLenum light, GLenum pname, const GLfloat *params)
     unsigned int *p;
     int i, n = glp_pname_count(GLP_GROUP_LIGHT, pname);
     GLP_TRACE(GLP_FN_glLightfv, "glLightfv");
+    if (!params) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glLightfv, 3 + n * 1);
     p[0] = (unsigned int)(light);
     p[1] = (unsigned int)(pname);
@@ -2759,6 +2935,7 @@ void glLightiv(GLenum light, GLenum pname, const GLint *params)
     unsigned int *p;
     int i, n = glp_pname_count(GLP_GROUP_LIGHT, pname);
     GLP_TRACE(GLP_FN_glLightiv, "glLightiv");
+    if (!params) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glLightiv, 3 + n * 1);
     p[0] = (unsigned int)(light);
     p[1] = (unsigned int)(pname);
@@ -2785,34 +2962,38 @@ void glLineWidth(GLfloat width)
 
 void glListParameterfSGIX(GLuint list, GLenum pname, GLfloat param)
 {
+    static int logged;
     (void)list;
     (void)pname;
     (void)param;
-    glp_unimplemented("glListParameterfSGIX");
+    glp_unimplemented("glListParameterfSGIX", &logged);
 }
 
 void glListParameterfvSGIX(GLuint list, GLenum pname, const GLfloat *params)
 {
+    static int logged;
     (void)list;
     (void)pname;
     (void)params;
-    glp_unimplemented("glListParameterfvSGIX");
+    glp_unimplemented("glListParameterfvSGIX", &logged);
 }
 
 void glListParameteriSGIX(GLuint list, GLenum pname, GLint param)
 {
+    static int logged;
     (void)list;
     (void)pname;
     (void)param;
-    glp_unimplemented("glListParameteriSGIX");
+    glp_unimplemented("glListParameteriSGIX", &logged);
 }
 
 void glListParameterivSGIX(GLuint list, GLenum pname, const GLint *params)
 {
+    static int logged;
     (void)list;
     (void)pname;
     (void)params;
-    glp_unimplemented("glListParameterivSGIX");
+    glp_unimplemented("glListParameterivSGIX", &logged);
 }
 
 void glLoadIdentity(void)
@@ -2825,8 +3006,9 @@ void glLoadIdentity(void)
 
 void glLoadIdentityDeformationMapSGIX(GLbitfield mask)
 {
+    static int logged;
     (void)mask;
-    glp_unimplemented("glLoadIdentityDeformationMapSGIX");
+    glp_unimplemented("glLoadIdentityDeformationMapSGIX", &logged);
 }
 
 void glLoadMatrixd(const GLdouble *m)
@@ -2834,6 +3016,7 @@ void glLoadMatrixd(const GLdouble *m)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glLoadMatrixd, "glLoadMatrixd");
+    if (!m) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glLoadMatrixd, 32);
     for (i = 0; i < 16; ++i) { glp_dbits(&p[0 + i * 2], m[i]); }
 }
@@ -2843,6 +3026,7 @@ void glLoadMatrixf(const GLfloat *m)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glLoadMatrixf, "glLoadMatrixf");
+    if (!m) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glLoadMatrixf, 16);
     for (i = 0; i < 16; ++i) { p[0 + i * 1] = glp_fbits(m[i]); }
 }
@@ -2860,6 +3044,7 @@ void glLoadTransposeMatrixd(const GLdouble *m)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glLoadTransposeMatrixd, "glLoadTransposeMatrixd");
+    if (!m) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glLoadTransposeMatrixd, 32);
     for (i = 0; i < 16; ++i) { glp_dbits(&p[0 + i * 2], m[i]); }
 }
@@ -2869,6 +3054,7 @@ void glLoadTransposeMatrixdARB(const GLdouble *m)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glLoadTransposeMatrixdARB, "glLoadTransposeMatrixdARB");
+    if (!m) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glLoadTransposeMatrixdARB, 32);
     for (i = 0; i < 16; ++i) { glp_dbits(&p[0 + i * 2], m[i]); }
 }
@@ -2878,6 +3064,7 @@ void glLoadTransposeMatrixf(const GLfloat *m)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glLoadTransposeMatrixf, "glLoadTransposeMatrixf");
+    if (!m) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glLoadTransposeMatrixf, 16);
     for (i = 0; i < 16; ++i) { p[0 + i * 1] = glp_fbits(m[i]); }
 }
@@ -2887,15 +3074,17 @@ void glLoadTransposeMatrixfARB(const GLfloat *m)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glLoadTransposeMatrixfARB, "glLoadTransposeMatrixfARB");
+    if (!m) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glLoadTransposeMatrixfARB, 16);
     for (i = 0; i < 16; ++i) { p[0 + i * 1] = glp_fbits(m[i]); }
 }
 
 void glLockArraysEXT(GLint first, GLsizei count)
 {
+    static int logged;
     (void)first;
     (void)count;
-    glp_unimplemented("glLockArraysEXT");
+    glp_unimplemented("glLockArraysEXT", &logged);
 }
 
 void glMapGrid1d(GLint un, GLdouble u1, GLdouble u2)
@@ -2946,8 +3135,9 @@ void glMapGrid2f(GLint un, GLfloat u1, GLfloat u2, GLint vn, GLfloat v1, GLfloat
 
 GLvoid* glMapObjectBufferATI(GLuint buffer)
 {
+    static int logged;
     (void)buffer;
-    glp_unimplemented("glMapObjectBufferATI");
+    glp_unimplemented("glMapObjectBufferATI", &logged);
     return (GLvoid*)0;
 }
 
@@ -2966,6 +3156,7 @@ void glMaterialfv(GLenum face, GLenum pname, const GLfloat *params)
     unsigned int *p;
     int i, n = glp_pname_count(GLP_GROUP_MATERIAL, pname);
     GLP_TRACE(GLP_FN_glMaterialfv, "glMaterialfv");
+    if (!params) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMaterialfv, 3 + n * 1);
     p[0] = (unsigned int)(face);
     p[1] = (unsigned int)(pname);
@@ -2988,6 +3179,7 @@ void glMaterialiv(GLenum face, GLenum pname, const GLint *params)
     unsigned int *p;
     int i, n = glp_pname_count(GLP_GROUP_MATERIAL, pname);
     GLP_TRACE(GLP_FN_glMaterialiv, "glMaterialiv");
+    if (!params) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMaterialiv, 3 + n * 1);
     p[0] = (unsigned int)(face);
     p[1] = (unsigned int)(pname);
@@ -3028,6 +3220,7 @@ void glMultMatrixd(const GLdouble *m)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultMatrixd, "glMultMatrixd");
+    if (!m) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultMatrixd, 32);
     for (i = 0; i < 16; ++i) { glp_dbits(&p[0 + i * 2], m[i]); }
 }
@@ -3037,6 +3230,7 @@ void glMultMatrixf(const GLfloat *m)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultMatrixf, "glMultMatrixf");
+    if (!m) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultMatrixf, 16);
     for (i = 0; i < 16; ++i) { p[0 + i * 1] = glp_fbits(m[i]); }
 }
@@ -3046,6 +3240,7 @@ void glMultTransposeMatrixd(const GLdouble *m)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultTransposeMatrixd, "glMultTransposeMatrixd");
+    if (!m) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultTransposeMatrixd, 32);
     for (i = 0; i < 16; ++i) { glp_dbits(&p[0 + i * 2], m[i]); }
 }
@@ -3055,6 +3250,7 @@ void glMultTransposeMatrixdARB(const GLdouble *m)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultTransposeMatrixdARB, "glMultTransposeMatrixdARB");
+    if (!m) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultTransposeMatrixdARB, 32);
     for (i = 0; i < 16; ++i) { glp_dbits(&p[0 + i * 2], m[i]); }
 }
@@ -3064,6 +3260,7 @@ void glMultTransposeMatrixf(const GLfloat *m)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultTransposeMatrixf, "glMultTransposeMatrixf");
+    if (!m) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultTransposeMatrixf, 16);
     for (i = 0; i < 16; ++i) { p[0 + i * 1] = glp_fbits(m[i]); }
 }
@@ -3073,46 +3270,51 @@ void glMultTransposeMatrixfARB(const GLfloat *m)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultTransposeMatrixfARB, "glMultTransposeMatrixfARB");
+    if (!m) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultTransposeMatrixfARB, 16);
     for (i = 0; i < 16; ++i) { p[0 + i * 1] = glp_fbits(m[i]); }
 }
 
 void glMultiDrawArrays(GLenum mode, GLint *first, GLsizei *count, GLsizei primcount)
 {
+    static int logged;
     (void)mode;
     (void)first;
     (void)count;
     (void)primcount;
-    glp_unimplemented("glMultiDrawArrays");
+    glp_unimplemented("glMultiDrawArrays", &logged);
 }
 
 void glMultiDrawArraysEXT(GLenum mode, GLint *first, GLsizei *count, GLsizei primcount)
 {
+    static int logged;
     (void)mode;
     (void)first;
     (void)count;
     (void)primcount;
-    glp_unimplemented("glMultiDrawArraysEXT");
+    glp_unimplemented("glMultiDrawArraysEXT", &logged);
 }
 
 void glMultiDrawElements(GLenum mode, const GLsizei *count, GLenum type, const GLvoid* *indices, GLsizei primcount)
 {
+    static int logged;
     (void)mode;
     (void)count;
     (void)type;
     (void)indices;
     (void)primcount;
-    glp_unimplemented("glMultiDrawElements");
+    glp_unimplemented("glMultiDrawElements", &logged);
 }
 
 void glMultiDrawElementsEXT(GLenum mode, const GLsizei *count, GLenum type, const GLvoid* *indices, GLsizei primcount)
 {
+    static int logged;
     (void)mode;
     (void)count;
     (void)type;
     (void)indices;
     (void)primcount;
-    glp_unimplemented("glMultiDrawElementsEXT");
+    glp_unimplemented("glMultiDrawElementsEXT", &logged);
 }
 
 void glMultiTexCoord1d(GLenum target, GLdouble s)
@@ -3138,6 +3340,7 @@ void glMultiTexCoord1dv(GLenum target, const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord1dv, "glMultiTexCoord1dv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord1dv, 3);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 1; ++i) { glp_dbits(&p[1 + i * 2], v[i]); }
@@ -3148,6 +3351,7 @@ void glMultiTexCoord1dvARB(GLenum target, const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord1dvARB, "glMultiTexCoord1dvARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord1dvARB, 3);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 1; ++i) { glp_dbits(&p[1 + i * 2], v[i]); }
@@ -3176,6 +3380,7 @@ void glMultiTexCoord1fv(GLenum target, const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord1fv, "glMultiTexCoord1fv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord1fv, 2);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 1; ++i) { p[1 + i * 1] = glp_fbits(v[i]); }
@@ -3186,6 +3391,7 @@ void glMultiTexCoord1fvARB(GLenum target, const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord1fvARB, "glMultiTexCoord1fvARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord1fvARB, 2);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 1; ++i) { p[1 + i * 1] = glp_fbits(v[i]); }
@@ -3214,6 +3420,7 @@ void glMultiTexCoord1iv(GLenum target, const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord1iv, "glMultiTexCoord1iv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord1iv, 2);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 1; ++i) { p[1 + i * 1] = (unsigned int)(int)(v[i]); }
@@ -3224,6 +3431,7 @@ void glMultiTexCoord1ivARB(GLenum target, const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord1ivARB, "glMultiTexCoord1ivARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord1ivARB, 2);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 1; ++i) { p[1 + i * 1] = (unsigned int)(int)(v[i]); }
@@ -3252,6 +3460,7 @@ void glMultiTexCoord1sv(GLenum target, const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord1sv, "glMultiTexCoord1sv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord1sv, 2);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 1; ++i) { p[1 + i * 1] = (unsigned int)(int)(v[i]); }
@@ -3262,6 +3471,7 @@ void glMultiTexCoord1svARB(GLenum target, const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord1svARB, "glMultiTexCoord1svARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord1svARB, 2);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 1; ++i) { p[1 + i * 1] = (unsigned int)(int)(v[i]); }
@@ -3292,6 +3502,7 @@ void glMultiTexCoord2dv(GLenum target, const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord2dv, "glMultiTexCoord2dv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord2dv, 5);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 2; ++i) { glp_dbits(&p[1 + i * 2], v[i]); }
@@ -3302,6 +3513,7 @@ void glMultiTexCoord2dvARB(GLenum target, const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord2dvARB, "glMultiTexCoord2dvARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord2dvARB, 5);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 2; ++i) { glp_dbits(&p[1 + i * 2], v[i]); }
@@ -3332,6 +3544,7 @@ void glMultiTexCoord2fv(GLenum target, const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord2fv, "glMultiTexCoord2fv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord2fv, 3);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 2; ++i) { p[1 + i * 1] = glp_fbits(v[i]); }
@@ -3342,6 +3555,7 @@ void glMultiTexCoord2fvARB(GLenum target, const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord2fvARB, "glMultiTexCoord2fvARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord2fvARB, 3);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 2; ++i) { p[1 + i * 1] = glp_fbits(v[i]); }
@@ -3372,6 +3586,7 @@ void glMultiTexCoord2iv(GLenum target, const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord2iv, "glMultiTexCoord2iv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord2iv, 3);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 2; ++i) { p[1 + i * 1] = (unsigned int)(int)(v[i]); }
@@ -3382,6 +3597,7 @@ void glMultiTexCoord2ivARB(GLenum target, const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord2ivARB, "glMultiTexCoord2ivARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord2ivARB, 3);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 2; ++i) { p[1 + i * 1] = (unsigned int)(int)(v[i]); }
@@ -3412,6 +3628,7 @@ void glMultiTexCoord2sv(GLenum target, const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord2sv, "glMultiTexCoord2sv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord2sv, 3);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 2; ++i) { p[1 + i * 1] = (unsigned int)(int)(v[i]); }
@@ -3422,6 +3639,7 @@ void glMultiTexCoord2svARB(GLenum target, const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord2svARB, "glMultiTexCoord2svARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord2svARB, 3);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 2; ++i) { p[1 + i * 1] = (unsigned int)(int)(v[i]); }
@@ -3454,6 +3672,7 @@ void glMultiTexCoord3dv(GLenum target, const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord3dv, "glMultiTexCoord3dv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord3dv, 7);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 3; ++i) { glp_dbits(&p[1 + i * 2], v[i]); }
@@ -3464,6 +3683,7 @@ void glMultiTexCoord3dvARB(GLenum target, const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord3dvARB, "glMultiTexCoord3dvARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord3dvARB, 7);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 3; ++i) { glp_dbits(&p[1 + i * 2], v[i]); }
@@ -3496,6 +3716,7 @@ void glMultiTexCoord3fv(GLenum target, const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord3fv, "glMultiTexCoord3fv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord3fv, 4);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 3; ++i) { p[1 + i * 1] = glp_fbits(v[i]); }
@@ -3506,6 +3727,7 @@ void glMultiTexCoord3fvARB(GLenum target, const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord3fvARB, "glMultiTexCoord3fvARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord3fvARB, 4);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 3; ++i) { p[1 + i * 1] = glp_fbits(v[i]); }
@@ -3538,6 +3760,7 @@ void glMultiTexCoord3iv(GLenum target, const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord3iv, "glMultiTexCoord3iv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord3iv, 4);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 3; ++i) { p[1 + i * 1] = (unsigned int)(int)(v[i]); }
@@ -3548,6 +3771,7 @@ void glMultiTexCoord3ivARB(GLenum target, const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord3ivARB, "glMultiTexCoord3ivARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord3ivARB, 4);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 3; ++i) { p[1 + i * 1] = (unsigned int)(int)(v[i]); }
@@ -3580,6 +3804,7 @@ void glMultiTexCoord3sv(GLenum target, const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord3sv, "glMultiTexCoord3sv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord3sv, 4);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 3; ++i) { p[1 + i * 1] = (unsigned int)(int)(v[i]); }
@@ -3590,6 +3815,7 @@ void glMultiTexCoord3svARB(GLenum target, const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord3svARB, "glMultiTexCoord3svARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord3svARB, 4);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 3; ++i) { p[1 + i * 1] = (unsigned int)(int)(v[i]); }
@@ -3624,6 +3850,7 @@ void glMultiTexCoord4dv(GLenum target, const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord4dv, "glMultiTexCoord4dv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord4dv, 9);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 4; ++i) { glp_dbits(&p[1 + i * 2], v[i]); }
@@ -3634,6 +3861,7 @@ void glMultiTexCoord4dvARB(GLenum target, const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord4dvARB, "glMultiTexCoord4dvARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord4dvARB, 9);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 4; ++i) { glp_dbits(&p[1 + i * 2], v[i]); }
@@ -3668,6 +3896,7 @@ void glMultiTexCoord4fv(GLenum target, const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord4fv, "glMultiTexCoord4fv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord4fv, 5);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 4; ++i) { p[1 + i * 1] = glp_fbits(v[i]); }
@@ -3678,6 +3907,7 @@ void glMultiTexCoord4fvARB(GLenum target, const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord4fvARB, "glMultiTexCoord4fvARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord4fvARB, 5);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 4; ++i) { p[1 + i * 1] = glp_fbits(v[i]); }
@@ -3712,6 +3942,7 @@ void glMultiTexCoord4iv(GLenum target, const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord4iv, "glMultiTexCoord4iv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord4iv, 5);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 4; ++i) { p[1 + i * 1] = (unsigned int)(int)(v[i]); }
@@ -3722,6 +3953,7 @@ void glMultiTexCoord4ivARB(GLenum target, const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord4ivARB, "glMultiTexCoord4ivARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord4ivARB, 5);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 4; ++i) { p[1 + i * 1] = (unsigned int)(int)(v[i]); }
@@ -3756,6 +3988,7 @@ void glMultiTexCoord4sv(GLenum target, const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord4sv, "glMultiTexCoord4sv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord4sv, 5);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 4; ++i) { p[1 + i * 1] = (unsigned int)(int)(v[i]); }
@@ -3766,6 +3999,7 @@ void glMultiTexCoord4svARB(GLenum target, const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glMultiTexCoord4svARB, "glMultiTexCoord4svARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glMultiTexCoord4svARB, 5);
     p[0] = (unsigned int)(target);
     for (i = 0; i < 4; ++i) { p[1 + i * 1] = (unsigned int)(int)(v[i]); }
@@ -3773,10 +4007,11 @@ void glMultiTexCoord4svARB(GLenum target, const GLshort *v)
 
 GLuint glNewObjectBufferATI(GLsizei size, const GLvoid *pointer, GLenum usage)
 {
+    static int logged;
     (void)size;
     (void)pointer;
     (void)usage;
-    glp_unimplemented("glNewObjectBufferATI");
+    glp_unimplemented("glNewObjectBufferATI", &logged);
     return (GLuint)0;
 }
 
@@ -3795,6 +4030,7 @@ void glNormal3bv(const GLbyte *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glNormal3bv, "glNormal3bv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glNormal3bv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -3814,6 +4050,7 @@ void glNormal3dv(const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glNormal3dv, "glNormal3dv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glNormal3dv, 6);
     for (i = 0; i < 3; ++i) { glp_dbits(&p[0 + i * 2], v[i]); }
 }
@@ -3833,6 +4070,7 @@ void glNormal3fv(const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glNormal3fv, "glNormal3fv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glNormal3fv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = glp_fbits(v[i]); }
 }
@@ -3852,6 +4090,7 @@ void glNormal3iv(const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glNormal3iv, "glNormal3iv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glNormal3iv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -3871,88 +4110,99 @@ void glNormal3sv(const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glNormal3sv, "glNormal3sv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glNormal3sv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
 
 void glNormalStream3bATI(GLenum stream, GLbyte nx, GLbyte ny, GLbyte nz)
 {
+    static int logged;
     (void)stream;
     (void)nx;
     (void)ny;
     (void)nz;
-    glp_unimplemented("glNormalStream3bATI");
+    glp_unimplemented("glNormalStream3bATI", &logged);
 }
 
 void glNormalStream3bvATI(GLenum stream, const GLbyte *coords)
 {
+    static int logged;
     (void)stream;
     (void)coords;
-    glp_unimplemented("glNormalStream3bvATI");
+    glp_unimplemented("glNormalStream3bvATI", &logged);
 }
 
 void glNormalStream3dATI(GLenum stream, GLdouble nx, GLdouble ny, GLdouble nz)
 {
+    static int logged;
     (void)stream;
     (void)nx;
     (void)ny;
     (void)nz;
-    glp_unimplemented("glNormalStream3dATI");
+    glp_unimplemented("glNormalStream3dATI", &logged);
 }
 
 void glNormalStream3dvATI(GLenum stream, const GLdouble *coords)
 {
+    static int logged;
     (void)stream;
     (void)coords;
-    glp_unimplemented("glNormalStream3dvATI");
+    glp_unimplemented("glNormalStream3dvATI", &logged);
 }
 
 void glNormalStream3fATI(GLenum stream, GLfloat nx, GLfloat ny, GLfloat nz)
 {
+    static int logged;
     (void)stream;
     (void)nx;
     (void)ny;
     (void)nz;
-    glp_unimplemented("glNormalStream3fATI");
+    glp_unimplemented("glNormalStream3fATI", &logged);
 }
 
 void glNormalStream3fvATI(GLenum stream, const GLfloat *coords)
 {
+    static int logged;
     (void)stream;
     (void)coords;
-    glp_unimplemented("glNormalStream3fvATI");
+    glp_unimplemented("glNormalStream3fvATI", &logged);
 }
 
 void glNormalStream3iATI(GLenum stream, GLint nx, GLint ny, GLint nz)
 {
+    static int logged;
     (void)stream;
     (void)nx;
     (void)ny;
     (void)nz;
-    glp_unimplemented("glNormalStream3iATI");
+    glp_unimplemented("glNormalStream3iATI", &logged);
 }
 
 void glNormalStream3ivATI(GLenum stream, const GLint *coords)
 {
+    static int logged;
     (void)stream;
     (void)coords;
-    glp_unimplemented("glNormalStream3ivATI");
+    glp_unimplemented("glNormalStream3ivATI", &logged);
 }
 
 void glNormalStream3sATI(GLenum stream, GLshort nx, GLshort ny, GLshort nz)
 {
+    static int logged;
     (void)stream;
     (void)nx;
     (void)ny;
     (void)nz;
-    glp_unimplemented("glNormalStream3sATI");
+    glp_unimplemented("glNormalStream3sATI", &logged);
 }
 
 void glNormalStream3svATI(GLenum stream, const GLshort *coords)
 {
+    static int logged;
     (void)stream;
     (void)coords;
-    glp_unimplemented("glNormalStream3svATI");
+    glp_unimplemented("glNormalStream3svATI", &logged);
 }
 
 void glOrtho(GLdouble left, GLdouble right, GLdouble bottom, GLdouble top, GLdouble near, GLdouble far)
@@ -3970,24 +4220,27 @@ void glOrtho(GLdouble left, GLdouble right, GLdouble bottom, GLdouble top, GLdou
 
 void glPNTrianglesfATI(GLenum pname, GLfloat param)
 {
+    static int logged;
     (void)pname;
     (void)param;
-    glp_unimplemented("glPNTrianglesfATI");
+    glp_unimplemented("glPNTrianglesfATI", &logged);
 }
 
 void glPNTrianglesiATI(GLenum pname, GLint param)
 {
+    static int logged;
     (void)pname;
     (void)param;
-    glp_unimplemented("glPNTrianglesiATI");
+    glp_unimplemented("glPNTrianglesiATI", &logged);
 }
 
 void glPassTexCoordATI(GLuint dst, GLuint coord, GLenum swizzle)
 {
+    static int logged;
     (void)dst;
     (void)coord;
     (void)swizzle;
-    glp_unimplemented("glPassTexCoordATI");
+    glp_unimplemented("glPassTexCoordATI", &logged);
 }
 
 void glPassThrough(GLfloat token)
@@ -4000,36 +4253,41 @@ void glPassThrough(GLfloat token)
 
 void glPixelTexGenParameterfSGIS(GLenum pname, GLfloat param)
 {
+    static int logged;
     (void)pname;
     (void)param;
-    glp_unimplemented("glPixelTexGenParameterfSGIS");
+    glp_unimplemented("glPixelTexGenParameterfSGIS", &logged);
 }
 
 void glPixelTexGenParameterfvSGIS(GLenum pname, const GLfloat *params)
 {
+    static int logged;
     (void)pname;
     (void)params;
-    glp_unimplemented("glPixelTexGenParameterfvSGIS");
+    glp_unimplemented("glPixelTexGenParameterfvSGIS", &logged);
 }
 
 void glPixelTexGenParameteriSGIS(GLenum pname, GLint param)
 {
+    static int logged;
     (void)pname;
     (void)param;
-    glp_unimplemented("glPixelTexGenParameteriSGIS");
+    glp_unimplemented("glPixelTexGenParameteriSGIS", &logged);
 }
 
 void glPixelTexGenParameterivSGIS(GLenum pname, const GLint *params)
 {
+    static int logged;
     (void)pname;
     (void)params;
-    glp_unimplemented("glPixelTexGenParameterivSGIS");
+    glp_unimplemented("glPixelTexGenParameterivSGIS", &logged);
 }
 
 void glPixelTexGenSGIX(GLenum mode)
 {
+    static int logged;
     (void)mode;
-    glp_unimplemented("glPixelTexGenSGIX");
+    glp_unimplemented("glPixelTexGenSGIX", &logged);
 }
 
 void glPixelTransferf(GLenum pname, GLfloat param)
@@ -4100,6 +4358,7 @@ void glPointParameterfv(GLenum pname, const GLfloat *params)
     unsigned int *p;
     int i, n = glp_pname_count(GLP_GROUP_POINTPARAM, pname);
     GLP_TRACE(GLP_FN_glPointParameterfv, "glPointParameterfv");
+    if (!params) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glPointParameterfv, 2 + n * 1);
     p[0] = (unsigned int)(pname);
     p[1] = (unsigned int)n;
@@ -4111,6 +4370,7 @@ void glPointParameterfvARB(GLenum pname, const GLfloat *params)
     unsigned int *p;
     int i, n = glp_pname_count(GLP_GROUP_POINTPARAM, pname);
     GLP_TRACE(GLP_FN_glPointParameterfvARB, "glPointParameterfvARB");
+    if (!params) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glPointParameterfvARB, 2 + n * 1);
     p[0] = (unsigned int)(pname);
     p[1] = (unsigned int)n;
@@ -4122,6 +4382,7 @@ void glPointParameterfvEXT(GLenum pname, const GLfloat *params)
     unsigned int *p;
     int i, n = glp_pname_count(GLP_GROUP_POINTPARAM, pname);
     GLP_TRACE(GLP_FN_glPointParameterfvEXT, "glPointParameterfvEXT");
+    if (!params) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glPointParameterfvEXT, 2 + n * 1);
     p[0] = (unsigned int)(pname);
     p[1] = (unsigned int)n;
@@ -4133,6 +4394,7 @@ void glPointParameterfvSGIS(GLenum pname, const GLfloat *params)
     unsigned int *p;
     int i, n = glp_pname_count(GLP_GROUP_POINTPARAM, pname);
     GLP_TRACE(GLP_FN_glPointParameterfvSGIS, "glPointParameterfvSGIS");
+    if (!params) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glPointParameterfvSGIS, 2 + n * 1);
     p[0] = (unsigned int)(pname);
     p[1] = (unsigned int)n;
@@ -4153,6 +4415,7 @@ void glPointParameteriv(GLenum pname, const GLint *params)
     unsigned int *p;
     int i, n = glp_pname_count(GLP_GROUP_POINTPARAM, pname);
     GLP_TRACE(GLP_FN_glPointParameteriv, "glPointParameteriv");
+    if (!params) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glPointParameteriv, 2 + n * 1);
     p[0] = (unsigned int)(pname);
     p[1] = (unsigned int)n;
@@ -4169,15 +4432,17 @@ void glPointSize(GLfloat size)
 
 GLint glPollAsyncSGIX(GLuint *markerp)
 {
+    static int logged;
     (void)markerp;
-    glp_unimplemented("glPollAsyncSGIX");
+    glp_unimplemented("glPollAsyncSGIX", &logged);
     return (GLint)0;
 }
 
 GLint glPollInstrumentsSGIX(GLint *marker_p)
 {
+    static int logged;
     (void)marker_p;
-    glp_unimplemented("glPollInstrumentsSGIX");
+    glp_unimplemented("glPollInstrumentsSGIX", &logged);
     return (GLint)0;
 }
 
@@ -4230,10 +4495,11 @@ void glProgramEnvParameter4dARB(GLenum target, GLuint index, GLdouble x, GLdoubl
 
 void glProgramEnvParameter4dvARB(GLenum target, GLuint index, const GLdouble *params)
 {
+    static int logged;
     (void)target;
     (void)index;
     (void)params;
-    glp_unimplemented("glProgramEnvParameter4dvARB");
+    glp_unimplemented("glProgramEnvParameter4dvARB", &logged);
 }
 
 void glProgramEnvParameter4fARB(GLenum target, GLuint index, GLfloat x, GLfloat y, GLfloat z, GLfloat w)
@@ -4251,10 +4517,11 @@ void glProgramEnvParameter4fARB(GLenum target, GLuint index, GLfloat x, GLfloat 
 
 void glProgramEnvParameter4fvARB(GLenum target, GLuint index, const GLfloat *params)
 {
+    static int logged;
     (void)target;
     (void)index;
     (void)params;
-    glp_unimplemented("glProgramEnvParameter4fvARB");
+    glp_unimplemented("glProgramEnvParameter4fvARB", &logged);
 }
 
 void glProgramLocalParameter4dARB(GLenum target, GLuint index, GLdouble x, GLdouble y, GLdouble z, GLdouble w)
@@ -4272,10 +4539,11 @@ void glProgramLocalParameter4dARB(GLenum target, GLuint index, GLdouble x, GLdou
 
 void glProgramLocalParameter4dvARB(GLenum target, GLuint index, const GLdouble *params)
 {
+    static int logged;
     (void)target;
     (void)index;
     (void)params;
-    glp_unimplemented("glProgramLocalParameter4dvARB");
+    glp_unimplemented("glProgramLocalParameter4dvARB", &logged);
 }
 
 void glProgramLocalParameter4fARB(GLenum target, GLuint index, GLfloat x, GLfloat y, GLfloat z, GLfloat w)
@@ -4293,19 +4561,21 @@ void glProgramLocalParameter4fARB(GLenum target, GLuint index, GLfloat x, GLfloa
 
 void glProgramLocalParameter4fvARB(GLenum target, GLuint index, const GLfloat *params)
 {
+    static int logged;
     (void)target;
     (void)index;
     (void)params;
-    glp_unimplemented("glProgramLocalParameter4fvARB");
+    glp_unimplemented("glProgramLocalParameter4fvARB", &logged);
 }
 
 void glProgramStringARB(GLenum target, GLenum format, GLsizei len, const GLvoid *string)
 {
+    static int logged;
     (void)target;
     (void)format;
     (void)len;
     (void)string;
-    glp_unimplemented("glProgramStringARB");
+    glp_unimplemented("glProgramStringARB", &logged);
 }
 
 void glPushMatrix(void)
@@ -4338,6 +4608,7 @@ void glRasterPos2dv(const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glRasterPos2dv, "glRasterPos2dv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glRasterPos2dv, 4);
     for (i = 0; i < 2; ++i) { glp_dbits(&p[0 + i * 2], v[i]); }
 }
@@ -4356,6 +4627,7 @@ void glRasterPos2fv(const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glRasterPos2fv, "glRasterPos2fv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glRasterPos2fv, 2);
     for (i = 0; i < 2; ++i) { p[0 + i * 1] = glp_fbits(v[i]); }
 }
@@ -4374,6 +4646,7 @@ void glRasterPos2iv(const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glRasterPos2iv, "glRasterPos2iv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glRasterPos2iv, 2);
     for (i = 0; i < 2; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -4392,6 +4665,7 @@ void glRasterPos2sv(const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glRasterPos2sv, "glRasterPos2sv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glRasterPos2sv, 2);
     for (i = 0; i < 2; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -4411,6 +4685,7 @@ void glRasterPos3dv(const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glRasterPos3dv, "glRasterPos3dv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glRasterPos3dv, 6);
     for (i = 0; i < 3; ++i) { glp_dbits(&p[0 + i * 2], v[i]); }
 }
@@ -4430,6 +4705,7 @@ void glRasterPos3fv(const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glRasterPos3fv, "glRasterPos3fv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glRasterPos3fv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = glp_fbits(v[i]); }
 }
@@ -4449,6 +4725,7 @@ void glRasterPos3iv(const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glRasterPos3iv, "glRasterPos3iv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glRasterPos3iv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -4468,6 +4745,7 @@ void glRasterPos3sv(const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glRasterPos3sv, "glRasterPos3sv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glRasterPos3sv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -4488,6 +4766,7 @@ void glRasterPos4dv(const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glRasterPos4dv, "glRasterPos4dv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glRasterPos4dv, 8);
     for (i = 0; i < 4; ++i) { glp_dbits(&p[0 + i * 2], v[i]); }
 }
@@ -4508,6 +4787,7 @@ void glRasterPos4fv(const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glRasterPos4fv, "glRasterPos4fv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glRasterPos4fv, 4);
     for (i = 0; i < 4; ++i) { p[0 + i * 1] = glp_fbits(v[i]); }
 }
@@ -4528,6 +4808,7 @@ void glRasterPos4iv(const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glRasterPos4iv, "glRasterPos4iv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glRasterPos4iv, 4);
     for (i = 0; i < 4; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -4548,14 +4829,16 @@ void glRasterPos4sv(const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glRasterPos4sv, "glRasterPos4sv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glRasterPos4sv, 4);
     for (i = 0; i < 4; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
 
 void glReadInstrumentsSGIX(GLint marker)
 {
+    static int logged;
     (void)marker;
-    glp_unimplemented("glReadInstrumentsSGIX");
+    glp_unimplemented("glReadInstrumentsSGIX", &logged);
 }
 
 void glRectd(GLdouble x1, GLdouble y1, GLdouble x2, GLdouble y2)
@@ -4574,6 +4857,7 @@ void glRectdv(const GLdouble *v1, const GLdouble *v2)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glRectdv, "glRectdv");
+    if (!v1 || !v2) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glRectdv, 8);
     for (i = 0; i < 2; ++i) { glp_dbits(&p[0 + i * 2], v1[i]); }
     for (i = 0; i < 2; ++i) { glp_dbits(&p[4 + i * 2], v2[i]); }
@@ -4595,6 +4879,7 @@ void glRectfv(const GLfloat *v1, const GLfloat *v2)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glRectfv, "glRectfv");
+    if (!v1 || !v2) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glRectfv, 4);
     for (i = 0; i < 2; ++i) { p[0 + i * 1] = glp_fbits(v1[i]); }
     for (i = 0; i < 2; ++i) { p[2 + i * 1] = glp_fbits(v2[i]); }
@@ -4616,6 +4901,7 @@ void glRectiv(const GLint *v1, const GLint *v2)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glRectiv, "glRectiv");
+    if (!v1 || !v2) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glRectiv, 4);
     for (i = 0; i < 2; ++i) { p[0 + i * 1] = (unsigned int)(int)(v1[i]); }
     for (i = 0; i < 2; ++i) { p[2 + i * 1] = (unsigned int)(int)(v2[i]); }
@@ -4637,6 +4923,7 @@ void glRectsv(const GLshort *v1, const GLshort *v2)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glRectsv, "glRectsv");
+    if (!v1 || !v2) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glRectsv, 4);
     for (i = 0; i < 2; ++i) { p[0 + i * 1] = (unsigned int)(int)(v1[i]); }
     for (i = 0; i < 2; ++i) { p[2 + i * 1] = (unsigned int)(int)(v2[i]); }
@@ -4644,8 +4931,9 @@ void glRectsv(const GLshort *v1, const GLshort *v2)
 
 void glReferencePlaneSGIX(const GLdouble *equation)
 {
+    static int logged;
     (void)equation;
-    glp_unimplemented("glReferencePlaneSGIX");
+    glp_unimplemented("glReferencePlaneSGIX", &logged);
 }
 
 void glResetHistogram(GLenum target)
@@ -4722,23 +5010,26 @@ void glSampleCoverageARB(GLclampf value, GLboolean invert)
 
 void glSampleMapATI(GLuint dst, GLuint interp, GLenum swizzle)
 {
+    static int logged;
     (void)dst;
     (void)interp;
     (void)swizzle;
-    glp_unimplemented("glSampleMapATI");
+    glp_unimplemented("glSampleMapATI", &logged);
 }
 
 void glSampleMaskSGIS(GLclampf value, GLboolean invert)
 {
+    static int logged;
     (void)value;
     (void)invert;
-    glp_unimplemented("glSampleMaskSGIS");
+    glp_unimplemented("glSampleMaskSGIS", &logged);
 }
 
 void glSamplePatternSGIS(GLenum pattern)
 {
+    static int logged;
     (void)pattern;
-    glp_unimplemented("glSamplePatternSGIS");
+    glp_unimplemented("glSamplePatternSGIS", &logged);
 }
 
 void glScaled(GLdouble x, GLdouble y, GLdouble z)
@@ -4797,6 +5088,7 @@ void glSecondaryColor3bv(const GLbyte *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glSecondaryColor3bv, "glSecondaryColor3bv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glSecondaryColor3bv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -4806,6 +5098,7 @@ void glSecondaryColor3bvEXT(const GLbyte *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glSecondaryColor3bvEXT, "glSecondaryColor3bvEXT");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glSecondaryColor3bvEXT, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -4835,6 +5128,7 @@ void glSecondaryColor3dv(const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glSecondaryColor3dv, "glSecondaryColor3dv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glSecondaryColor3dv, 6);
     for (i = 0; i < 3; ++i) { glp_dbits(&p[0 + i * 2], v[i]); }
 }
@@ -4844,6 +5138,7 @@ void glSecondaryColor3dvEXT(const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glSecondaryColor3dvEXT, "glSecondaryColor3dvEXT");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glSecondaryColor3dvEXT, 6);
     for (i = 0; i < 3; ++i) { glp_dbits(&p[0 + i * 2], v[i]); }
 }
@@ -4873,6 +5168,7 @@ void glSecondaryColor3fv(const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glSecondaryColor3fv, "glSecondaryColor3fv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glSecondaryColor3fv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = glp_fbits(v[i]); }
 }
@@ -4882,6 +5178,7 @@ void glSecondaryColor3fvEXT(const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glSecondaryColor3fvEXT, "glSecondaryColor3fvEXT");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glSecondaryColor3fvEXT, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = glp_fbits(v[i]); }
 }
@@ -4911,6 +5208,7 @@ void glSecondaryColor3iv(const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glSecondaryColor3iv, "glSecondaryColor3iv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glSecondaryColor3iv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -4920,6 +5218,7 @@ void glSecondaryColor3ivEXT(const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glSecondaryColor3ivEXT, "glSecondaryColor3ivEXT");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glSecondaryColor3ivEXT, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -4949,6 +5248,7 @@ void glSecondaryColor3sv(const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glSecondaryColor3sv, "glSecondaryColor3sv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glSecondaryColor3sv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -4958,6 +5258,7 @@ void glSecondaryColor3svEXT(const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glSecondaryColor3svEXT, "glSecondaryColor3svEXT");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glSecondaryColor3svEXT, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -4987,6 +5288,7 @@ void glSecondaryColor3ubv(const GLubyte *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glSecondaryColor3ubv, "glSecondaryColor3ubv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glSecondaryColor3ubv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(v[i]); }
 }
@@ -4996,6 +5298,7 @@ void glSecondaryColor3ubvEXT(const GLubyte *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glSecondaryColor3ubvEXT, "glSecondaryColor3ubvEXT");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glSecondaryColor3ubvEXT, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(v[i]); }
 }
@@ -5025,6 +5328,7 @@ void glSecondaryColor3uiv(const GLuint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glSecondaryColor3uiv, "glSecondaryColor3uiv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glSecondaryColor3uiv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(v[i]); }
 }
@@ -5034,6 +5338,7 @@ void glSecondaryColor3uivEXT(const GLuint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glSecondaryColor3uivEXT, "glSecondaryColor3uivEXT");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glSecondaryColor3uivEXT, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(v[i]); }
 }
@@ -5063,6 +5368,7 @@ void glSecondaryColor3usv(const GLushort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glSecondaryColor3usv, "glSecondaryColor3usv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glSecondaryColor3usv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(v[i]); }
 }
@@ -5072,30 +5378,34 @@ void glSecondaryColor3usvEXT(const GLushort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glSecondaryColor3usvEXT, "glSecondaryColor3usvEXT");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glSecondaryColor3usvEXT, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(v[i]); }
 }
 
 void glSecondaryColorPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer)
 {
+    static int logged;
     (void)size;
     (void)type;
     (void)stride;
     (void)pointer;
-    glp_unimplemented("glSecondaryColorPointer");
+    glp_unimplemented("glSecondaryColorPointer", &logged);
 }
 
 void glSecondaryColorPointerEXT(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer)
 {
+    static int logged;
     (void)size;
     (void)type;
     (void)stride;
     (void)pointer;
-    glp_unimplemented("glSecondaryColorPointerEXT");
+    glp_unimplemented("glSecondaryColorPointerEXT", &logged);
 }
 
 void glSeparableFilter2D(GLenum target, GLenum internalformat, GLsizei width, GLsizei height, GLenum format, GLenum type, const GLvoid *row, const GLvoid *column)
 {
+    static int logged;
     (void)target;
     (void)internalformat;
     (void)width;
@@ -5104,11 +5414,12 @@ void glSeparableFilter2D(GLenum target, GLenum internalformat, GLsizei width, GL
     (void)type;
     (void)row;
     (void)column;
-    glp_unimplemented("glSeparableFilter2D");
+    glp_unimplemented("glSeparableFilter2D", &logged);
 }
 
 void glSeparableFilter2DEXT(GLenum target, GLenum internalformat, GLsizei width, GLsizei height, GLenum format, GLenum type, const GLvoid *row, const GLvoid *column)
 {
+    static int logged;
     (void)target;
     (void)internalformat;
     (void)width;
@@ -5117,30 +5428,33 @@ void glSeparableFilter2DEXT(GLenum target, GLenum internalformat, GLsizei width,
     (void)type;
     (void)row;
     (void)column;
-    glp_unimplemented("glSeparableFilter2DEXT");
+    glp_unimplemented("glSeparableFilter2DEXT", &logged);
 }
 
 void glSetFragmentShaderConstantATI(GLuint dst, const GLfloat *value)
 {
+    static int logged;
     (void)dst;
     (void)value;
-    glp_unimplemented("glSetFragmentShaderConstantATI");
+    glp_unimplemented("glSetFragmentShaderConstantATI", &logged);
 }
 
 void glSetInvariantEXT(GLuint id, GLenum type, const GLvoid *addr)
 {
+    static int logged;
     (void)id;
     (void)type;
     (void)addr;
-    glp_unimplemented("glSetInvariantEXT");
+    glp_unimplemented("glSetInvariantEXT", &logged);
 }
 
 void glSetLocalConstantEXT(GLuint id, GLenum type, const GLvoid *addr)
 {
+    static int logged;
     (void)id;
     (void)type;
     (void)addr;
-    glp_unimplemented("glSetLocalConstantEXT");
+    glp_unimplemented("glSetLocalConstantEXT", &logged);
 }
 
 void glShadeModel(GLenum mode)
@@ -5153,70 +5467,79 @@ void glShadeModel(GLenum mode)
 
 void glShaderOp1EXT(GLenum op, GLuint res, GLuint arg1)
 {
+    static int logged;
     (void)op;
     (void)res;
     (void)arg1;
-    glp_unimplemented("glShaderOp1EXT");
+    glp_unimplemented("glShaderOp1EXT", &logged);
 }
 
 void glShaderOp2EXT(GLenum op, GLuint res, GLuint arg1, GLuint arg2)
 {
+    static int logged;
     (void)op;
     (void)res;
     (void)arg1;
     (void)arg2;
-    glp_unimplemented("glShaderOp2EXT");
+    glp_unimplemented("glShaderOp2EXT", &logged);
 }
 
 void glShaderOp3EXT(GLenum op, GLuint res, GLuint arg1, GLuint arg2, GLuint arg3)
 {
+    static int logged;
     (void)op;
     (void)res;
     (void)arg1;
     (void)arg2;
     (void)arg3;
-    glp_unimplemented("glShaderOp3EXT");
+    glp_unimplemented("glShaderOp3EXT", &logged);
 }
 
 void glSharpenTexFuncSGIS(GLenum target, GLsizei n, const GLfloat *points)
 {
+    static int logged;
     (void)target;
     (void)n;
     (void)points;
-    glp_unimplemented("glSharpenTexFuncSGIS");
+    glp_unimplemented("glSharpenTexFuncSGIS", &logged);
 }
 
 void glSpriteParameterfSGIX(GLenum pname, GLfloat param)
 {
+    static int logged;
     (void)pname;
     (void)param;
-    glp_unimplemented("glSpriteParameterfSGIX");
+    glp_unimplemented("glSpriteParameterfSGIX", &logged);
 }
 
 void glSpriteParameterfvSGIX(GLenum pname, const GLfloat *params)
 {
+    static int logged;
     (void)pname;
     (void)params;
-    glp_unimplemented("glSpriteParameterfvSGIX");
+    glp_unimplemented("glSpriteParameterfvSGIX", &logged);
 }
 
 void glSpriteParameteriSGIX(GLenum pname, GLint param)
 {
+    static int logged;
     (void)pname;
     (void)param;
-    glp_unimplemented("glSpriteParameteriSGIX");
+    glp_unimplemented("glSpriteParameteriSGIX", &logged);
 }
 
 void glSpriteParameterivSGIX(GLenum pname, const GLint *params)
 {
+    static int logged;
     (void)pname;
     (void)params;
-    glp_unimplemented("glSpriteParameterivSGIX");
+    glp_unimplemented("glSpriteParameterivSGIX", &logged);
 }
 
 void glStartInstrumentsSGIX(void)
 {
-    glp_unimplemented("glStartInstrumentsSGIX");
+    static int logged;
+    glp_unimplemented("glStartInstrumentsSGIX", &logged);
 }
 
 void glStencilFunc(GLenum func, GLint ref, GLuint mask)
@@ -5271,38 +5594,43 @@ void glStencilOpSeparateATI(GLenum face, GLenum sfail, GLenum dpfail, GLenum dpp
 
 void glStopInstrumentsSGIX(GLint marker)
 {
+    static int logged;
     (void)marker;
-    glp_unimplemented("glStopInstrumentsSGIX");
+    glp_unimplemented("glStopInstrumentsSGIX", &logged);
 }
 
 void glSwizzleEXT(GLuint res, GLuint in, GLenum outX, GLenum outY, GLenum outZ, GLenum outW)
 {
+    static int logged;
     (void)res;
     (void)in;
     (void)outX;
     (void)outY;
     (void)outZ;
     (void)outW;
-    glp_unimplemented("glSwizzleEXT");
+    glp_unimplemented("glSwizzleEXT", &logged);
 }
 
 void glTagSampleBufferSGIX(void)
 {
-    glp_unimplemented("glTagSampleBufferSGIX");
+    static int logged;
+    glp_unimplemented("glTagSampleBufferSGIX", &logged);
 }
 
 void glTexBumpParameterfvATI(GLenum pname, const GLfloat *param)
 {
+    static int logged;
     (void)pname;
     (void)param;
-    glp_unimplemented("glTexBumpParameterfvATI");
+    glp_unimplemented("glTexBumpParameterfvATI", &logged);
 }
 
 void glTexBumpParameterivATI(GLenum pname, const GLint *param)
 {
+    static int logged;
     (void)pname;
     (void)param;
-    glp_unimplemented("glTexBumpParameterivATI");
+    glp_unimplemented("glTexBumpParameterivATI", &logged);
 }
 
 void glTexCoord1d(GLdouble s)
@@ -5318,6 +5646,7 @@ void glTexCoord1dv(const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glTexCoord1dv, "glTexCoord1dv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glTexCoord1dv, 2);
     for (i = 0; i < 1; ++i) { glp_dbits(&p[0 + i * 2], v[i]); }
 }
@@ -5335,6 +5664,7 @@ void glTexCoord1fv(const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glTexCoord1fv, "glTexCoord1fv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glTexCoord1fv, 1);
     for (i = 0; i < 1; ++i) { p[0 + i * 1] = glp_fbits(v[i]); }
 }
@@ -5352,6 +5682,7 @@ void glTexCoord1iv(const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glTexCoord1iv, "glTexCoord1iv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glTexCoord1iv, 1);
     for (i = 0; i < 1; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -5369,6 +5700,7 @@ void glTexCoord1sv(const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glTexCoord1sv, "glTexCoord1sv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glTexCoord1sv, 1);
     for (i = 0; i < 1; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -5387,6 +5719,7 @@ void glTexCoord2dv(const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glTexCoord2dv, "glTexCoord2dv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glTexCoord2dv, 4);
     for (i = 0; i < 2; ++i) { glp_dbits(&p[0 + i * 2], v[i]); }
 }
@@ -5405,6 +5738,7 @@ void glTexCoord2fv(const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glTexCoord2fv, "glTexCoord2fv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glTexCoord2fv, 2);
     for (i = 0; i < 2; ++i) { p[0 + i * 1] = glp_fbits(v[i]); }
 }
@@ -5423,6 +5757,7 @@ void glTexCoord2iv(const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glTexCoord2iv, "glTexCoord2iv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glTexCoord2iv, 2);
     for (i = 0; i < 2; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -5441,6 +5776,7 @@ void glTexCoord2sv(const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glTexCoord2sv, "glTexCoord2sv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glTexCoord2sv, 2);
     for (i = 0; i < 2; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -5460,6 +5796,7 @@ void glTexCoord3dv(const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glTexCoord3dv, "glTexCoord3dv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glTexCoord3dv, 6);
     for (i = 0; i < 3; ++i) { glp_dbits(&p[0 + i * 2], v[i]); }
 }
@@ -5479,6 +5816,7 @@ void glTexCoord3fv(const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glTexCoord3fv, "glTexCoord3fv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glTexCoord3fv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = glp_fbits(v[i]); }
 }
@@ -5498,6 +5836,7 @@ void glTexCoord3iv(const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glTexCoord3iv, "glTexCoord3iv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glTexCoord3iv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -5517,6 +5856,7 @@ void glTexCoord3sv(const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glTexCoord3sv, "glTexCoord3sv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glTexCoord3sv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -5537,6 +5877,7 @@ void glTexCoord4dv(const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glTexCoord4dv, "glTexCoord4dv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glTexCoord4dv, 8);
     for (i = 0; i < 4; ++i) { glp_dbits(&p[0 + i * 2], v[i]); }
 }
@@ -5557,6 +5898,7 @@ void glTexCoord4fv(const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glTexCoord4fv, "glTexCoord4fv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glTexCoord4fv, 4);
     for (i = 0; i < 4; ++i) { p[0 + i * 1] = glp_fbits(v[i]); }
 }
@@ -5577,6 +5919,7 @@ void glTexCoord4iv(const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glTexCoord4iv, "glTexCoord4iv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glTexCoord4iv, 4);
     for (i = 0; i < 4; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -5597,6 +5940,7 @@ void glTexCoord4sv(const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glTexCoord4sv, "glTexCoord4sv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glTexCoord4sv, 4);
     for (i = 0; i < 4; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -5616,6 +5960,7 @@ void glTexEnvfv(GLenum target, GLenum pname, const GLfloat *params)
     unsigned int *p;
     int i, n = glp_pname_count(GLP_GROUP_TEXENV, pname);
     GLP_TRACE(GLP_FN_glTexEnvfv, "glTexEnvfv");
+    if (!params) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glTexEnvfv, 3 + n * 1);
     p[0] = (unsigned int)(target);
     p[1] = (unsigned int)(pname);
@@ -5638,6 +5983,7 @@ void glTexEnviv(GLenum target, GLenum pname, const GLint *params)
     unsigned int *p;
     int i, n = glp_pname_count(GLP_GROUP_TEXENV, pname);
     GLP_TRACE(GLP_FN_glTexEnviv, "glTexEnviv");
+    if (!params) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glTexEnviv, 3 + n * 1);
     p[0] = (unsigned int)(target);
     p[1] = (unsigned int)(pname);
@@ -5647,11 +5993,12 @@ void glTexEnviv(GLenum target, GLenum pname, const GLint *params)
 
 void glTexFilterFuncSGIS(GLenum target, GLenum filter, GLsizei n, const GLfloat *weights)
 {
+    static int logged;
     (void)target;
     (void)filter;
     (void)n;
     (void)weights;
-    glp_unimplemented("glTexFilterFuncSGIS");
+    glp_unimplemented("glTexFilterFuncSGIS", &logged);
 }
 
 void glTexGend(GLenum coord, GLenum pname, GLdouble param)
@@ -5669,6 +6016,7 @@ void glTexGendv(GLenum coord, GLenum pname, const GLdouble *params)
     unsigned int *p;
     int i, n = glp_pname_count(GLP_GROUP_TEXGEN, pname);
     GLP_TRACE(GLP_FN_glTexGendv, "glTexGendv");
+    if (!params) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glTexGendv, 3 + n * 2);
     p[0] = (unsigned int)(coord);
     p[1] = (unsigned int)(pname);
@@ -5691,6 +6039,7 @@ void glTexGenfv(GLenum coord, GLenum pname, const GLfloat *params)
     unsigned int *p;
     int i, n = glp_pname_count(GLP_GROUP_TEXGEN, pname);
     GLP_TRACE(GLP_FN_glTexGenfv, "glTexGenfv");
+    if (!params) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glTexGenfv, 3 + n * 1);
     p[0] = (unsigned int)(coord);
     p[1] = (unsigned int)(pname);
@@ -5713,6 +6062,7 @@ void glTexGeniv(GLenum coord, GLenum pname, const GLint *params)
     unsigned int *p;
     int i, n = glp_pname_count(GLP_GROUP_TEXGEN, pname);
     GLP_TRACE(GLP_FN_glTexGeniv, "glTexGeniv");
+    if (!params) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glTexGeniv, 3 + n * 1);
     p[0] = (unsigned int)(coord);
     p[1] = (unsigned int)(pname);
@@ -5722,6 +6072,7 @@ void glTexGeniv(GLenum coord, GLenum pname, const GLint *params)
 
 void glTexImage4DSGIS(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth, GLsizei size4d, GLint border, GLenum format, GLenum type, const GLvoid *pixels)
 {
+    static int logged;
     (void)target;
     (void)level;
     (void)internalformat;
@@ -5733,7 +6084,7 @@ void glTexImage4DSGIS(GLenum target, GLint level, GLenum internalformat, GLsizei
     (void)format;
     (void)type;
     (void)pixels;
-    glp_unimplemented("glTexImage4DSGIS");
+    glp_unimplemented("glTexImage4DSGIS", &logged);
 }
 
 void glTexParameterf(GLenum target, GLenum pname, GLfloat param)
@@ -5751,6 +6102,7 @@ void glTexParameterfv(GLenum target, GLenum pname, const GLfloat *params)
     unsigned int *p;
     int i, n = glp_pname_count(GLP_GROUP_TEXPARAM, pname);
     GLP_TRACE(GLP_FN_glTexParameterfv, "glTexParameterfv");
+    if (!params) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glTexParameterfv, 3 + n * 1);
     p[0] = (unsigned int)(target);
     p[1] = (unsigned int)(pname);
@@ -5773,6 +6125,7 @@ void glTexParameteriv(GLenum target, GLenum pname, const GLint *params)
     unsigned int *p;
     int i, n = glp_pname_count(GLP_GROUP_TEXPARAM, pname);
     GLP_TRACE(GLP_FN_glTexParameteriv, "glTexParameteriv");
+    if (!params) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glTexParameteriv, 3 + n * 1);
     p[0] = (unsigned int)(target);
     p[1] = (unsigned int)(pname);
@@ -5782,6 +6135,7 @@ void glTexParameteriv(GLenum target, GLenum pname, const GLint *params)
 
 void glTexSubImage4DSGIS(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint woffset, GLsizei width, GLsizei height, GLsizei depth, GLsizei size4d, GLenum format, GLenum type, const GLvoid *pixels)
 {
+    static int logged;
     (void)target;
     (void)level;
     (void)xoffset;
@@ -5795,16 +6149,17 @@ void glTexSubImage4DSGIS(GLenum target, GLint level, GLint xoffset, GLint yoffse
     (void)format;
     (void)type;
     (void)pixels;
-    glp_unimplemented("glTexSubImage4DSGIS");
+    glp_unimplemented("glTexSubImage4DSGIS", &logged);
 }
 
 void glTextureColorMaskSGIS(GLboolean red, GLboolean green, GLboolean blue, GLboolean alpha)
 {
+    static int logged;
     (void)red;
     (void)green;
     (void)blue;
     (void)alpha;
-    glp_unimplemented("glTextureColorMaskSGIS");
+    glp_unimplemented("glTextureColorMaskSGIS", &logged);
 }
 
 void glTranslated(GLdouble x, GLdouble y, GLdouble z)
@@ -5829,98 +6184,111 @@ void glTranslatef(GLfloat x, GLfloat y, GLfloat z)
 
 void glUnlockArraysEXT(void)
 {
-    glp_unimplemented("glUnlockArraysEXT");
+    static int logged;
+    glp_unimplemented("glUnlockArraysEXT", &logged);
 }
 
 void glUnmapObjectBufferATI(GLuint buffer)
 {
+    static int logged;
     (void)buffer;
-    glp_unimplemented("glUnmapObjectBufferATI");
+    glp_unimplemented("glUnmapObjectBufferATI", &logged);
 }
 
 void glUpdateObjectBufferATI(GLuint buffer, GLuint offset, GLsizei size, const GLvoid *pointer, GLenum preserve)
 {
+    static int logged;
     (void)buffer;
     (void)offset;
     (void)size;
     (void)pointer;
     (void)preserve;
-    glp_unimplemented("glUpdateObjectBufferATI");
+    glp_unimplemented("glUpdateObjectBufferATI", &logged);
 }
 
 void glVariantArrayObjectATI(GLuint id, GLenum type, GLsizei stride, GLuint buffer, GLuint offset)
 {
+    static int logged;
     (void)id;
     (void)type;
     (void)stride;
     (void)buffer;
     (void)offset;
-    glp_unimplemented("glVariantArrayObjectATI");
+    glp_unimplemented("glVariantArrayObjectATI", &logged);
 }
 
 void glVariantPointerEXT(GLuint id, GLenum type, GLuint stride, const GLvoid *addr)
 {
+    static int logged;
     (void)id;
     (void)type;
     (void)stride;
     (void)addr;
-    glp_unimplemented("glVariantPointerEXT");
+    glp_unimplemented("glVariantPointerEXT", &logged);
 }
 
 void glVariantbvEXT(GLuint id, const GLbyte *addr)
 {
+    static int logged;
     (void)id;
     (void)addr;
-    glp_unimplemented("glVariantbvEXT");
+    glp_unimplemented("glVariantbvEXT", &logged);
 }
 
 void glVariantdvEXT(GLuint id, const GLdouble *addr)
 {
+    static int logged;
     (void)id;
     (void)addr;
-    glp_unimplemented("glVariantdvEXT");
+    glp_unimplemented("glVariantdvEXT", &logged);
 }
 
 void glVariantfvEXT(GLuint id, const GLfloat *addr)
 {
+    static int logged;
     (void)id;
     (void)addr;
-    glp_unimplemented("glVariantfvEXT");
+    glp_unimplemented("glVariantfvEXT", &logged);
 }
 
 void glVariantivEXT(GLuint id, const GLint *addr)
 {
+    static int logged;
     (void)id;
     (void)addr;
-    glp_unimplemented("glVariantivEXT");
+    glp_unimplemented("glVariantivEXT", &logged);
 }
 
 void glVariantsvEXT(GLuint id, const GLshort *addr)
 {
+    static int logged;
     (void)id;
     (void)addr;
-    glp_unimplemented("glVariantsvEXT");
+    glp_unimplemented("glVariantsvEXT", &logged);
 }
 
 void glVariantubvEXT(GLuint id, const GLubyte *addr)
 {
+    static int logged;
     (void)id;
     (void)addr;
-    glp_unimplemented("glVariantubvEXT");
+    glp_unimplemented("glVariantubvEXT", &logged);
 }
 
 void glVariantuivEXT(GLuint id, const GLuint *addr)
 {
+    static int logged;
     (void)id;
     (void)addr;
-    glp_unimplemented("glVariantuivEXT");
+    glp_unimplemented("glVariantuivEXT", &logged);
 }
 
 void glVariantusvEXT(GLuint id, const GLushort *addr)
 {
+    static int logged;
     (void)id;
     (void)addr;
-    glp_unimplemented("glVariantusvEXT");
+    glp_unimplemented("glVariantusvEXT", &logged);
 }
 
 void glVertex2d(GLdouble x, GLdouble y)
@@ -5937,6 +6305,7 @@ void glVertex2dv(const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glVertex2dv, "glVertex2dv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glVertex2dv, 4);
     for (i = 0; i < 2; ++i) { glp_dbits(&p[0 + i * 2], v[i]); }
 }
@@ -5955,6 +6324,7 @@ void glVertex2fv(const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glVertex2fv, "glVertex2fv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glVertex2fv, 2);
     for (i = 0; i < 2; ++i) { p[0 + i * 1] = glp_fbits(v[i]); }
 }
@@ -5973,6 +6343,7 @@ void glVertex2iv(const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glVertex2iv, "glVertex2iv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glVertex2iv, 2);
     for (i = 0; i < 2; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -5991,6 +6362,7 @@ void glVertex2sv(const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glVertex2sv, "glVertex2sv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glVertex2sv, 2);
     for (i = 0; i < 2; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -6010,6 +6382,7 @@ void glVertex3dv(const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glVertex3dv, "glVertex3dv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glVertex3dv, 6);
     for (i = 0; i < 3; ++i) { glp_dbits(&p[0 + i * 2], v[i]); }
 }
@@ -6029,6 +6402,7 @@ void glVertex3fv(const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glVertex3fv, "glVertex3fv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glVertex3fv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = glp_fbits(v[i]); }
 }
@@ -6048,6 +6422,7 @@ void glVertex3iv(const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glVertex3iv, "glVertex3iv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glVertex3iv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -6067,6 +6442,7 @@ void glVertex3sv(const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glVertex3sv, "glVertex3sv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glVertex3sv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -6087,6 +6463,7 @@ void glVertex4dv(const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glVertex4dv, "glVertex4dv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glVertex4dv, 8);
     for (i = 0; i < 4; ++i) { glp_dbits(&p[0 + i * 2], v[i]); }
 }
@@ -6107,6 +6484,7 @@ void glVertex4fv(const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glVertex4fv, "glVertex4fv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glVertex4fv, 4);
     for (i = 0; i < 4; ++i) { p[0 + i * 1] = glp_fbits(v[i]); }
 }
@@ -6127,6 +6505,7 @@ void glVertex4iv(const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glVertex4iv, "glVertex4iv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glVertex4iv, 4);
     for (i = 0; i < 4; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -6147,6 +6526,7 @@ void glVertex4sv(const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glVertex4sv, "glVertex4sv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glVertex4sv, 4);
     for (i = 0; i < 4; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -6162,9 +6542,10 @@ void glVertexAttrib1dARB(GLuint index, GLdouble x)
 
 void glVertexAttrib1dvARB(GLuint index, const GLdouble *v)
 {
+    static int logged;
     (void)index;
     (void)v;
-    glp_unimplemented("glVertexAttrib1dvARB");
+    glp_unimplemented("glVertexAttrib1dvARB", &logged);
 }
 
 void glVertexAttrib1fARB(GLuint index, GLfloat x)
@@ -6178,9 +6559,10 @@ void glVertexAttrib1fARB(GLuint index, GLfloat x)
 
 void glVertexAttrib1fvARB(GLuint index, const GLfloat *v)
 {
+    static int logged;
     (void)index;
     (void)v;
-    glp_unimplemented("glVertexAttrib1fvARB");
+    glp_unimplemented("glVertexAttrib1fvARB", &logged);
 }
 
 void glVertexAttrib1sARB(GLuint index, GLshort x)
@@ -6194,9 +6576,10 @@ void glVertexAttrib1sARB(GLuint index, GLshort x)
 
 void glVertexAttrib1svARB(GLuint index, const GLshort *v)
 {
+    static int logged;
     (void)index;
     (void)v;
-    glp_unimplemented("glVertexAttrib1svARB");
+    glp_unimplemented("glVertexAttrib1svARB", &logged);
 }
 
 void glVertexAttrib2dARB(GLuint index, GLdouble x, GLdouble y)
@@ -6211,9 +6594,10 @@ void glVertexAttrib2dARB(GLuint index, GLdouble x, GLdouble y)
 
 void glVertexAttrib2dvARB(GLuint index, const GLdouble *v)
 {
+    static int logged;
     (void)index;
     (void)v;
-    glp_unimplemented("glVertexAttrib2dvARB");
+    glp_unimplemented("glVertexAttrib2dvARB", &logged);
 }
 
 void glVertexAttrib2fARB(GLuint index, GLfloat x, GLfloat y)
@@ -6228,9 +6612,10 @@ void glVertexAttrib2fARB(GLuint index, GLfloat x, GLfloat y)
 
 void glVertexAttrib2fvARB(GLuint index, const GLfloat *v)
 {
+    static int logged;
     (void)index;
     (void)v;
-    glp_unimplemented("glVertexAttrib2fvARB");
+    glp_unimplemented("glVertexAttrib2fvARB", &logged);
 }
 
 void glVertexAttrib2sARB(GLuint index, GLshort x, GLshort y)
@@ -6245,9 +6630,10 @@ void glVertexAttrib2sARB(GLuint index, GLshort x, GLshort y)
 
 void glVertexAttrib2svARB(GLuint index, const GLshort *v)
 {
+    static int logged;
     (void)index;
     (void)v;
-    glp_unimplemented("glVertexAttrib2svARB");
+    glp_unimplemented("glVertexAttrib2svARB", &logged);
 }
 
 void glVertexAttrib3dARB(GLuint index, GLdouble x, GLdouble y, GLdouble z)
@@ -6263,9 +6649,10 @@ void glVertexAttrib3dARB(GLuint index, GLdouble x, GLdouble y, GLdouble z)
 
 void glVertexAttrib3dvARB(GLuint index, const GLdouble *v)
 {
+    static int logged;
     (void)index;
     (void)v;
-    glp_unimplemented("glVertexAttrib3dvARB");
+    glp_unimplemented("glVertexAttrib3dvARB", &logged);
 }
 
 void glVertexAttrib3fARB(GLuint index, GLfloat x, GLfloat y, GLfloat z)
@@ -6281,9 +6668,10 @@ void glVertexAttrib3fARB(GLuint index, GLfloat x, GLfloat y, GLfloat z)
 
 void glVertexAttrib3fvARB(GLuint index, const GLfloat *v)
 {
+    static int logged;
     (void)index;
     (void)v;
-    glp_unimplemented("glVertexAttrib3fvARB");
+    glp_unimplemented("glVertexAttrib3fvARB", &logged);
 }
 
 void glVertexAttrib3sARB(GLuint index, GLshort x, GLshort y, GLshort z)
@@ -6299,30 +6687,34 @@ void glVertexAttrib3sARB(GLuint index, GLshort x, GLshort y, GLshort z)
 
 void glVertexAttrib3svARB(GLuint index, const GLshort *v)
 {
+    static int logged;
     (void)index;
     (void)v;
-    glp_unimplemented("glVertexAttrib3svARB");
+    glp_unimplemented("glVertexAttrib3svARB", &logged);
 }
 
 void glVertexAttrib4NbvARB(GLuint index, const GLbyte *v)
 {
+    static int logged;
     (void)index;
     (void)v;
-    glp_unimplemented("glVertexAttrib4NbvARB");
+    glp_unimplemented("glVertexAttrib4NbvARB", &logged);
 }
 
 void glVertexAttrib4NivARB(GLuint index, const GLint *v)
 {
+    static int logged;
     (void)index;
     (void)v;
-    glp_unimplemented("glVertexAttrib4NivARB");
+    glp_unimplemented("glVertexAttrib4NivARB", &logged);
 }
 
 void glVertexAttrib4NsvARB(GLuint index, const GLshort *v)
 {
+    static int logged;
     (void)index;
     (void)v;
-    glp_unimplemented("glVertexAttrib4NsvARB");
+    glp_unimplemented("glVertexAttrib4NsvARB", &logged);
 }
 
 void glVertexAttrib4NubARB(GLuint index, GLubyte x, GLubyte y, GLubyte z, GLubyte w)
@@ -6339,30 +6731,34 @@ void glVertexAttrib4NubARB(GLuint index, GLubyte x, GLubyte y, GLubyte z, GLubyt
 
 void glVertexAttrib4NubvARB(GLuint index, const GLubyte *v)
 {
+    static int logged;
     (void)index;
     (void)v;
-    glp_unimplemented("glVertexAttrib4NubvARB");
+    glp_unimplemented("glVertexAttrib4NubvARB", &logged);
 }
 
 void glVertexAttrib4NuivARB(GLuint index, const GLuint *v)
 {
+    static int logged;
     (void)index;
     (void)v;
-    glp_unimplemented("glVertexAttrib4NuivARB");
+    glp_unimplemented("glVertexAttrib4NuivARB", &logged);
 }
 
 void glVertexAttrib4NusvARB(GLuint index, const GLushort *v)
 {
+    static int logged;
     (void)index;
     (void)v;
-    glp_unimplemented("glVertexAttrib4NusvARB");
+    glp_unimplemented("glVertexAttrib4NusvARB", &logged);
 }
 
 void glVertexAttrib4bvARB(GLuint index, const GLbyte *v)
 {
+    static int logged;
     (void)index;
     (void)v;
-    glp_unimplemented("glVertexAttrib4bvARB");
+    glp_unimplemented("glVertexAttrib4bvARB", &logged);
 }
 
 void glVertexAttrib4dARB(GLuint index, GLdouble x, GLdouble y, GLdouble z, GLdouble w)
@@ -6379,9 +6775,10 @@ void glVertexAttrib4dARB(GLuint index, GLdouble x, GLdouble y, GLdouble z, GLdou
 
 void glVertexAttrib4dvARB(GLuint index, const GLdouble *v)
 {
+    static int logged;
     (void)index;
     (void)v;
-    glp_unimplemented("glVertexAttrib4dvARB");
+    glp_unimplemented("glVertexAttrib4dvARB", &logged);
 }
 
 void glVertexAttrib4fARB(GLuint index, GLfloat x, GLfloat y, GLfloat z, GLfloat w)
@@ -6398,16 +6795,18 @@ void glVertexAttrib4fARB(GLuint index, GLfloat x, GLfloat y, GLfloat z, GLfloat 
 
 void glVertexAttrib4fvARB(GLuint index, const GLfloat *v)
 {
+    static int logged;
     (void)index;
     (void)v;
-    glp_unimplemented("glVertexAttrib4fvARB");
+    glp_unimplemented("glVertexAttrib4fvARB", &logged);
 }
 
 void glVertexAttrib4ivARB(GLuint index, const GLint *v)
 {
+    static int logged;
     (void)index;
     (void)v;
-    glp_unimplemented("glVertexAttrib4ivARB");
+    glp_unimplemented("glVertexAttrib4ivARB", &logged);
 }
 
 void glVertexAttrib4sARB(GLuint index, GLshort x, GLshort y, GLshort z, GLshort w)
@@ -6424,34 +6823,39 @@ void glVertexAttrib4sARB(GLuint index, GLshort x, GLshort y, GLshort z, GLshort 
 
 void glVertexAttrib4svARB(GLuint index, const GLshort *v)
 {
+    static int logged;
     (void)index;
     (void)v;
-    glp_unimplemented("glVertexAttrib4svARB");
+    glp_unimplemented("glVertexAttrib4svARB", &logged);
 }
 
 void glVertexAttrib4ubvARB(GLuint index, const GLubyte *v)
 {
+    static int logged;
     (void)index;
     (void)v;
-    glp_unimplemented("glVertexAttrib4ubvARB");
+    glp_unimplemented("glVertexAttrib4ubvARB", &logged);
 }
 
 void glVertexAttrib4uivARB(GLuint index, const GLuint *v)
 {
+    static int logged;
     (void)index;
     (void)v;
-    glp_unimplemented("glVertexAttrib4uivARB");
+    glp_unimplemented("glVertexAttrib4uivARB", &logged);
 }
 
 void glVertexAttrib4usvARB(GLuint index, const GLushort *v)
 {
+    static int logged;
     (void)index;
     (void)v;
-    glp_unimplemented("glVertexAttrib4usvARB");
+    glp_unimplemented("glVertexAttrib4usvARB", &logged);
 }
 
 void glVertexAttribArrayObjectATI(GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, GLuint buffer, GLuint offset)
 {
+    static int logged;
     (void)index;
     (void)size;
     (void)type;
@@ -6459,18 +6863,19 @@ void glVertexAttribArrayObjectATI(GLuint index, GLint size, GLenum type, GLboole
     (void)stride;
     (void)buffer;
     (void)offset;
-    glp_unimplemented("glVertexAttribArrayObjectATI");
+    glp_unimplemented("glVertexAttribArrayObjectATI", &logged);
 }
 
 void glVertexAttribPointerARB(GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const GLvoid *pointer)
 {
+    static int logged;
     (void)index;
     (void)size;
     (void)type;
     (void)normalized;
     (void)stride;
     (void)pointer;
-    glp_unimplemented("glVertexAttribPointerARB");
+    glp_unimplemented("glVertexAttribPointerARB", &logged);
 }
 
 void glVertexBlendARB(GLint count)
@@ -6483,208 +6888,234 @@ void glVertexBlendARB(GLint count)
 
 void glVertexBlendEnvfATI(GLenum pname, GLfloat param)
 {
+    static int logged;
     (void)pname;
     (void)param;
-    glp_unimplemented("glVertexBlendEnvfATI");
+    glp_unimplemented("glVertexBlendEnvfATI", &logged);
 }
 
 void glVertexBlendEnviATI(GLenum pname, GLint param)
 {
+    static int logged;
     (void)pname;
     (void)param;
-    glp_unimplemented("glVertexBlendEnviATI");
+    glp_unimplemented("glVertexBlendEnviATI", &logged);
 }
 
 void glVertexStream2dATI(GLenum stream, GLdouble x, GLdouble y)
 {
+    static int logged;
     (void)stream;
     (void)x;
     (void)y;
-    glp_unimplemented("glVertexStream2dATI");
+    glp_unimplemented("glVertexStream2dATI", &logged);
 }
 
 void glVertexStream2dvATI(GLenum stream, const GLdouble *coords)
 {
+    static int logged;
     (void)stream;
     (void)coords;
-    glp_unimplemented("glVertexStream2dvATI");
+    glp_unimplemented("glVertexStream2dvATI", &logged);
 }
 
 void glVertexStream2fATI(GLenum stream, GLfloat x, GLfloat y)
 {
+    static int logged;
     (void)stream;
     (void)x;
     (void)y;
-    glp_unimplemented("glVertexStream2fATI");
+    glp_unimplemented("glVertexStream2fATI", &logged);
 }
 
 void glVertexStream2fvATI(GLenum stream, const GLfloat *coords)
 {
+    static int logged;
     (void)stream;
     (void)coords;
-    glp_unimplemented("glVertexStream2fvATI");
+    glp_unimplemented("glVertexStream2fvATI", &logged);
 }
 
 void glVertexStream2iATI(GLenum stream, GLint x, GLint y)
 {
+    static int logged;
     (void)stream;
     (void)x;
     (void)y;
-    glp_unimplemented("glVertexStream2iATI");
+    glp_unimplemented("glVertexStream2iATI", &logged);
 }
 
 void glVertexStream2ivATI(GLenum stream, const GLint *coords)
 {
+    static int logged;
     (void)stream;
     (void)coords;
-    glp_unimplemented("glVertexStream2ivATI");
+    glp_unimplemented("glVertexStream2ivATI", &logged);
 }
 
 void glVertexStream2sATI(GLenum stream, GLshort x, GLshort y)
 {
+    static int logged;
     (void)stream;
     (void)x;
     (void)y;
-    glp_unimplemented("glVertexStream2sATI");
+    glp_unimplemented("glVertexStream2sATI", &logged);
 }
 
 void glVertexStream2svATI(GLenum stream, const GLshort *coords)
 {
+    static int logged;
     (void)stream;
     (void)coords;
-    glp_unimplemented("glVertexStream2svATI");
+    glp_unimplemented("glVertexStream2svATI", &logged);
 }
 
 void glVertexStream3dATI(GLenum stream, GLdouble x, GLdouble y, GLdouble z)
 {
+    static int logged;
     (void)stream;
     (void)x;
     (void)y;
     (void)z;
-    glp_unimplemented("glVertexStream3dATI");
+    glp_unimplemented("glVertexStream3dATI", &logged);
 }
 
 void glVertexStream3dvATI(GLenum stream, const GLdouble *coords)
 {
+    static int logged;
     (void)stream;
     (void)coords;
-    glp_unimplemented("glVertexStream3dvATI");
+    glp_unimplemented("glVertexStream3dvATI", &logged);
 }
 
 void glVertexStream3fATI(GLenum stream, GLfloat x, GLfloat y, GLfloat z)
 {
+    static int logged;
     (void)stream;
     (void)x;
     (void)y;
     (void)z;
-    glp_unimplemented("glVertexStream3fATI");
+    glp_unimplemented("glVertexStream3fATI", &logged);
 }
 
 void glVertexStream3fvATI(GLenum stream, const GLfloat *coords)
 {
+    static int logged;
     (void)stream;
     (void)coords;
-    glp_unimplemented("glVertexStream3fvATI");
+    glp_unimplemented("glVertexStream3fvATI", &logged);
 }
 
 void glVertexStream3iATI(GLenum stream, GLint x, GLint y, GLint z)
 {
+    static int logged;
     (void)stream;
     (void)x;
     (void)y;
     (void)z;
-    glp_unimplemented("glVertexStream3iATI");
+    glp_unimplemented("glVertexStream3iATI", &logged);
 }
 
 void glVertexStream3ivATI(GLenum stream, const GLint *coords)
 {
+    static int logged;
     (void)stream;
     (void)coords;
-    glp_unimplemented("glVertexStream3ivATI");
+    glp_unimplemented("glVertexStream3ivATI", &logged);
 }
 
 void glVertexStream3sATI(GLenum stream, GLshort x, GLshort y, GLshort z)
 {
+    static int logged;
     (void)stream;
     (void)x;
     (void)y;
     (void)z;
-    glp_unimplemented("glVertexStream3sATI");
+    glp_unimplemented("glVertexStream3sATI", &logged);
 }
 
 void glVertexStream3svATI(GLenum stream, const GLshort *coords)
 {
+    static int logged;
     (void)stream;
     (void)coords;
-    glp_unimplemented("glVertexStream3svATI");
+    glp_unimplemented("glVertexStream3svATI", &logged);
 }
 
 void glVertexStream4dATI(GLenum stream, GLdouble x, GLdouble y, GLdouble z, GLdouble w)
 {
+    static int logged;
     (void)stream;
     (void)x;
     (void)y;
     (void)z;
     (void)w;
-    glp_unimplemented("glVertexStream4dATI");
+    glp_unimplemented("glVertexStream4dATI", &logged);
 }
 
 void glVertexStream4dvATI(GLenum stream, const GLdouble *coords)
 {
+    static int logged;
     (void)stream;
     (void)coords;
-    glp_unimplemented("glVertexStream4dvATI");
+    glp_unimplemented("glVertexStream4dvATI", &logged);
 }
 
 void glVertexStream4fATI(GLenum stream, GLfloat x, GLfloat y, GLfloat z, GLfloat w)
 {
+    static int logged;
     (void)stream;
     (void)x;
     (void)y;
     (void)z;
     (void)w;
-    glp_unimplemented("glVertexStream4fATI");
+    glp_unimplemented("glVertexStream4fATI", &logged);
 }
 
 void glVertexStream4fvATI(GLenum stream, const GLfloat *coords)
 {
+    static int logged;
     (void)stream;
     (void)coords;
-    glp_unimplemented("glVertexStream4fvATI");
+    glp_unimplemented("glVertexStream4fvATI", &logged);
 }
 
 void glVertexStream4iATI(GLenum stream, GLint x, GLint y, GLint z, GLint w)
 {
+    static int logged;
     (void)stream;
     (void)x;
     (void)y;
     (void)z;
     (void)w;
-    glp_unimplemented("glVertexStream4iATI");
+    glp_unimplemented("glVertexStream4iATI", &logged);
 }
 
 void glVertexStream4ivATI(GLenum stream, const GLint *coords)
 {
+    static int logged;
     (void)stream;
     (void)coords;
-    glp_unimplemented("glVertexStream4ivATI");
+    glp_unimplemented("glVertexStream4ivATI", &logged);
 }
 
 void glVertexStream4sATI(GLenum stream, GLshort x, GLshort y, GLshort z, GLshort w)
 {
+    static int logged;
     (void)stream;
     (void)x;
     (void)y;
     (void)z;
     (void)w;
-    glp_unimplemented("glVertexStream4sATI");
+    glp_unimplemented("glVertexStream4sATI", &logged);
 }
 
 void glVertexStream4svATI(GLenum stream, const GLshort *coords)
 {
+    static int logged;
     (void)stream;
     (void)coords;
-    glp_unimplemented("glVertexStream4svATI");
+    glp_unimplemented("glVertexStream4svATI", &logged);
 }
 
 void glViewport(GLint x, GLint y, GLsizei width, GLsizei height)
@@ -6700,67 +7131,76 @@ void glViewport(GLint x, GLint y, GLsizei width, GLsizei height)
 
 void glWeightPointerARB(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer)
 {
+    static int logged;
     (void)size;
     (void)type;
     (void)stride;
     (void)pointer;
-    glp_unimplemented("glWeightPointerARB");
+    glp_unimplemented("glWeightPointerARB", &logged);
 }
 
 void glWeightbvARB(GLint size, const GLbyte *weights)
 {
+    static int logged;
     (void)size;
     (void)weights;
-    glp_unimplemented("glWeightbvARB");
+    glp_unimplemented("glWeightbvARB", &logged);
 }
 
 void glWeightdvARB(GLint size, const GLdouble *weights)
 {
+    static int logged;
     (void)size;
     (void)weights;
-    glp_unimplemented("glWeightdvARB");
+    glp_unimplemented("glWeightdvARB", &logged);
 }
 
 void glWeightfvARB(GLint size, const GLfloat *weights)
 {
+    static int logged;
     (void)size;
     (void)weights;
-    glp_unimplemented("glWeightfvARB");
+    glp_unimplemented("glWeightfvARB", &logged);
 }
 
 void glWeightivARB(GLint size, const GLint *weights)
 {
+    static int logged;
     (void)size;
     (void)weights;
-    glp_unimplemented("glWeightivARB");
+    glp_unimplemented("glWeightivARB", &logged);
 }
 
 void glWeightsvARB(GLint size, const GLshort *weights)
 {
+    static int logged;
     (void)size;
     (void)weights;
-    glp_unimplemented("glWeightsvARB");
+    glp_unimplemented("glWeightsvARB", &logged);
 }
 
 void glWeightubvARB(GLint size, const GLubyte *weights)
 {
+    static int logged;
     (void)size;
     (void)weights;
-    glp_unimplemented("glWeightubvARB");
+    glp_unimplemented("glWeightubvARB", &logged);
 }
 
 void glWeightuivARB(GLint size, const GLuint *weights)
 {
+    static int logged;
     (void)size;
     (void)weights;
-    glp_unimplemented("glWeightuivARB");
+    glp_unimplemented("glWeightuivARB", &logged);
 }
 
 void glWeightusvARB(GLint size, const GLushort *weights)
 {
+    static int logged;
     (void)size;
     (void)weights;
-    glp_unimplemented("glWeightusvARB");
+    glp_unimplemented("glWeightusvARB", &logged);
 }
 
 void glWindowPos2d(GLdouble x, GLdouble y)
@@ -6786,6 +7226,7 @@ void glWindowPos2dv(const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glWindowPos2dv, "glWindowPos2dv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glWindowPos2dv, 4);
     for (i = 0; i < 2; ++i) { glp_dbits(&p[0 + i * 2], v[i]); }
 }
@@ -6795,6 +7236,7 @@ void glWindowPos2dvARB(const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glWindowPos2dvARB, "glWindowPos2dvARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glWindowPos2dvARB, 4);
     for (i = 0; i < 2; ++i) { glp_dbits(&p[0 + i * 2], v[i]); }
 }
@@ -6822,6 +7264,7 @@ void glWindowPos2fv(const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glWindowPos2fv, "glWindowPos2fv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glWindowPos2fv, 2);
     for (i = 0; i < 2; ++i) { p[0 + i * 1] = glp_fbits(v[i]); }
 }
@@ -6831,6 +7274,7 @@ void glWindowPos2fvARB(const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glWindowPos2fvARB, "glWindowPos2fvARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glWindowPos2fvARB, 2);
     for (i = 0; i < 2; ++i) { p[0 + i * 1] = glp_fbits(v[i]); }
 }
@@ -6858,6 +7302,7 @@ void glWindowPos2iv(const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glWindowPos2iv, "glWindowPos2iv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glWindowPos2iv, 2);
     for (i = 0; i < 2; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -6867,6 +7312,7 @@ void glWindowPos2ivARB(const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glWindowPos2ivARB, "glWindowPos2ivARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glWindowPos2ivARB, 2);
     for (i = 0; i < 2; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -6894,6 +7340,7 @@ void glWindowPos2sv(const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glWindowPos2sv, "glWindowPos2sv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glWindowPos2sv, 2);
     for (i = 0; i < 2; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -6903,6 +7350,7 @@ void glWindowPos2svARB(const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glWindowPos2svARB, "glWindowPos2svARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glWindowPos2svARB, 2);
     for (i = 0; i < 2; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -6932,6 +7380,7 @@ void glWindowPos3dv(const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glWindowPos3dv, "glWindowPos3dv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glWindowPos3dv, 6);
     for (i = 0; i < 3; ++i) { glp_dbits(&p[0 + i * 2], v[i]); }
 }
@@ -6941,6 +7390,7 @@ void glWindowPos3dvARB(const GLdouble *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glWindowPos3dvARB, "glWindowPos3dvARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glWindowPos3dvARB, 6);
     for (i = 0; i < 3; ++i) { glp_dbits(&p[0 + i * 2], v[i]); }
 }
@@ -6970,6 +7420,7 @@ void glWindowPos3fv(const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glWindowPos3fv, "glWindowPos3fv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glWindowPos3fv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = glp_fbits(v[i]); }
 }
@@ -6979,6 +7430,7 @@ void glWindowPos3fvARB(const GLfloat *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glWindowPos3fvARB, "glWindowPos3fvARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glWindowPos3fvARB, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = glp_fbits(v[i]); }
 }
@@ -7008,6 +7460,7 @@ void glWindowPos3iv(const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glWindowPos3iv, "glWindowPos3iv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glWindowPos3iv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -7017,6 +7470,7 @@ void glWindowPos3ivARB(const GLint *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glWindowPos3ivARB, "glWindowPos3ivARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glWindowPos3ivARB, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -7046,6 +7500,7 @@ void glWindowPos3sv(const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glWindowPos3sv, "glWindowPos3sv");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glWindowPos3sv, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
@@ -7055,18 +7510,20 @@ void glWindowPos3svARB(const GLshort *v)
     unsigned int *p;
     int i;
     GLP_TRACE(GLP_FN_glWindowPos3svARB, "glWindowPos3svARB");
+    if (!v) return; /* GL leaves it undefined: nothing is read */
     p = glp_put(GLP_FN_glWindowPos3svARB, 3);
     for (i = 0; i < 3; ++i) { p[0 + i * 1] = (unsigned int)(int)(v[i]); }
 }
 
 void glWriteMaskEXT(GLuint res, GLuint in, GLenum outX, GLenum outY, GLenum outZ, GLenum outW)
 {
+    static int logged;
     (void)res;
     (void)in;
     (void)outX;
     (void)outY;
     (void)outZ;
     (void)outW;
-    glp_unimplemented("glWriteMaskEXT");
+    glp_unimplemented("glWriteMaskEXT", &logged);
 }
 

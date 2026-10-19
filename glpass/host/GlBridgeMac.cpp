@@ -2,6 +2,8 @@
 // per guest context, rendering each guest drawable into a framebuffer object
 // with a back (attachment 0) and a front (attachment 1) colour buffer.
 #include "GlBridge.hpp"
+#include "HypercallResume.hpp"
+#include "TextureFormat.hpp"
 
 #include "indy/core/Log.hpp"
 #include "indy/cpu/R5000.hpp"
@@ -55,17 +57,6 @@ private:
 // A reply for the guest: big-endian words, or raw bytes.
 class Reply {
 public:
-    // A computed reply being written into guest memory.
-    struct Pending {
-        uint32_t fn = 0;
-        VirtAddr at = 0;
-        uint32_t size = 0;
-        uint64_t result = 0;
-        std::vector<uint8_t> data;
-        size_t done = 0;
-        bool active = false;
-    };
-
     void u(uint32_t v) {
         bytes_.insert(bytes_.end(), {static_cast<uint8_t>(v >> 24), static_cast<uint8_t>(v >> 16),
                                      static_cast<uint8_t>(v >> 8), static_cast<uint8_t>(v)});
@@ -115,10 +106,20 @@ struct Context {
 
 // One client array of a GLP_FN_CLIENT_DRAW record.
 struct ClientArray {
-    uint32_t which; // 0 vertex, 1 normal, 2 colour, 3 index, 4 texture coordinates, 5 edge flag
+    // 0 vertex, 1 normal, 2 colour, 3 index, 4 texture coordinates of unit 0,
+    // 5 edge flag, 6 to 12 texture coordinates of units 1 to 7.
+    uint32_t which;
     GLint size;
     GLenum type;
 };
+
+constexpr uint32_t kTexCoord = 4, kTexCoord1 = 6;
+constexpr size_t kClientArrays = 13;
+
+// The texture unit of a texture coordinate array; -1 for the others.
+constexpr int texCoordUnit(uint32_t which) {
+    return which == kTexCoord ? 0 : which >= kTexCoord1 ? static_cast<int>(which - kTexCoord1) + 1 : -1;
+}
 
 size_t typeBytes(GLenum type) {
     switch (type) {
@@ -216,20 +217,30 @@ public:
             cpu.setHypercallResult(static_cast<uint64_t>(-1));
             return;
         }
-        // Copies interrupted by a page fault are kept per context: another
-        // guest thread may call in before the faulting one re-executes.
-        Transfers& io = transfers_[context];
-        std::vector<uint8_t>& data = io.in.data;
+        // A call interrupted by a page fault is kept per context and resumed
+        // when IRIX re-executes it (HypercallResume); another guest thread or
+        // process may call in meanwhile, with its own context or address space.
+        const HypercallKey key{static_cast<uint8_t>(cpu.cop0(R5000::kEntryHi) & 0xFF), word, buffer, arg};
+        HypercallResume& io = resumes_.enter(context, key);
+        bool faulted = false;
+        struct Close { // every return but a fault completes the call
+            HypercallResumes& resumes;
+            uint32_t context;
+            const bool& faulted;
+            ~Close() { if (!faulted) resumes.finish(context); }
+        } close{resumes_, context, faulted};
+        const std::vector<uint8_t>& data = io.request;
         // Reads the request buffer. Large buffers span more pages than the TLB
-        // maps at once, so the copy resumes where a page fault stopped it when
-        // the hypercall re-executes (same operation, buffer and length).
+        // maps at once: the copy resumes where a page fault stopped it.
         auto read = [&](size_t bytes) {
-            if (!io.in.active || io.in.op != word || io.in.buffer != buffer || io.in.arg != arg) {
-                io.in = Transfer{word, buffer, arg, 0, {}, true};
-                io.in.data.resize(bytes);
+            if (!io.requestRead) {
+                if (io.request.size() != bytes) io.request.resize(bytes);
+                if (!cpu.guestCopyIn(buffer, io.request, io.requestDone)) { // exception raised: re-executed
+                    faulted = true;
+                    return false;
+                }
+                io.requestRead = true;
             }
-            if (!cpu.guestCopyIn(buffer, io.in.data, io.in.done)) return false; // page fault: retried
-            io.in.active = false;
             return true;
         };
         switch (op) {
@@ -254,9 +265,8 @@ public:
                 destroy(it->second);
                 contexts_.erase(it);
                 if (active_ == arg) active_ = 0;
-                if (arg != context) transfers_.erase(arg);
+                if (arg != context) resumes_.forget(arg);
             }
-            transfers_.erase(context);
             cpu.setHypercallResult(0);
             return;
         case GLP_OP_MAKE_CURRENT:
@@ -302,7 +312,7 @@ public:
                 return;
             }
             if (!read(arg)) return;
-            query(cpu, context, io, Words(data));
+            faulted = !query(cpu, context, io, Words(data));
             return;
         default:
             cpu.setHypercallResult(static_cast<uint64_t>(-1));
@@ -313,26 +323,7 @@ public:
 private:
     static constexpr uint32_t kMaxRequest = 64u << 20;
 
-    // Hypercall transfers in progress across page faults.
-    struct Transfer {
-        uint32_t op = 0;
-        VirtAddr buffer = 0;
-        uint32_t arg = 0;
-        size_t done = 0;
-        std::vector<uint8_t> data;
-        bool active = false;
-    };
-    struct Preread {
-        VirtAddr at = 0;
-        size_t done = 0;
-        std::vector<uint8_t> data;
-        bool active = false;
-    };
-    struct Transfers {
-        Transfer in;
-        Preread preread;
-        Reply::Pending out;
-    };
+
 
     uint64_t createContext(uint32_t share) {
         CGLContextObj shareWith = nullptr;
@@ -476,7 +467,7 @@ private:
         const uint32_t narrays = w.u(p + 3);
         const size_t end = p + n;
         size_t at = p + 4;
-        std::array<ClientArray, 6> arrays{};
+        std::array<ClientArray, kClientArrays> arrays{};
         size_t used = 0;
         for (uint32_t k = 0; k < narrays && used < arrays.size(); ++k) {
             if (at + 4 > end) return;
@@ -492,14 +483,25 @@ private:
             emitElement(list);
             return;
         }
+        // Texture coordinate arrays go to their own units: the client active
+        // unit is the guest's (it forwards glClientActiveTexture), kept as found.
+        GLint clientUnit = GL_TEXTURE0;
+        glGetIntegerv(GL_CLIENT_ACTIVE_TEXTURE, &clientUnit);
+        uint32_t texUnits = 0; // bit per unit with an array
         for (const ClientArray& a : list) {
             const void* data = arrayData_[a.which].data();
+            if (const int unit = texCoordUnit(a.which); unit >= 0) {
+                glClientActiveTexture(static_cast<GLenum>(GL_TEXTURE0 + unit));
+                glTexCoordPointer(a.size, a.type, 0, data);
+                glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+                texUnits |= 1u << unit;
+                continue;
+            }
             switch (a.which) {
             case 0: glVertexPointer(a.size, a.type, 0, data); glEnableClientState(GL_VERTEX_ARRAY); break;
             case 1: glNormalPointer(a.type, 0, data); glEnableClientState(GL_NORMAL_ARRAY); break;
             case 2: glColorPointer(a.size, a.type, 0, data); glEnableClientState(GL_COLOR_ARRAY); break;
             case 3: glIndexPointer(a.type, 0, data); glEnableClientState(GL_INDEX_ARRAY); break;
-            case 4: glTexCoordPointer(a.size, a.type, 0, data); glEnableClientState(GL_TEXTURE_COORD_ARRAY); break;
             default: glEdgeFlagPointer(0, data); glEnableClientState(GL_EDGE_FLAG_ARRAY); break;
             }
         }
@@ -513,9 +515,15 @@ private:
             }
             glDrawElements(mode, static_cast<GLsizei>(nindices), GL_UNSIGNED_INT, indices_.data());
         }
-        static constexpr std::array<GLenum, 6> kArrays{GL_VERTEX_ARRAY, GL_NORMAL_ARRAY, GL_COLOR_ARRAY,
-                                                       GL_INDEX_ARRAY, GL_TEXTURE_COORD_ARRAY, GL_EDGE_FLAG_ARRAY};
+        static constexpr std::array<GLenum, 5> kArrays{GL_VERTEX_ARRAY, GL_NORMAL_ARRAY, GL_COLOR_ARRAY,
+                                                       GL_INDEX_ARRAY, GL_EDGE_FLAG_ARRAY};
         for (const GLenum array : kArrays) glDisableClientState(array);
+        for (int unit = 0; texUnits != 0; ++unit, texUnits >>= 1) {
+            if ((texUnits & 1u) == 0) continue;
+            glClientActiveTexture(static_cast<GLenum>(GL_TEXTURE0 + unit));
+            glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+        }
+        glClientActiveTexture(static_cast<GLenum>(clientUnit));
     }
 
     // glArrayElement as immediate-mode calls: array pointers may not change
@@ -527,6 +535,11 @@ private:
             const size_t step = typeBytes(a.type);
             const auto n = static_cast<size_t>(std::clamp(a.size, 1, 4));
             std::array<double, 4> v{0.0, 0.0, 0.0, 1.0};
+            if (const int unit = texCoordUnit(a.which); unit >= 0) {
+                for (size_t k = 0; k < n; ++k) v[k] = component(d + k * step, a.type, false);
+                glMultiTexCoord4dv(static_cast<GLenum>(GL_TEXTURE0 + unit), v.data());
+                continue;
+            }
             switch (a.which) {
             case 0:
                 vertex = &a;
@@ -542,11 +555,7 @@ private:
             case 3:
                 glIndexd(component(d, a.type, false));
                 break;
-            case 4:
-                for (size_t k = 0; k < n; ++k) v[k] = component(d + k * step, a.type, false);
-                glTexCoord4dv(v.data());
-                break;
-            default:
+            default: // 5, the edge flag
                 glEdgeFlag(d[0] != 0);
                 break;
             }
@@ -570,6 +579,30 @@ private:
     }
 
     // Runs a command stream in `ctx`, which activate() made current.
+    // The fixed words of each hand-written command (what its case reads before
+    // any length the record carries): a shorter record is skipped. Generated
+    // commands check their own (GlDispatchGen.inc).
+    static constexpr size_t handWrittenWords(uint32_t cmd) noexcept {
+        switch (cmd) {
+        case GLP_FN_CLIENT_DRAW: return 4;
+        case GLP_FN_glTexImage3D: case GLP_FN_glTexImage3DEXT: return 9;
+        case GLP_FN_glTexImage2D: case GLP_FN_glTexSubImage2D: return 8;
+        case GLP_FN_glTexImage1D: return 7;
+        case GLP_FN_glTexSubImage3D: case GLP_FN_glTexSubImage3DEXT: return 10;
+        case GLP_FN_glTexSubImage1D: case GLP_FN_glBitmap: return 6;
+        case GLP_FN_glDrawPixels: return 4;
+        case GLP_FN_glMap1f: case GLP_FN_glMap1d: case GLP_FN_glMap2f: case GLP_FN_glMap2d: return 11;
+        case GLP_FN_glPixelStorei: case GLP_FN_glFeedbackBuffer: case GLP_FN_PALETTE:
+        case GLP_FN_glPixelMapfv: case GLP_FN_glPixelMapuiv: case GLP_FN_glPixelMapusv:
+            return 2;
+        case GLP_FN_glCallLists: case GLP_FN_glDeleteTextures: case GLP_FN_glPrioritizeTextures:
+        case GLP_FN_glDrawBuffer: case GLP_FN_glReadBuffer: case GLP_FN_glSelectBuffer:
+        case GLP_FN_glEnable: case GLP_FN_glDisable: case GLP_FN_glBegin: case GLP_FN_glPushClientAttrib:
+            return 1;
+        default: return 0; // glEnd, glPopClientAttrib, glPolygonStipple (image checked), generated
+        }
+    }
+
     void execute(Context& ctx, const Words& w) {
         for (size_t at = 0; at < w.size();) {
             const uint32_t header = w.u(at);
@@ -583,6 +616,10 @@ private:
             }
             if (p + n > w.size()) break; // truncated batch
             const size_t end = p + n;
+            if (n < handWrittenWords(cmd)) { // a corrupt record: skipped, not read past
+                at = end;
+                continue;
+            }
             switch (cmd) {
             case GLP_FN_CLIENT_DRAW:
                 if (n >= 4) clientDraw(w, p, n);
@@ -599,16 +636,16 @@ private:
                 break;
             }
             case GLP_FN_glTexImage1D:
-                glTexImage1D(w.u(p), w.i(p + 1), w.i(p + 2), w.i(p + 3), w.i(p + 4), w.u(p + 5), w.u(p + 6),
+                glTexImage1D(w.u(p), w.i(p + 1), hostTextureFormat(w.i(p + 2)), w.i(p + 3), w.i(p + 4), w.u(p + 5), w.u(p + 6),
                              imageData(w, p + 7, end));
                 break;
             case GLP_FN_glTexImage2D:
-                glTexImage2D(w.u(p), w.i(p + 1), w.i(p + 2), w.i(p + 3), w.i(p + 4), w.i(p + 5), w.u(p + 6),
+                glTexImage2D(w.u(p), w.i(p + 1), hostTextureFormat(w.i(p + 2)), w.i(p + 3), w.i(p + 4), w.i(p + 5), w.u(p + 6),
                              w.u(p + 7), imageData(w, p + 8, end));
                 break;
             case GLP_FN_glTexImage3D:
             case GLP_FN_glTexImage3DEXT: // the core command of the legacy profile (GL 1.2)
-                glTexImage3D(w.u(p), w.i(p + 1), w.i(p + 2), w.i(p + 3), w.i(p + 4), w.i(p + 5), w.i(p + 6),
+                glTexImage3D(w.u(p), w.i(p + 1), hostTextureFormat(w.i(p + 2)), w.i(p + 3), w.i(p + 4), w.i(p + 5), w.i(p + 6),
                              w.u(p + 7), w.u(p + 8), imageData(w, p + 9, end));
                 break;
             case GLP_FN_glTexSubImage3D:
@@ -763,7 +800,8 @@ private:
     }
 
     // GLP_OP_QUERY: { command, reply address, reply bytes, arguments... }.
-    void query(R5000& cpu, uint32_t context, Transfers& io, const Words& w) {
+    // False when a page fault interrupted it (the hypercall is re-executed).
+    bool query(R5000& cpu, uint32_t context, HypercallResume& io, const Words& w) {
         const uint32_t fn = w.u(0);
         const auto replyAt = static_cast<VirtAddr>(static_cast<int64_t>(static_cast<int32_t>(w.u(1))));
         const uint32_t replyBytes = std::min<uint32_t>(w.u(2), kMaxRequest);
@@ -772,22 +810,19 @@ private:
         // A reply larger than the TLB maps is written page by page; when a
         // fault interrupts it, the re-executed hypercall carries on writing
         // the same, already computed reply: the query does not run twice.
-        if (io.out.active && io.out.fn == fn && io.out.at == replyAt && io.out.size == replyBytes) {
-            finishReply(cpu, io.out);
-            return;
-        }
+        if (io.replyReady) return writeReply(cpu, io);
         Context* active = activate(context);
         if (active == nullptr) {
             cpu.setHypercallResult(0);
-            return;
+            return true;
         }
         const bool readsBack = fn == GLP_FN_glReadPixels || fn == GLP_FN_glGetTexImage || fn == GLP_FN_glGetPolygonStipple;
         if (readsBack) { // image reads start from the guest buffer: the pack state may skip bytes
-            if (!io.preread.active || io.preread.at != replyAt || io.preread.data.size() != replyBytes) {
-                io.preread = Preread{replyAt, 0, std::vector<uint8_t>(replyBytes), true};
+            if (!io.prereadRead) {
+                if (io.preread.size() != replyBytes) io.preread.assign(replyBytes, 0);
+                if (!cpu.guestCopyIn(replyAt, io.preread, io.prereadDone)) return false;
+                io.prereadRead = true;
             }
-            if (!cpu.guestCopyIn(replyAt, io.preread.data, io.preread.done)) return;
-            io.preread.active = false;
         }
         Context& ctx = *active;
         Reply reply;
@@ -802,7 +837,7 @@ private:
             }
         };
         auto imageReply = [&](auto&& readInto) {
-            reply.bytes() = std::move(io.preread.data);
+            reply.bytes() = std::move(io.preread);
             reply.bytes().resize(replyBytes);
             readInto(reply.bytes().data());
         };
@@ -943,14 +978,17 @@ private:
         }
         std::vector<uint8_t>& bytes = reply.bytes();
         if (bytes.size() > replyBytes) bytes.resize(replyBytes);
-        io.out = Reply::Pending{fn, replyAt, replyBytes, result, std::move(bytes), 0, true};
-        finishReply(cpu, io.out);
+        io.reply = std::move(bytes);
+        io.replyAt = replyAt;
+        io.result = result;
+        io.replyReady = true;
+        return writeReply(cpu, io);
     }
 
-    static void finishReply(R5000& cpu, Reply::Pending& out) {
-        if (!cpu.guestCopyOut(out.at, out.data, out.done)) return; // page fault: the hypercall resumes
-        out.active = false;
-        cpu.setHypercallResult(out.result);
+    static bool writeReply(R5000& cpu, HypercallResume& io) {
+        if (!cpu.guestCopyOut(io.replyAt, io.reply, io.replyDone)) return false; // page fault: re-executed
+        cpu.setHypercallResult(io.result);
+        return true;
     }
 
     // The framebuffer of `drawable`: the calling context's, else another's.
@@ -1038,8 +1076,8 @@ private:
     uint32_t active_ = 0; // the guest context whose state the host GL holds (activate)
     unsigned unknownLogged_ = 0;
     bool tableMismatchLogged_ = false;
-    std::map<uint32_t, Transfers> transfers_; // by guest context (0: none)
-    std::array<std::vector<uint8_t>, 6> arrayData_;
+    HypercallResumes resumes_; // calls in progress across page faults, by guest context
+    std::array<std::vector<uint8_t>, kClientArrays> arrayData_;
     std::vector<GLuint> indices_;
     std::vector<GLint> lists_;
 };

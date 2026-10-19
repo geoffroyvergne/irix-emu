@@ -12,9 +12,11 @@ struct glpass_colormap {
     unsigned char rgb[GLPASS_PALETTE_SIZE][3];
     unsigned char set[GLPASS_PALETTE_SIZE];
     struct glpass_colormap *next;
+    void *dpy; /* the Display it was noted on: its colormaps die with it */
 };
 
-/* The colours stored in colormap `id`, or 0 if none were. */
+/* The colours stored in colormap `id`, or 0 if none were. Entries are never
+   freed, so a pointer stays usable; a colormap freed since reads as none. */
 struct glpass_colormap *glpass_find_colormap(unsigned long id);
 
 /* Changes whenever a colour is stored (never 0). */

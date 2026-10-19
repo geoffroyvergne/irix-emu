@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "indy/core/System.hpp"
 
 #include "indy/core/Log.hpp"
@@ -40,7 +41,10 @@ System::System(SystemConfig config, FrameBuffer& display)
           std::cout << static_cast<char>(byte);
           std::cout.flush();
       }),
-      cpu_(std::make_unique<R5000>(bus_, config_.traceInstructions, config_.cpuModel)),
+      // INDY_CPU_REFERENCE: decode every instruction (the reference path), to
+      // tell a decoded-dispatch fault from a guest one.
+      cpu_(std::make_unique<R5000>(bus_, config_.traceInstructions, config_.cpuModel,
+                                   std::getenv("INDY_CPU_REFERENCE") == nullptr)),
       graphics_(config_.graphics ? std::unique_ptr<GraphicsSubsystem>(std::make_unique<Newport>(display))
                                  : std::make_unique<TestPatternDisplay>(display)) {
 

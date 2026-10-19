@@ -96,3 +96,13 @@ Requirements:
 3. Ensure that when `XDestroyWindow` is intercepted in `libglpass_x.so`, we immediately invalidate that XID in our local tracking system so that no subsequent OpenGL commands can be dispatched to the host for that specific surface.
 
 Please provide the X11 error handler setup and the validation logic to inject into 'guest/glpass.c'.
+
+# Prompt 7 : Integrate transparantly glpass
+
+Context: Currently, glpass requires a wrapper script called 'glrun' which sets LD_LIBRARYN32_PATH and _RLDN32_LIST to force applications to use our host-GPU accelerated OpenGL library. Applications started without 'glrun' (like desktop icons or sub-processes spawned by Maya/Houdini) fall back to IRIX's native, slow software OpenGL. We want to implement a system-wide, completely transparent integration so that EVERY n32 application automatically utilizes glpass without any wrapper or launcher.
+
+Task: Provide a detailed architectural plan and the necessary code/scripts to hook glpass seamlessly into the IRIX 6.5 runtime environment. Specifically:
+
+1. Dynamic Linker (rld) Hooks: Implement a system-wide override mechanism. Explain how we can safely use IRIX's /etc/rld.conf or build a thin proxy 'libGL.so' that replaces the system one (while keeping the original under a renamed file like libGL.so.native) to intercept all OpenGL calls system-wide.
+2. Smart Fallback Mechanism: Update guest/glpass.c so that during the HELLO/initialization phase, if the library detects it is running outside the emulator (or if the GL hypercall returns an error/unsupported code), it automatically and transparently forwards all GL and GLX traffic to IRIX's native library. This prevents breaking the OS if the disk image is booted elsewhere.
+3. Automated Installation Script: Write an IRIX shell script (install.sh) that builds the libraries, places libGL.so and libglpass_x.so into the proper system directories (like /usr/lib32/), configures global preloads/rld hooks, and backs up the original system files cleanly.

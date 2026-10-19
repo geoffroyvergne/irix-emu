@@ -32,8 +32,9 @@ unsigned int *glp_put(unsigned int cmd, unsigned int words);
 unsigned int glp_fbits(GLfloat f);
 void glp_dbits(unsigned int *p, GLdouble d);
 
-/* Logs the first call of an entry point the pass-through does not provide. */
-void glp_unimplemented(const char *name);
+/* An entry point the pass-through does not provide was called: logs its
+   first call with GLPASS_TRACE (`logged`: the caller's own flag). */
+void glp_unimplemented(const char *name, int *logged);
 
 /* GLPASS_TRACE=1: logs the first call of every entry point. */
 extern int glp_trace;

@@ -51,7 +51,7 @@ MANUAL = {
     'glGetPolygonStipple', 'glGetTexImage', 'glIsTextureEXT', 'glGenTexturesEXT', 'glDeleteTexturesEXT',
     'glAreTexturesResidentEXT', 'glPrioritizeTexturesEXT', 'glTexSubImage1DEXT', 'glTexSubImage2DEXT',
     'glMap1f', 'glMap1d', 'glMap2f', 'glMap2d', 'glPixelMapfv', 'glPixelMapuiv', 'glPixelMapusv',
-    'glDrawRangeElements', 'glDrawRangeElementsEXT',
+    'glDrawRangeElements',  # (glpass.c also exports glDrawRangeElementsEXT, which IRIX does not declare)
     # 3D textures: images sized with the 3D pixel store state
     'glTexImage3D', 'glTexImage3DEXT', 'glTexSubImage3D', 'glTexSubImage3DEXT',
     # colour index mode, emulated with the window's colormap
@@ -69,7 +69,11 @@ GUEST_MANUAL = {
     # colour index writes
     'glLogicOp', 'glClear', 'glPushAttrib', 'glPopAttrib',
     # display lists: their colour index state changes are tracked
-    'glNewList', 'glEndList', 'glCallList', 'glListBase',
+    'glNewList', 'glEndList', 'glCallList', 'glListBase', 'glDeleteLists',
+    # replays of a colour index draw pass the depth test again (see index passes)
+    'glDepthFunc',
+    # texture coordinate arrays are per texture unit
+    'glClientActiveTexture', 'glClientActiveTextureARB',
 }
 
 # Vendor suffixes: glFooEXT is replayed as the host's glFoo when the
@@ -175,6 +179,50 @@ def host_load(t, at):
     return f'static_cast<{t}>(w.{INT_TYPES[t]}({at}))'
 
 
+# Texture images: the host stores low-precision sized formats at 8 bits
+# (hostTextureFormat, host/TextureFormat.hpp).
+TEXTURE_IMAGE = re.compile(r'^gl(Copy)?TexImage[123]D')
+
+
+def host_param(name, p, at):
+    value = host_load(p['type'], at)
+    if TEXTURE_IMAGE.match(name) and p['name'] in ('internalformat', 'internalFormat'):
+        return f'static_cast<{p["type"]}>(hostTextureFormat(static_cast<GLint>({value})))'
+    return value
+
+
+def validate(api, kinds, counts_of):
+    """Stops the generation when an encoded function's arrays are not sized
+    exactly: the guest would read past the program's array, or the host past
+    the record."""
+    errors = []
+    names = [name for _, name, _ in api]
+    for name in sorted({n for n in names if names.count(n) > 1}):
+        errors.append(f'{name}: listed twice in gl_api.txt')
+    for name in sorted((MANUAL | GUEST_MANUAL) - set(names)):
+        errors.append(f'{name}: hand-written but not in gl_api.txt')
+    internal = open(os.path.join(GLPASS, 'guest', 'glpass_internal.h')).read()
+    groups = set(re.findall(r'GLP_GROUP_(\w+)', internal))
+    for name, group in PNAME_GROUPS.items():
+        if group not in groups:
+            errors.append(f'{name}: pname group {group} has no GLP_GROUP_{group} in glpass_internal.h')
+    for ret, name, params in api:
+        if kinds[name] not in ('auto', 'guest'):
+            continue
+        pointers = [p for p in params if p['pointer']]
+        counts = counts_of(name, params)
+        for p in pointers:
+            if not p['const'] or p['type'] not in SCALAR_TYPES:
+                errors.append(f'{name}: {p["name"]} is not a constant array of a scalar type')
+        if counts == ['pname']:
+            if len(pointers) != 1 or not any(p['name'] == 'pname' and not p['pointer'] for p in params):
+                errors.append(f'{name}: sized by pname, but has no pname or more than one array')
+        elif len(counts) != len(pointers) or not all(isinstance(c, int) and 1 <= c <= 16 for c in counts):
+            errors.append(f'{name}: array sizes {counts} for {len(pointers)} arrays')
+    if errors:
+        sys.exit('glpass-gen: ' + '\n  '.join(['the API list does not generate safely:'] + errors))
+
+
 def main():
     header_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
         subprocess.check_output(['xcrun', '--show-sdk-path'], text=True).strip(),
@@ -219,6 +267,7 @@ def main():
         c = array_counts(name, params)
         return c if c is not None else array_counts(host_name[name], params)
 
+    validate(api, kinds, counts_of)
     encoded = sorted(n for n, k in kinds.items() if k in ('auto', 'manual', 'guest'))
     ids = {n: 0x100 + i for i, n in enumerate(encoded)}
 
@@ -245,9 +294,11 @@ def main():
             decl = ', '.join(p['decl'] for p in params) or 'void'
             f.write(f'{ret} {name}({decl})\n{{\n')
             if kind == 'stub':
+                # Its own flag: logged once (GLPASS_TRACE), whatever the number of stubs called.
+                f.write('    static int logged;\n')
                 for p in params:
                     f.write(f'    (void){p["name"]};\n')
-                f.write(f'    glp_unimplemented("{name}");\n')
+                f.write(f'    glp_unimplemented("{name}", &logged);\n')
                 if ret != 'void':
                     f.write(f'    return ({ret})0;\n')
                 f.write('}\n\n')
@@ -263,6 +314,7 @@ def main():
                 group = PNAME_GROUPS[name]
                 f.write(f'    int i, n = glp_pname_count(GLP_GROUP_{group}, {pname});\n')
                 f.write(f'    GLP_TRACE(GLP_FN_{name}, "{name}");\n')
+                f.write(f'    if (!{arr["name"]}) return; /* GL leaves it undefined: nothing is read */\n')
                 f.write(f'    p = glp_put(GLP_FN_{name}, {fixed + 1} + n * {words_of(arr["type"])});\n')
                 at = 0
                 for p in scalars:
@@ -275,6 +327,9 @@ def main():
                 if pointers:
                     f.write('    int i;\n')
                 f.write(f'    GLP_TRACE(GLP_FN_{name}, "{name}");\n')
+                if pointers:
+                    test = ' || '.join(f'!{p["name"]}' for p in pointers)
+                    f.write(f'    if ({test}) return; /* GL leaves it undefined: nothing is read */\n')
                 f.write(f'    p = glp_put(GLP_FN_{name}, {total});\n')
                 at = 0
                 ptr_index = 0
@@ -295,7 +350,8 @@ def main():
     # ---- GlDispatchGen.inc -------------------------------------------------------
     with open(os.path.join(GLPASS, 'host', 'GlDispatchGen.inc'), 'w') as f:
         f.write('// Generated by glpass/tools/glpass-gen.py: host replay of generated commands.\n')
-        f.write('// Included inside a switch over the command number; `w` is the batch, `p` the payload start.\n')
+        f.write('// Included inside a switch over the command number; `w` is the batch, `p` the payload start,\n')
+        f.write('// `n` its length in words. A record shorter than its command is skipped, never read past.\n')
         for ret, name, params in api:
             if kinds[name] not in ('auto', 'guest'):
                 continue
@@ -312,13 +368,18 @@ def main():
                     if p['pointer']:
                         args.append('a')
                     else:
-                        args.append(host_load(p['type'], f'p + {at}'))
+                        args.append(host_param(name, p, f'p + {at}'))
                         at += words_of(p['type'])
-                f.write(f'    {arr["type"]} a[16] = {{}};\n')
-                f.write(f'    const size_t count = std::min<size_t>(16, w.u(p + {at}));\n')
+                f.write(f'    if (n < {at + 1}) break;\n')
+                f.write(f'    {arr["type"]} a[16] = {{}}; // the most any pname takes is 4\n')
+                f.write(f'    const size_t count = std::min<size_t>({{16, w.u(p + {at}), (n - {at + 1}) / {ww}}});\n')
                 f.write(f'    for (size_t k = 0; k < count; ++k) a[k] = {host_load(arr["type"], f"p + {at + 1} + k * {ww}")};\n')
                 f.write(f'    {target}({", ".join(args)});\n')
             else:
+                words = sum(c * words_of(p['type']) for p, c in zip(pointers, counts)) + \
+                    sum(words_of(p['type']) for p in params if not p['pointer'])
+                if words:
+                    f.write(f'    if (n < {words}) break;\n')
                 at = 0
                 args = []
                 ptr_index = 0
@@ -333,7 +394,7 @@ def main():
                         args.append(var)
                         at += c * ww
                     else:
-                        args.append(host_load(p['type'], f'p + {at}'))
+                        args.append(host_param(name, p, f'p + {at}'))
                         at += words_of(p['type'])
                 f.write(f'    {target}({", ".join(args)});\n')
             f.write('    break;\n}\n')

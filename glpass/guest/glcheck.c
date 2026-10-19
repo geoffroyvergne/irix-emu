@@ -4,6 +4,13 @@
  *   selection  glSelectBuffer / glRenderMode(GL_SELECT): hits, names, depths
  *   feedback   glFeedbackBuffer / glRenderMode(GL_FEEDBACK): tokens, window coordinates
  *   texture3d  glTexImage3DEXT with GL_UNPACK_SKIP_IMAGES, sampled and read back
+ *   large      a 1 MiB texture up and back (glTexImage2D, glGetTexImage): more
+ *              pages than the TLB maps, so the copies resume across faults
+ *   texformat  dark texels uploaded as GL_RGB5 and GL_RGBA4 come back unchanged
+ *              (the host stores low-precision formats at 8 bits)
+ *   multitex   two texture units with coordinate arrays of their own
+ *              (glClientActiveTextureARB), drawn with glDrawArrays and with
+ *              glBegin/glArrayElement (Quake III's lightmaps)
  *   LD_LIBRARYN32_PATH=<glpass dir> ./glcheck
  * Prints a line per check and exits 0 when all pass.
  */
@@ -14,6 +21,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #ifndef GL_TEXTURE_3D_EXT
 #define GL_TEXTURE_3D_EXT 0x806F
@@ -130,6 +138,127 @@ static void check_texture3d(void)
     report("texture3d", ok, detail);
 }
 
+static void check_large(void)
+{
+    enum { kSize = 512 };
+    const unsigned bytes = kSize * kSize * 4;
+    unsigned char *up = (unsigned char *)malloc(bytes), *down = (unsigned char *)malloc(bytes);
+    GLuint texture;
+    unsigned i, wrong = 0;
+    char detail[200];
+    if (!up || !down) {
+        report("large", 0, "out of memory");
+        return;
+    }
+    for (i = 0; i < bytes; ++i) up[i] = (unsigned char)(i * 7 + (i >> 12));
+    memset(down, 0, bytes);
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, kSize, kSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, up);
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, down);
+    for (i = 0; i < bytes; ++i) wrong += up[i] != down[i];
+    sprintf(detail, "%u of %u bytes differ", wrong, bytes);
+    report("large", wrong == 0 && glGetError() == GL_NO_ERROR, detail);
+    free(up);
+    free(down);
+}
+
+static void check_texformat(void)
+{
+    static const GLubyte dark[4][4] = {{3, 7, 12, 255}, {20, 40, 60, 128}, {100, 101, 102, 7}, {1, 2, 4, 15}};
+    static const GLenum formats[2] = {GL_RGB5_EXT, GL_RGBA4_EXT};
+    GLubyte got[4][4];
+    GLuint texture;
+    char detail[200];
+    int f, k, wrong = 0;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    detail[0] = 0;
+    for (f = 0; f < 2; ++f) {
+        glTexImage2D(GL_TEXTURE_2D, 0, (GLint)formats[f], 4, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, dark);
+        memset(got, 0, sizeof got);
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, got);
+        for (k = 0; k < 4; ++k) {
+            /* GL_RGB5 has no alpha: it reads back as 255. */
+            const int ok = got[k][0] == dark[k][0] && got[k][1] == dark[k][1] && got[k][2] == dark[k][2] &&
+                           got[k][3] == (f == 0 ? 255 : dark[k][3]);
+            if (!ok && !wrong++) {
+                sprintf(detail, "%s texel %d: %d %d %d %d, want %d %d %d %d", f ? "GL_RGBA4" : "GL_RGB5", k, got[k][0],
+                        got[k][1], got[k][2], got[k][3], dark[k][0], dark[k][1], dark[k][2], f ? dark[k][3] : 255);
+            }
+        }
+    }
+    glDeleteTextures(1, &texture);
+    report("texformat", !wrong && glGetError() == GL_NO_ERROR, detail);
+}
+
+/* Texture unit 0 holds red | green, unit 1 white | black (2x1 each), modulated.
+   Each unit's array picks its left texel: red x white = red. The current
+   coordinates pick the right ones, so a unit that lost its array shows. */
+static void check_multitex(void)
+{
+    static const GLubyte left_right[2][2][4] = {{{255, 0, 0, 255}, {0, 255, 0, 255}},
+                                                {{255, 255, 255, 255}, {0, 0, 0, 255}}};
+    static const GLfloat vertices[4][2] = {{0, 0}, {100, 0}, {100, 100}, {0, 100}};
+    static const GLfloat coords0[4][2] = {{0.25f, 0.5f}, {0.25f, 0.5f}, {0.25f, 0.5f}, {0.25f, 0.5f}};
+    static const GLfloat coords1[4][2] = {{0.20f, 0.5f}, {0.30f, 0.5f}, {0.30f, 0.5f}, {0.20f, 0.5f}};
+    GLuint textures[2];
+    GLubyte got[2][4];
+    char detail[200];
+    int unit, pass, ok;
+    glGenTextures(2, textures);
+    for (unit = 0; unit < 2; ++unit) {
+        glActiveTextureARB(GL_TEXTURE0_ARB + unit);
+        glBindTexture(GL_TEXTURE_2D, textures[unit]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 2, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, left_right[unit]);
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+        glEnable(GL_TEXTURE_2D);
+        glMultiTexCoord2fARB(GL_TEXTURE0_ARB + unit, 0.75f, 0.5f); /* the wrong texel */
+    }
+    glColor4f(1, 1, 1, 1);
+    glVertexPointer(2, GL_FLOAT, 0, vertices);
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glClientActiveTextureARB(GL_TEXTURE0_ARB);
+    glTexCoordPointer(2, GL_FLOAT, 0, coords0);
+    glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+    glClientActiveTextureARB(GL_TEXTURE1_ARB);
+    glTexCoordPointer(2, GL_FLOAT, 0, coords1);
+    glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+    for (pass = 0; pass < 2; ++pass) {
+        glClearColor(0, 0, 1, 1);
+        glClear(GL_COLOR_BUFFER_BIT);
+        if (pass == 0) {
+            glDrawArrays(GL_QUADS, 0, 4);
+        } else {
+            glBegin(GL_QUADS);
+            glArrayElement(0); glArrayElement(1); glArrayElement(2); glArrayElement(3);
+            glEnd();
+        }
+        glReadPixels(50, 50, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, got[pass]);
+    }
+    glDisableClientState(GL_TEXTURE_COORD_ARRAY); /* unit 1's */
+    glClientActiveTextureARB(GL_TEXTURE0_ARB);
+    glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+    glDisableClientState(GL_VERTEX_ARRAY);
+    for (unit = 1; unit >= 0; --unit) {
+        glActiveTextureARB(GL_TEXTURE0_ARB + unit);
+        glDisable(GL_TEXTURE_2D);
+    }
+    glDeleteTextures(2, textures);
+    ok = 1;
+    for (pass = 0; pass < 2; ++pass) ok = ok && got[pass][0] == 255 && got[pass][1] == 0 && got[pass][2] == 0;
+    sprintf(detail, "glDrawArrays %02x%02x%02x, glArrayElement %02x%02x%02x (want ff0000)", got[0][0], got[0][1],
+            got[0][2], got[1][0], got[1][1], got[1][2]);
+    report("multitex", ok && glGetError() == GL_NO_ERROR, detail);
+}
+
 int main(void)
 {
     int attributes[] = {GLX_RGBA, GLX_DOUBLEBUFFER, GLX_RED_SIZE, 8, GLX_GREEN_SIZE, 8, GLX_BLUE_SIZE, 8,
@@ -171,6 +300,9 @@ int main(void)
     check_selection();
     check_feedback();
     check_texture3d();
+    check_large();
+    check_texformat();
+    check_multitex();
 
     glXMakeCurrent(dpy, None, 0);
     glXDestroyContext(dpy, ctx);
