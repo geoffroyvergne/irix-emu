@@ -35,6 +35,7 @@ glpass/guest/glcolors
 glpass/guest/glshare
 glpass/guest/glmasks
 glpass/guest/glstubs
+glpass/guest/glpass-probe
 
 # Compiled objects and libraries
 *.o

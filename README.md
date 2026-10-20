@@ -449,6 +449,7 @@ The same text-to-keys conversion is used by `--type`, so scripted typing also ha
 - **DMA:** `INDY_TRACE_DMA=1` logs the first memory controller DMA transfers (silent otherwise; aborts are always reported).
 - **Disk:** `INDY_TRACE_DISK=1` logs, every 5 seconds, the host time disk I/O takes on the emulation thread: image reads and writes (total and the slowest command), and the SCSI DMA copies to and from guest memory.
 - **Graphics bring-up:** `INDY_TRACE_GFX=<n>` traces Newport register and DCB traffic.
+- **No hypercalls:** `INDY_NO_HYPERCALL=1` makes the hypercall word trap as a reserved instruction, as on a real Indy, to test the guest's fallbacks to IRIX's own OpenGL.
 - **CPU reference path:** `INDY_CPU_REFERENCE=1` decodes every instruction instead of running the decoded-instruction cache, to tell a cache fault from a guest one.
 - **Plane sets:** `INDY_TRACE_PLANES=1` logs the first pixel the X server writes to each Newport plane set (RGB/CI, overlay, popup, CID), and every 65536th write to the overlay planes, which the XL8 does not have.
 - **Scripted input:** `INDY_INPUT_FILE=<file>`: lines appended to the file while the emulator runs are input, `mouse <dx> <dy> [<buttons>]` (PS/2 deltas, +dy up; buttons L=1 R=2 M=4) or `type <text>` (typed with the `--keymap` layout). With `kill -USR1` screenshots, tests can drive and check a running session.

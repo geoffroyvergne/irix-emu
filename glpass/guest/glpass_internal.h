@@ -32,6 +32,17 @@ unsigned int *glp_put(unsigned int cmd, unsigned int words);
 unsigned int glp_fbits(GLfloat f);
 void glp_dbits(unsigned int *p, GLdouble d);
 
+/* Where GL and GLX calls go (glpass.c, "Route"), decided at the first call:
+   the host GPU, or IRIX's own OpenGL. Every entry point starts with
+       if (glp_route != GLP_ROUTE_HOST && glp_forwarding()) { forward; return; }
+   so the route costs one comparison on the host's path. */
+typedef void (*glp_proc)(void); /* what glXGetProcAddress returns */
+#define GLP_ROUTE_HOST 1
+#define GLP_ROUTE_NATIVE 2
+extern int glp_route;
+int glp_forwarding(void);
+void *glp_native_symbol(const char *name); /* IRIX's own entry point, or 0 */
+
 /* An entry point the pass-through does not provide was called: logs its
    first call with GLPASS_TRACE (`logged`: the caller's own flag). */
 void glp_unimplemented(const char *name, int *logged);

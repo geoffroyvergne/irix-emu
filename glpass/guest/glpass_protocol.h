@@ -33,6 +33,12 @@
 
 #define GLP_PING_MAGIC   0x1D1E5u
 #define GLP_VERSION      4u
+/* glpass_probe() results, and glpass-probe's exit status. */
+#define GLP_PROBE_OK          0 /* the emulator's GL bridge answers, with this library's command table */
+#define GLP_PROBE_NO_EMULATOR 1 /* the hypercall traps: real hardware, or another emulator */
+#define GLP_PROBE_NO_BRIDGE   2 /* the emulator has no host GL (not a macOS host) */
+#define GLP_PROBE_MISMATCH    3 /* the emulator's glpass sources differ from this library's */
+
 #define GLP_ERR_TABLE    (-2) /* HELLO: the guest library was built from other sources than the emulator */
 
 /* GL operation word (a1): operation in bits 0-7, context id above (0: none). */

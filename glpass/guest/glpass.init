@@ -1,0 +1,66 @@
+#! /sbin/sh
+#
+# glpass: host-GPU OpenGL for the Indy emulator, system-wide.
+#
+#   start  points /usr/lib32/libGL.so at glpass's libGL when the emulator's
+#          GL bridge answers (glpass-probe), else at IRIX's own. With glpass,
+#          new login and desktop sessions also preload libglpass_x (the
+#          "active" flag, read by the lines install.sh added to /etc/profile,
+#          /etc/cshrc and /var/X11/xdm/Xsession).
+#   stop   points it back at IRIX's own: a disk moved to real hardware, or
+#          to an emulator without host GL, starts with IRIX's OpenGL.
+#
+# Installed as /etc/init.d/glpass (/etc/rc2.d/S13glpass, after /usr is
+# mounted; /etc/rc0.d/K10glpass, before it is unmounted) by
+# /usr/lib32/glpass's install.sh; uninstall.sh removes it.
+
+DIR=/usr/lib32/glpass
+LINK=/usr/lib32/libGL.so
+
+# Nothing preloaded into the commands below (rm is an n32 program).
+unset _RLDN32_LIST LD_LIBRARYN32_PATH
+
+[ -r $DIR/native-target ] || exit 0
+NATIVE=`cat $DIR/native-target`
+
+# The link's target, or nothing.
+target() {
+    ls -l $LINK 2>/dev/null | sed -n 's/.* -> //p'
+}
+
+# Points the link at $1, replacing it in one rename: a program starting
+# meanwhile finds either the old target or the new one.
+point() {
+    [ "`target`" = "$1" ] && return 0
+    rm -f $LINK.glpass-new
+    ln -s "$1" $LINK.glpass-new && mv -f $LINK.glpass-new $LINK
+}
+
+case "$1" in
+start)
+    LD_LIBRARYN32_PATH=$DIR $DIR/glpass-probe > /dev/null 2>&1
+    status=$?
+    if [ $status -eq 0 ]; then
+        point glpass/libGL.so
+        touch $DIR/active
+        echo "glpass: OpenGL runs on the host GPU"
+    else
+        point "$NATIVE"
+        rm -f $DIR/active
+        if [ $status -eq 3 ]; then
+            echo "glpass: IRIX's own OpenGL (glpass does not match this emulator: run install.sh from its new sources)"
+        else
+            echo "glpass: IRIX's own OpenGL"
+        fi
+    fi
+    ;;
+stop)
+    point "$NATIVE"
+    rm -f $DIR/active
+    ;;
+*)
+    echo "usage: /etc/init.d/glpass {start|stop}"
+    exit 1
+    ;;
+esac
+exit 0

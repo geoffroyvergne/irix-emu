@@ -580,6 +580,9 @@ waiting for the grab to end.
 | [guest/glrun](guest/glrun) | Launcher that sets the library path and the preload |
 | [guest/gltri.c](guest/gltri.c) | Test program: a spinning triangle with a frame-rate counter |
 | [guest/glcolors.c](guest/glcolors.c) | Test program for `libglpass_x`: a 12-bit pixel used after its colormap was freed or its display closed, and threads storing colours and closing displays at once; the program must receive no X error from the library |
+| [guest/install.sh](guest/install.sh), [guest/uninstall.sh](guest/uninstall.sh) | System-wide installation in IRIX, and its removal |
+| [guest/glpass.init](guest/glpass.init) | Boot script (`/etc/init.d/glpass`): `/usr/lib32/libGL.so` to glpass when the emulator's bridge answers, to IRIX's own otherwise and at shutdown |
+| [guest/glprobe.c](guest/glprobe.c) | `glpass-probe`: whether the emulator's GL bridge answers the library, for the boot script |
 | [guest/glstubs.c](guest/glstubs.c) | Test program: 80 unsupported entry points called twice each (one trace line each with `GLPASS_TRACE=1`, none without), and vector calls with NULL arrays |
 | [guest/glmasks.c](guest/glmasks.c) | Test program: colour index writes under masks that take several passes, checked pixel by pixel against a model (blocks, flushes, depth, index arrays, lists, logic ops, feedback) |
 | [guest/glshare.c](guest/glshare.c) | Test program: two sprocs and one context; binding it from the second thread is refused, and destroying it while the first uses it is deferred |
@@ -630,7 +633,7 @@ built for the n32 ABI, which Maya, Quake III and most IRIX 6.5 programs use.
 
 ```sh
 cd /usr/local/irix-emu/glpass
-make            # libGL.so, libglpass_x.so, gltri, glthreads, glthreads_pt, glmove, glcheck, glgone, glcolors, glshare, glmasks, glstubs
+make            # libGL.so, libglpass_x.so, gltri, glthreads, glthreads_pt, glmove, glcheck, glgone, glcolors, glshare, glmasks, glstubs, glpass-probe
 ```
 
 The guest and the emulator must come from the same source tree: the command
@@ -713,16 +716,103 @@ restarting the emulator.
 Delete the directory: `rm -rf /usr/local/irix-emu/glpass`. Nothing outside it
 is changed, and IRIX's own `/usr/lib32/libGL.so` is never touched.
 
-### Planned: system-wide installation
+### System-wide installation
 
-Today only programs started through `glrun` use glpass. A system-wide install
-is planned, so that every program uses the host GPU without a wrapper:
+Installed system-wide, glpass serves every n32 OpenGL program without
+`glrun`: desktop icons, programs started by other programs (Maya's and
+Houdini's), and the libraries built on OpenGL (`libGLU`, Open Inventor), which
+link `libGL.so` themselves. As root, after unpacking (step 2 above):
 
-- prebuilt libraries on the CD (no gcc needed in IRIX);
-- an install script or an IRIX `inst` package;
-- builds for the o32 and 64-bit ABIs as well;
-- IRIX's own libraries kept, with an automatic fallback to them when the
-  emulator offers no GL bridge.
+```sh
+cd /usr/local/irix-emu/glpass && ./install.sh
+```
+
+Run it again after an emulator update: it rebuilds and reinstalls.
+`/usr/lib32/glpass/uninstall.sh` undoes it.
+
+**How it hooks in.** IRIX's `rld` has no system-wide configuration file
+(there is no `/etc/rld.conf`): it takes its lists only from each process's
+environment (`_RLDN32_LIST`, `LD_LIBRARYN32_PATH`). But IRIX's
+`/usr/lib32/libGL.so` is itself a symbolic link, to the graphics board's
+`/var/arch/lib32/libGL.so`. The install points that link at glpass, and
+renames or replaces no IRIX file:
+
+| What | Where | Role |
+|---|---|---|
+| glpass's libraries | `/usr/lib32/glpass/` (`libGL.so`, `libglpass_x.so`, `glpass-probe`, `glrun`) | Built by `install.sh` |
+| IRIX's own libGL | `/var/arch/lib32/libGL.so`, untouched | Recorded in `/usr/lib32/glpass/native-target` |
+| `/usr/lib32/libGL.so` | → `glpass/libGL.so`, or → IRIX's | Switched at boot |
+| Boot script | `/etc/init.d/glpass`, `/etc/rc2.d/S13glpass`, `/etc/rc0.d/K10glpass` | Switches the link |
+| Preload for colour-index programs | Lines between `glpass: begin` and `glpass: end` in `/etc/profile`, `/etc/cshrc` and `/var/X11/xdm/Xsession` (before it hands over to `Xsession.dt`) | `_RLDN32_LIST=/usr/lib32/glpass/libglpass_x.so:...` for new sessions, while glpass is active |
+
+**At boot** (`S13`, once `/usr` is mounted), `glpass-probe` asks the emulator
+whether its GL bridge answers this library:
+
+- **It does:** the link points at glpass, and new sessions preload
+  `libglpass_x` (the flag `/usr/lib32/glpass/active`).
+- **Otherwise:** the link points at IRIX's library, and nothing is
+  preloaded. That covers real hardware, an emulator without host GL, and a
+  library from other glpass sources than the emulator (the boot message then
+  says to run `install.sh` again).
+
+**At shutdown** (`K10`, before `/usr` is unmounted), the link goes back to
+IRIX's library. A disk moved to real hardware therefore starts with IRIX's
+OpenGL, even before the boot script runs.
+
+The link changes in one rename, so a program starting at that moment finds
+one library or the other. Running programs keep the library they loaded.
+
+**Fallback inside the library.** glpass's `libGL.so` never breaks a program
+when the emulator's bridge is missing, for example when it is started with
+`glrun` on real hardware:
+
+- **Probing:** the first GL or GLX call probes the bridge with a `SIGILL`
+  handler in place. On real hardware the hypercall word is a reserved
+  instruction, and the trap then only means "no emulator".
+- **Forwarding:** without the bridge, every GL and GLX entry point (968 of
+  them) forwards to IRIX's own library, which it opens by path
+  (`/var/arch/lib32/libGL.so`, or `GLPASS_NATIVE_LIBGL`). IRIX's library
+  loads beside glpass's with symbols of its own, and drives the hardware as
+  usual.
+- **Cost:** on the host's route, the check costs one comparison per call.
+
+**Session files.** `install.sh` saves each one first, once, as
+`<file>.pre-glpass`. Running it again replaces its lines, and `uninstall.sh`
+removes them, which leaves the files byte for byte as before. The lines
+preload `libglpass_x.so` only while it exists and glpass is active. A process
+whose `_RLDN32_LIST` names a missing library does not start, and `rm` is an
+n32 program too, so:
+
+- the scripts clear `_RLDN32_LIST` first;
+- `uninstall.sh` leaves `libglpass_x.so` in place, for the sessions started
+  with it; remove `/usr/lib32/glpass` after logging out.
+
+**Tested** on a clone of the disk, in the emulator:
+
+| Test | Result |
+|---|---|
+| Install, then `gltri` without `glrun` | `irix-emu / glpass (Apple M1 Pro)` |
+| Reboot | The boot script points the link at glpass. The desktop session gets the preload (`~/.sgisession` sees `_RLDN32_LIST`). Quake III reports `GL_RENDERER: glpass`, and Maya runs with its colour-index contexts emulated. |
+| Reboot as real hardware (`INDY_NO_HYPERCALL=1`) | The probe catches the trap (`no emulator`). The link goes back to IRIX's library, nothing is preloaded, and `gltri` runs on `SGI / NEWPORT 8`. |
+| The same, a program forced onto glpass's library | Route `IRIX's own OpenGL`: the same output as with IRIX's library (renderer `NEWPORT 8`, `1.1 Irix 6.5`, the same pixel, exit 0) |
+| Reboot with the bridge again | The link goes back to glpass by itself |
+| `install.sh` twice, then `uninstall.sh` | One set of lines per file while installed. Afterwards the link is IRIX's, the boot script is gone, and the three session files are identical to before. |
+
+**Not covered:**
+
+- **Other ABIs:** o32 and 64-bit programs keep IRIX's OpenGL, since only the
+  n32 `libGL` is switched.
+- **`libGLS.so`** (SGI's GL stream recorder) imports internal functions of
+  IRIX's libGL (`__glXDispatchExec` and two others) that glpass does not
+  provide, so programs using it do not start while glpass is active. No other
+  n32 library on the disk, nor Maya, Quake III or the demos, imports a symbol
+  glpass lacks.
+- **Not provided:** `glXChooseFBConfigWithFltSGIX` and
+  `glXGetFBConfigFltAttribSGIX`, which IRIX's library exports but its
+  headers do not declare.
+- **IRIX's own OpenGL in the emulator** works but is very slow (minutes for a
+  few `gltri` frames): what the boot switch falls back to there is correct,
+  not fast.
 
 ## Running programs
 
@@ -741,7 +831,9 @@ Start a program through the launcher:
 | `_RLDN32_LIST=.../libglpass_x.so:DEFAULT` | Preloads the colormap library (IRIX's equivalent of `LD_PRELOAD`) |
 
 Programs started without `glrun` (from a desktop icon, for example) use IRIX's
-own OpenGL, as before.
+own OpenGL, unless glpass is installed system-wide (see
+[System-wide installation](#system-wide-installation)); then `glrun` is
+not needed.
 
 ## Diagnostics
 
@@ -749,6 +841,10 @@ own OpenGL, as before.
 |---|---|---|
 | IRIX | `GLPASS_TRACE=1` | Logs, to the program's stderr: the first call of every GL entry point; GLX calls; presents and palettes; and, from `libglpass_x`, the pixel values handed to X and any non-copy X line drawing |
 | IRIX | `GLPASS_TRACE=1` and the file `/tmp/glpass.dump` | While the file exists, every command sent is logged with its context and first arguments (integers and floats). Create it, do the action to study, delete it |
+| IRIX | `GLPASS_NATIVE=1` | Sends every GL and GLX call to IRIX's own OpenGL, as the library does by itself without the emulator's bridge |
+| IRIX | `GLPASS_NATIVE_LIBGL=<file>` | IRIX's own libGL for that fallback (default `/var/arch/lib32/libGL.so`) |
+| IRIX | `LD_LIBRARYN32_PATH=/usr/lib32/glpass /usr/lib32/glpass/glpass-probe -v` | Whether the emulator's GL bridge answers this library (exit status 0 yes, 1 no emulator, 2 no host GL, 3 other glpass sources) |
+| Emulator | `INDY_NO_HYPERCALL=1` | The hypercall word traps (reserved instruction) as on real hardware: tests the fallbacks |
 | IRIX | `GLPASS_OVERLAY=1` | Offers the X server's overlay visual for overlay requests that its depth satisfies (see below) |
 | Emulator | `INDY_TRACE_GL=1` | Logs each composited image (size, position, key alignment, centre pixel) and the host time of each swap |
 | Emulator | `INDY_GL_DUMP=<dir>` | With `INDY_TRACE_GL`, writes each window's last host image to `<dir>/gl_<window>.ppm` |
@@ -835,7 +931,8 @@ Known limitations:
   - **If it appears again,** a screenshot and the steps that led to it are
     what is needed to find the cause.
 - **Host:** macOS only (CGL, legacy OpenGL 2.1). Other hosts get the stub.
-- **Guest:** n32 programs only, started through `glrun`.
+- **Guest:** n32 programs only, started through `glrun` or with glpass
+  installed system-wide.
 - **Window changes while the program is idle:** the library has no thread of
   its own, so a move or unmap shows on the display at the next present or
   `glXMakeCurrent` from any of the program's threads. Until then, the image
@@ -858,7 +955,9 @@ Known limitations:
   `host/GlDispatchGen.inc`, checking with the host compiler which functions
   the macOS OpenGL headers declare. Rebuild the emulator and the guest.
 - **Hand-written entry points:** list the function in the generator's `MANUAL`
-  set, implement it in `guest/glpass.c`, and, if it sends a command, add its
+  set, implement it in `guest/glpass.c` as `glp_impl_<name>` (the generator
+  writes the public `<name>`, which checks the route first: host GPU or
+  IRIX's own OpenGL), and, if it sends a command, add its
   replay case in `host/GlBridgeMac.cpp`. A function the guest only needs to
   watch (it tracks state with it, then sends the command unchanged) goes in
   `GUEST_MANUAL` instead: the host replay stays generated.

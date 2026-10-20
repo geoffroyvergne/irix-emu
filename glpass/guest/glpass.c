@@ -21,6 +21,7 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <pthread.h>
+#include <setjmp.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <sys/time.h>
@@ -62,23 +63,119 @@ static long glp_gl(unsigned int op, unsigned int context, const void *buffer, un
 }
 
 static int glp_state = -1; /* -1 unknown, 0 unavailable, 1 available */
+static int glp_why;        /* why unavailable: GLP_PROBE_* */
+
+/* The hypercall word is a reserved instruction: on a real Indy (or any
+   machine but the emulator) it raises SIGILL. The first PING runs with a
+   SIGILL handler of its own, so that this only means "no emulator". */
+static sigjmp_buf probe_jump;
+
+static void probe_trap(int sig)
+{
+    (void)sig;
+    siglongjmp(probe_jump, 1);
+}
+
+static long glp_ping(long *version)
+{
+    struct sigaction trap, saved;
+    long result = -1;
+    memset(&trap, 0, sizeof trap);
+    trap.sa_handler = probe_trap;
+    sigemptyset(&trap.sa_mask);
+    if (sigaction(SIGILL, &trap, &saved) != 0) return -1;
+    if (sigsetjmp(probe_jump, 1) == 0) result = glp_call(GLP_SERVICE_PING, 0, 0, 0, version);
+    sigaction(SIGILL, &saved, 0);
+    return result;
+}
 
 static int glp_available(void)
 {
     if (glp_state < 0) {
         long version = 0, hello = -1;
-        if (glp_call(GLP_SERVICE_PING, 0, 0, 0, &version) == (long)GLP_PING_MAGIC) {
-            hello = glp_gl(GLP_OP_HELLO, 0, 0, GLP_FN_TABLE_ID);
+        glp_lock(); /* the SIGILL handler is the process's */
+        if (glp_state < 0) {
+            if (glp_ping(&version) == (long)GLP_PING_MAGIC) {
+                hello = glp_gl(GLP_OP_HELLO, 0, 0, GLP_FN_TABLE_ID);
+                glp_why = hello == (long)GLP_VERSION ? GLP_PROBE_OK
+                          : hello == GLP_ERR_TABLE   ? GLP_PROBE_MISMATCH
+                                                     : GLP_PROBE_NO_BRIDGE;
+            } else {
+                glp_why = GLP_PROBE_NO_EMULATOR;
+            }
+            if (glp_why == GLP_PROBE_MISMATCH) {
+                fprintf(stderr, "glpass: this library and the emulator come from different glpass sources: "
+                                "rebuild it in IRIX (see glpass/README.md)\n");
+            }
+            glp_state = glp_why == GLP_PROBE_OK;
         }
-        glp_state = hello == (long)GLP_VERSION;
-        if (hello == GLP_ERR_TABLE) {
-            fprintf(stderr, "glpass: this library and the emulator come from different glpass sources: "
-                            "rebuild it in IRIX (see glpass/README.md)\n");
-        } else if (!glp_state) {
-            fprintf(stderr, "glpass: no host GL pass-through in this emulator\n");
-        }
+        glp_unlock();
     }
     return glp_state;
+}
+
+/* For glpass-probe and the boot script: GLP_PROBE_*. */
+int glpass_probe(void)
+{
+    (void)glp_available();
+    return glp_why;
+}
+
+/* ---- Route: the host GPU, or IRIX's own OpenGL -------------------------------
+
+   Every GL and GLX entry point checks the route first; it is decided at the
+   first call. GLP_ROUTE_HOST: the emulator's bridge answers, glpass runs
+   the call. GLP_ROUTE_NATIVE: the call goes on to IRIX's own libGL, the
+   file /usr/lib32/libGL.so names on a system without glpass, so a disk with
+   glpass installed system-wide still runs GL programs on real hardware, in
+   an emulator without host GL, or with a library that no longer matches the
+   emulator. GLPASS_NATIVE=1 asks for IRIX's OpenGL; GLPASS_NATIVE_LIBGL
+   names its file. With neither available, the route is the host's and GL
+   reports itself unavailable, as before. */
+#ifndef GLP_NATIVE_LIBGL
+#define GLP_NATIVE_LIBGL "/var/arch/lib32/libGL.so"
+#endif
+
+int glp_route;
+static void *native_gl;
+
+static void glx_log(const char *format, ...);
+
+static void *native_open(void)
+{
+    const char *path = getenv("GLPASS_NATIVE_LIBGL");
+    void *h = dlopen(path && *path ? path : GLP_NATIVE_LIBGL, RTLD_LAZY);
+    if (h && dlsym(h, "glpass_probe")) h = 0; /* this library itself: it would forward to itself */
+    return h;
+}
+
+static void glp_decide(void)
+{
+    glp_lock();
+    if (!glp_route) {
+        const char *force = getenv("GLPASS_NATIVE");
+        const int want_native = force && *force && *force != '0';
+        if (!want_native && glp_available()) {
+            glp_route = GLP_ROUTE_HOST;
+        } else if ((native_gl = native_open()) != 0) {
+            glp_route = GLP_ROUTE_NATIVE;
+        } else {
+            glp_route = GLP_ROUTE_HOST;
+        }
+        glx_log("route: %s (probe %d)", glp_route == GLP_ROUTE_NATIVE ? "IRIX's own OpenGL" : "host GPU", glp_why);
+    }
+    glp_unlock();
+}
+
+int glp_forwarding(void)
+{
+    if (!glp_route) glp_decide();
+    return glp_route == GLP_ROUTE_NATIVE;
+}
+
+void *glp_native_symbol(const char *name)
+{
+    return native_gl ? dlsym(native_gl, name) : 0;
 }
 
 /* ---- Diagnostics ------------------------------------------------------------ */
@@ -804,7 +901,7 @@ static void put_image(unsigned int fn, const unsigned int *args, unsigned int na
     }
 }
 
-void glPixelStorei(GLenum pname, GLint param)
+void glp_impl_glPixelStorei(GLenum pname, GLint param)
 {
     struct glp_client *c = &ctx()->client;
     unsigned int *p;
@@ -833,9 +930,9 @@ void glPixelStorei(GLenum pname, GLint param)
     p[1] = (unsigned int)param;
 }
 
-void glPixelStoref(GLenum pname, GLfloat param) { glPixelStorei(pname, (GLint)(param + (param < 0 ? -0.5f : 0.5f))); }
+void glp_impl_glPixelStoref(GLenum pname, GLfloat param) { glPixelStorei(pname, (GLint)(param + (param < 0 ? -0.5f : 0.5f))); }
 
-void glTexImage1D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLint border, GLenum format,
+void glp_impl_glTexImage1D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLint border, GLenum format,
                   GLenum type, const GLvoid *pixels)
 {
     unsigned int a[7];
@@ -845,7 +942,7 @@ void glTexImage1D(GLenum target, GLint level, GLint internalformat, GLsizei widt
     put_image(GLP_FN_glTexImage1D, a, 7, pixels, image_bytes(&ctx()->client.unpack, width, 1, format, type));
 }
 
-void glTexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border,
+void glp_impl_glTexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border,
                   GLenum format, GLenum type, const GLvoid *pixels)
 {
     unsigned int a[8];
@@ -857,7 +954,7 @@ void glTexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei widt
 
 /* 3D textures (GL 1.2 / EXT_texture3D): the host's core glTexImage3D. The
    signatures are the IRIX headers' (internalformat a GLenum). */
-void glTexImage3D(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth,
+void glp_impl_glTexImage3D(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth,
                   GLint border, GLenum format, GLenum type, const GLvoid *pixels)
 {
     unsigned int a[9];
@@ -869,13 +966,13 @@ void glTexImage3D(GLenum target, GLint level, GLenum internalformat, GLsizei wid
               image_bytes_3d(&ctx()->client.unpack, width, height, depth, format, type));
 }
 
-void glTexImage3DEXT(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height,
+void glp_impl_glTexImage3DEXT(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height,
                      GLsizei depth, GLint border, GLenum format, GLenum type, const GLvoid *pixels)
 {
     glTexImage3D(target, level, internalformat, width, height, depth, border, format, type, pixels);
 }
 
-void glTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width,
+void glp_impl_glTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width,
                      GLsizei height, GLsizei depth, GLenum format, GLenum type, const GLvoid *pixels)
 {
     unsigned int a[10];
@@ -887,13 +984,13 @@ void glTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, G
               image_bytes_3d(&ctx()->client.unpack, width, height, depth, format, type));
 }
 
-void glTexSubImage3DEXT(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width,
+void glp_impl_glTexSubImage3DEXT(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width,
                         GLsizei height, GLsizei depth, GLenum format, GLenum type, const GLvoid *pixels)
 {
     glTexSubImage3D(target, level, xoffset, yoffset, zoffset, width, height, depth, format, type, pixels);
 }
 
-void glTexSubImage1D(GLenum target, GLint level, GLint xoffset, GLsizei width, GLenum format, GLenum type,
+void glp_impl_glTexSubImage1D(GLenum target, GLint level, GLint xoffset, GLsizei width, GLenum format, GLenum type,
                      const GLvoid *pixels)
 {
     unsigned int a[6];
@@ -903,7 +1000,7 @@ void glTexSubImage1D(GLenum target, GLint level, GLint xoffset, GLsizei width, G
     put_image(GLP_FN_glTexSubImage1D, a, 6, pixels, image_bytes(&ctx()->client.unpack, width, 1, format, type));
 }
 
-void glTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height,
+void glp_impl_glTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height,
                      GLenum format, GLenum type, const GLvoid *pixels)
 {
     unsigned int a[8];
@@ -913,19 +1010,19 @@ void glTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, G
     put_image(GLP_FN_glTexSubImage2D, a, 8, pixels, image_bytes(&ctx()->client.unpack, width, height, format, type));
 }
 
-void glTexSubImage1DEXT(GLenum target, GLint level, GLint xoffset, GLsizei width, GLenum format, GLenum type,
+void glp_impl_glTexSubImage1DEXT(GLenum target, GLint level, GLint xoffset, GLsizei width, GLenum format, GLenum type,
                         const GLvoid *pixels)
 {
     glTexSubImage1D(target, level, xoffset, width, format, type, pixels);
 }
 
-void glTexSubImage2DEXT(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height,
+void glp_impl_glTexSubImage2DEXT(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height,
                         GLenum format, GLenum type, const GLvoid *pixels)
 {
     glTexSubImage2D(target, level, xoffset, yoffset, width, height, format, type, pixels);
 }
 
-void glDrawPixels(GLsizei width, GLsizei height, GLenum format, GLenum type, const GLvoid *pixels)
+void glp_impl_glDrawPixels(GLsizei width, GLsizei height, GLenum format, GLenum type, const GLvoid *pixels)
 {
     unsigned int a[4];
     TRACE(glDrawPixels);
@@ -933,7 +1030,7 @@ void glDrawPixels(GLsizei width, GLsizei height, GLenum format, GLenum type, con
     put_image(GLP_FN_glDrawPixels, a, 4, pixels, image_bytes(&ctx()->client.unpack, width, height, format, type));
 }
 
-void glBitmap(GLsizei width, GLsizei height, GLfloat xorig, GLfloat yorig, GLfloat xmove, GLfloat ymove,
+void glp_impl_glBitmap(GLsizei width, GLsizei height, GLfloat xorig, GLfloat yorig, GLfloat xmove, GLfloat ymove,
               const GLubyte *bitmap)
 {
     unsigned int a[6];
@@ -944,7 +1041,7 @@ void glBitmap(GLsizei width, GLsizei height, GLfloat xorig, GLfloat yorig, GLflo
               image_bytes(&ctx()->client.unpack, width, height, GL_COLOR_INDEX, GL_BITMAP));
 }
 
-void glPolygonStipple(const GLubyte *mask)
+void glp_impl_glPolygonStipple(const GLubyte *mask)
 {
     TRACE(glPolygonStipple);
     put_image(GLP_FN_glPolygonStipple, 0, 0, mask,
@@ -953,7 +1050,7 @@ void glPolygonStipple(const GLubyte *mask)
 
 /* ---- Lists, textures, evaluators ------------------------------------------------- */
 
-void glListBase(GLuint base)
+void glp_impl_glListBase(GLuint base)
 {
     GLXContext c = ctx();
     TRACE(glListBase);
@@ -990,7 +1087,7 @@ static unsigned int list_name(GLenum type, const GLvoid *lists, GLsizei i)
     return (unsigned int)v;
 }
 
-void glCallLists(GLsizei n, GLenum type, const GLvoid *lists)
+void glp_impl_glCallLists(GLsizei n, GLenum type, const GLvoid *lists)
 {
     GLXContext c = current_context();
     const int tracked = c && c->index_mode && !c->ix.list;
@@ -1034,7 +1131,7 @@ void glCallLists(GLsizei n, GLenum type, const GLvoid *lists)
     if (ids && ids != local) free(ids);
 }
 
-void glDeleteTextures(GLsizei n, const GLuint *textures)
+void glp_impl_glDeleteTextures(GLsizei n, const GLuint *textures)
 {
     unsigned int *p;
     TRACE(glDeleteTextures);
@@ -1044,9 +1141,9 @@ void glDeleteTextures(GLsizei n, const GLuint *textures)
     memcpy(p + 1, textures, (size_t)n * 4);
 }
 
-void glDeleteTexturesEXT(GLsizei n, const GLuint *textures) { glDeleteTextures(n, textures); }
+void glp_impl_glDeleteTexturesEXT(GLsizei n, const GLuint *textures) { glDeleteTextures(n, textures); }
 
-void glPrioritizeTextures(GLsizei n, const GLuint *textures, const GLclampf *priorities)
+void glp_impl_glPrioritizeTextures(GLsizei n, const GLuint *textures, const GLclampf *priorities)
 {
     unsigned int *p;
     TRACE(glPrioritizeTextures);
@@ -1057,12 +1154,12 @@ void glPrioritizeTextures(GLsizei n, const GLuint *textures, const GLclampf *pri
     memcpy(p + 1 + n, priorities, (size_t)n * 4);
 }
 
-void glPrioritizeTexturesEXT(GLsizei n, const GLuint *textures, const GLclampf *priorities)
+void glp_impl_glPrioritizeTexturesEXT(GLsizei n, const GLuint *textures, const GLclampf *priorities)
 {
     glPrioritizeTextures(n, textures, priorities);
 }
 
-void glPolygonOffsetEXT(GLfloat factor, GLfloat bias)
+void glp_impl_glPolygonOffsetEXT(GLfloat factor, GLfloat bias)
 {
     /* The EXT bias is in depth-range units; the core command counts depth
        steps (the host depth buffers have 24 bits). */
@@ -1118,26 +1215,26 @@ static void put_map(unsigned int fn, GLenum target, int isdouble, double u1, dou
     }
 }
 
-void glMap1f(GLenum target, GLfloat u1, GLfloat u2, GLint stride, GLint order, const GLfloat *points)
+void glp_impl_glMap1f(GLenum target, GLfloat u1, GLfloat u2, GLint stride, GLint order, const GLfloat *points)
 {
     TRACE(glMap1f);
     put_map(GLP_FN_glMap1f, target, 0, u1, u2, 0, 1, stride, order, 0, 1, points);
 }
 
-void glMap1d(GLenum target, GLdouble u1, GLdouble u2, GLint stride, GLint order, const GLdouble *points)
+void glp_impl_glMap1d(GLenum target, GLdouble u1, GLdouble u2, GLint stride, GLint order, const GLdouble *points)
 {
     TRACE(glMap1d);
     put_map(GLP_FN_glMap1d, target, 1, u1, u2, 0, 1, stride, order, 0, 1, points);
 }
 
-void glMap2f(GLenum target, GLfloat u1, GLfloat u2, GLint ustride, GLint uorder, GLfloat v1, GLfloat v2,
+void glp_impl_glMap2f(GLenum target, GLfloat u1, GLfloat u2, GLint ustride, GLint uorder, GLfloat v1, GLfloat v2,
              GLint vstride, GLint vorder, const GLfloat *points)
 {
     TRACE(glMap2f);
     put_map(GLP_FN_glMap2f, target, 0, u1, u2, v1, v2, ustride, uorder, vstride, vorder, points);
 }
 
-void glMap2d(GLenum target, GLdouble u1, GLdouble u2, GLint ustride, GLint uorder, GLdouble v1, GLdouble v2,
+void glp_impl_glMap2d(GLenum target, GLdouble u1, GLdouble u2, GLint ustride, GLint uorder, GLdouble v1, GLdouble v2,
              GLint vstride, GLint vorder, const GLdouble *points)
 {
     TRACE(glMap2d);
@@ -1158,9 +1255,9 @@ static void pixel_map(unsigned int fn, GLenum map, GLint mapsize, const void *va
     }
 }
 
-void glPixelMapfv(GLenum map, GLint mapsize, const GLfloat *values) { TRACE(glPixelMapfv); pixel_map(GLP_FN_glPixelMapfv, map, mapsize, values, 0); }
-void glPixelMapuiv(GLenum map, GLint mapsize, const GLuint *values) { TRACE(glPixelMapuiv); pixel_map(GLP_FN_glPixelMapuiv, map, mapsize, values, 0); }
-void glPixelMapusv(GLenum map, GLint mapsize, const GLushort *values) { TRACE(glPixelMapusv); pixel_map(GLP_FN_glPixelMapusv, map, mapsize, values, 1); }
+void glp_impl_glPixelMapfv(GLenum map, GLint mapsize, const GLfloat *values) { TRACE(glPixelMapfv); pixel_map(GLP_FN_glPixelMapfv, map, mapsize, values, 0); }
+void glp_impl_glPixelMapuiv(GLenum map, GLint mapsize, const GLuint *values) { TRACE(glPixelMapuiv); pixel_map(GLP_FN_glPixelMapuiv, map, mapsize, values, 0); }
+void glp_impl_glPixelMapusv(GLenum map, GLint mapsize, const GLushort *values) { TRACE(glPixelMapusv); pixel_map(GLP_FN_glPixelMapusv, map, mapsize, values, 1); }
 
 /* ---- Client vertex arrays ------------------------------------------------------------ */
 
@@ -1192,19 +1289,19 @@ static void set_array(int which, int size, GLenum type, GLsizei stride, const vo
     a->pointer = pointer;
 }
 
-void glVertexPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer) { TRACE(glVertexPointer); set_array(ARR_VERTEX, size, type, stride, pointer); }
-void glNormalPointer(GLenum type, GLsizei stride, const GLvoid *pointer) { TRACE(glNormalPointer); set_array(ARR_NORMAL, 3, type, stride, pointer); }
-void glColorPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer) { TRACE(glColorPointer); set_array(ARR_COLOR, size, type, stride, pointer); }
-void glIndexPointer(GLenum type, GLsizei stride, const GLvoid *pointer) { TRACE(glIndexPointer); set_array(ARR_INDEX, 1, type, stride, pointer); }
-void glTexCoordPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer) { TRACE(glTexCoordPointer); set_array(texcoord_array(&ctx()->client), size, type, stride, pointer); }
-void glEdgeFlagPointer(GLsizei stride, const GLboolean *pointer) { TRACE(glEdgeFlagPointer); set_array(ARR_EDGEFLAG, 1, GL_UNSIGNED_BYTE, stride, pointer); }
+void glp_impl_glVertexPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer) { TRACE(glVertexPointer); set_array(ARR_VERTEX, size, type, stride, pointer); }
+void glp_impl_glNormalPointer(GLenum type, GLsizei stride, const GLvoid *pointer) { TRACE(glNormalPointer); set_array(ARR_NORMAL, 3, type, stride, pointer); }
+void glp_impl_glColorPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer) { TRACE(glColorPointer); set_array(ARR_COLOR, size, type, stride, pointer); }
+void glp_impl_glIndexPointer(GLenum type, GLsizei stride, const GLvoid *pointer) { TRACE(glIndexPointer); set_array(ARR_INDEX, 1, type, stride, pointer); }
+void glp_impl_glTexCoordPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer) { TRACE(glTexCoordPointer); set_array(texcoord_array(&ctx()->client), size, type, stride, pointer); }
+void glp_impl_glEdgeFlagPointer(GLsizei stride, const GLboolean *pointer) { TRACE(glEdgeFlagPointer); set_array(ARR_EDGEFLAG, 1, GL_UNSIGNED_BYTE, stride, pointer); }
 
-void glVertexPointerEXT(GLint size, GLenum type, GLsizei stride, GLsizei count, const GLvoid *pointer) { (void)count; glVertexPointer(size, type, stride, pointer); }
-void glNormalPointerEXT(GLenum type, GLsizei stride, GLsizei count, const GLvoid *pointer) { (void)count; glNormalPointer(type, stride, pointer); }
-void glColorPointerEXT(GLint size, GLenum type, GLsizei stride, GLsizei count, const GLvoid *pointer) { (void)count; glColorPointer(size, type, stride, pointer); }
-void glIndexPointerEXT(GLenum type, GLsizei stride, GLsizei count, const GLvoid *pointer) { (void)count; glIndexPointer(type, stride, pointer); }
-void glTexCoordPointerEXT(GLint size, GLenum type, GLsizei stride, GLsizei count, const GLvoid *pointer) { (void)count; glTexCoordPointer(size, type, stride, pointer); }
-void glEdgeFlagPointerEXT(GLsizei stride, GLsizei count, const GLboolean *pointer) { (void)count; glEdgeFlagPointer(stride, pointer); }
+void glp_impl_glVertexPointerEXT(GLint size, GLenum type, GLsizei stride, GLsizei count, const GLvoid *pointer) { (void)count; glVertexPointer(size, type, stride, pointer); }
+void glp_impl_glNormalPointerEXT(GLenum type, GLsizei stride, GLsizei count, const GLvoid *pointer) { (void)count; glNormalPointer(type, stride, pointer); }
+void glp_impl_glColorPointerEXT(GLint size, GLenum type, GLsizei stride, GLsizei count, const GLvoid *pointer) { (void)count; glColorPointer(size, type, stride, pointer); }
+void glp_impl_glIndexPointerEXT(GLenum type, GLsizei stride, GLsizei count, const GLvoid *pointer) { (void)count; glIndexPointer(type, stride, pointer); }
+void glp_impl_glTexCoordPointerEXT(GLint size, GLenum type, GLsizei stride, GLsizei count, const GLvoid *pointer) { (void)count; glTexCoordPointer(size, type, stride, pointer); }
+void glp_impl_glEdgeFlagPointerEXT(GLsizei stride, GLsizei count, const GLboolean *pointer) { (void)count; glEdgeFlagPointer(stride, pointer); }
 
 /* Sent too: the host keeps it for the program's own glGet. */
 static void client_active_texture(unsigned int fn, GLenum texture)
@@ -1214,24 +1311,24 @@ static void client_active_texture(unsigned int fn, GLenum texture)
     glp_put(fn, 1)[0] = texture;
 }
 
-void glClientActiveTexture(GLenum texture) { TRACE(glClientActiveTexture); client_active_texture(GLP_FN_glClientActiveTexture, texture); }
-void glClientActiveTextureARB(GLenum texture) { TRACE(glClientActiveTextureARB); client_active_texture(GLP_FN_glClientActiveTextureARB, texture); }
+void glp_impl_glClientActiveTexture(GLenum texture) { TRACE(glClientActiveTexture); client_active_texture(GLP_FN_glClientActiveTexture, texture); }
+void glp_impl_glClientActiveTextureARB(GLenum texture) { TRACE(glClientActiveTextureARB); client_active_texture(GLP_FN_glClientActiveTextureARB, texture); }
 
-void glEnableClientState(GLenum array)
+void glp_impl_glEnableClientState(GLenum array)
 {
     int i = array_index(array);
     TRACE(glEnableClientState);
     if (i >= 0) ctx()->client.arrays[i].enabled = 1;
 }
 
-void glDisableClientState(GLenum array)
+void glp_impl_glDisableClientState(GLenum array)
 {
     int i = array_index(array);
     TRACE(glDisableClientState);
     if (i >= 0) ctx()->client.arrays[i].enabled = 0;
 }
 
-void glInterleavedArrays(GLenum format, GLsizei stride, const GLvoid *pointer)
+void glp_impl_glInterleavedArrays(GLenum format, GLsizei stride, const GLvoid *pointer)
 {
     /* OpenGL 1.1 table 2.5: sizes, then offsets and stride in floats. */
     static const struct {
@@ -1396,13 +1493,13 @@ static void client_draw(unsigned int kind, GLenum mode, GLint first, GLsizei cou
     if (recorded) passes_end(c);
 }
 
-void glDrawArrays(GLenum mode, GLint first, GLsizei count)
+void glp_impl_glDrawArrays(GLenum mode, GLint first, GLsizei count)
 {
     TRACE(glDrawArrays);
     client_draw(GLP_DRAW_ARRAYS, mode, first, count, 0, 0);
 }
 
-void glDrawArraysEXT(GLenum mode, GLint first, GLsizei count) { glDrawArrays(mode, first, count); }
+void glp_impl_glDrawArraysEXT(GLenum mode, GLint first, GLsizei count) { glDrawArrays(mode, first, count); }
 
 /* glBegin ... glArrayElement* ... glEnd (Quake III draws so) becomes one
    indexed draw: the glBegin is held back and the elements collected; any
@@ -1416,7 +1513,7 @@ static void begin_materialize(struct glp_thread *t)
     for (i = 0; i < count; ++i) client_draw(GLP_DRAW_ELEMENT, 0, (GLint)t->begin_elements[i], 1, 0, 0);
 }
 
-void glBegin(GLenum mode)
+void glp_impl_glBegin(GLenum mode)
 {
     struct glp_thread *t = glp_self();
     GLXContext c = ctx();
@@ -1458,7 +1555,7 @@ static void end_block(void)
     t->begin_count = 0;
 }
 
-void glEnd(void)
+void glp_impl_glEnd(void)
 {
     GLXContext c = ctx();
     TRACE(glEnd);
@@ -1467,7 +1564,7 @@ void glEnd(void)
     passes_end(c);
 }
 
-void glArrayElement(GLint i)
+void glp_impl_glArrayElement(GLint i)
 {
     struct glp_thread *t = glp_self();
     TRACE(glArrayElement);
@@ -1488,9 +1585,9 @@ void glArrayElement(GLint i)
     }
     client_draw(GLP_DRAW_ELEMENT, 0, i, 1, 0, 0);
 }
-void glArrayElementEXT(GLint i) { glArrayElement(i); }
+void glp_impl_glArrayElementEXT(GLint i) { glArrayElement(i); }
 
-void glDrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indices)
+void glp_impl_glDrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indices)
 {
     unsigned int local[1024], *idx, lo = 0xFFFFFFFFu, hi = 0;
     GLsizei i;
@@ -1512,18 +1609,18 @@ void glDrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indic
     if (idx != local) free(idx);
 }
 
-void glDrawRangeElements(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const GLvoid *indices)
+void glp_impl_glDrawRangeElements(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const GLvoid *indices)
 {
     (void)start; (void)end;
     glDrawElements(mode, count, type, indices);
 }
 
-void glDrawRangeElementsEXT(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const GLvoid *indices)
+void glp_impl_glDrawRangeElementsEXT(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const GLvoid *indices)
 {
     glDrawRangeElements(mode, start, end, count, type, indices);
 }
 
-void glPushClientAttrib(GLbitfield mask)
+void glp_impl_glPushClientAttrib(GLbitfield mask)
 {
     GLXContext c = ctx();
     TRACE(glPushClientAttrib);
@@ -1535,7 +1632,7 @@ void glPushClientAttrib(GLbitfield mask)
     glp_put(GLP_FN_glPushClientAttrib, 1)[0] = mask; /* the host keeps its pixel store state in step */
 }
 
-void glPopClientAttrib(void)
+void glp_impl_glPopClientAttrib(void)
 {
     GLXContext c = ctx();
     TRACE(glPopClientAttrib);
@@ -1560,7 +1657,7 @@ static int draws_front(GLenum mode)
     return mode == GL_FRONT || mode == GL_FRONT_LEFT || mode == GL_FRONT_AND_BACK || mode == GL_LEFT;
 }
 
-void glDrawBuffer(GLenum mode)
+void glp_impl_glDrawBuffer(GLenum mode)
 {
     GLXContext current = current_context();
     TRACE(glDrawBuffer);
@@ -1569,7 +1666,7 @@ void glDrawBuffer(GLenum mode)
     glp_put(GLP_FN_glDrawBuffer, 1)[0] = mode;
 }
 
-void glReadBuffer(GLenum mode)
+void glp_impl_glReadBuffer(GLenum mode)
 {
     GLXContext current = current_context();
     TRACE(glReadBuffer);
@@ -1578,7 +1675,7 @@ void glReadBuffer(GLenum mode)
     glp_put(GLP_FN_glReadBuffer, 1)[0] = mode;
 }
 
-void glSelectBuffer(GLsizei size, GLuint *buffer)
+void glp_impl_glSelectBuffer(GLsizei size, GLuint *buffer)
 {
     GLXContext c = ctx();
     TRACE(glSelectBuffer);
@@ -1587,7 +1684,7 @@ void glSelectBuffer(GLsizei size, GLuint *buffer)
     glp_put(GLP_FN_glSelectBuffer, 1)[0] = (unsigned int)size;
 }
 
-void glFeedbackBuffer(GLsizei size, GLenum type, GLfloat *buffer)
+void glp_impl_glFeedbackBuffer(GLsizei size, GLenum type, GLfloat *buffer)
 {
     GLXContext c = ctx();
     unsigned int *p;
@@ -1599,7 +1696,7 @@ void glFeedbackBuffer(GLsizei size, GLenum type, GLfloat *buffer)
     p[1] = type;
 }
 
-GLint glRenderMode(GLenum mode)
+GLint glp_impl_glRenderMode(GLenum mode)
 {
     GLXContext c = ctx();
     void *reply = 0;
@@ -1621,7 +1718,7 @@ GLint glRenderMode(GLenum mode)
 
 /* ---- Queries ------------------------------------------------------------------------- */
 
-GLenum glGetError(void)
+GLenum glp_impl_glGetError(void)
 {
     TRACE(glGetError);
     return (GLenum)glp_query(GLP_FN_glGetError, 0, 0, 0, 0);
@@ -1699,7 +1796,7 @@ static void get_values(unsigned int fn, GLenum pname, void *params, unsigned int
     if (params) glp_query(fn, params, (unsigned int)get_count(pname) * elem, &arg, 1);
 }
 
-void glGetBooleanv(GLenum pname, GLboolean *params)
+void glp_impl_glGetBooleanv(GLenum pname, GLboolean *params)
 {
     double v;
     TRACE(glGetBooleanv);
@@ -1707,7 +1804,7 @@ void glGetBooleanv(GLenum pname, GLboolean *params)
     get_values(GLP_FN_glGetBooleanv, pname, params, 1);
 }
 
-void glGetIntegerv(GLenum pname, GLint *params)
+void glp_impl_glGetIntegerv(GLenum pname, GLint *params)
 {
     double v;
     TRACE(glGetIntegerv);
@@ -1715,7 +1812,7 @@ void glGetIntegerv(GLenum pname, GLint *params)
     get_values(GLP_FN_glGetIntegerv, pname, params, 4);
 }
 
-void glGetFloatv(GLenum pname, GLfloat *params)
+void glp_impl_glGetFloatv(GLenum pname, GLfloat *params)
 {
     double v;
     TRACE(glGetFloatv);
@@ -1723,7 +1820,7 @@ void glGetFloatv(GLenum pname, GLfloat *params)
     get_values(GLP_FN_glGetFloatv, pname, params, 4);
 }
 
-void glGetDoublev(GLenum pname, GLdouble *params)
+void glp_impl_glGetDoublev(GLenum pname, GLdouble *params)
 {
     double v;
     TRACE(glGetDoublev);
@@ -1731,7 +1828,7 @@ void glGetDoublev(GLenum pname, GLdouble *params)
     get_values(GLP_FN_glGetDoublev, pname, params, 8);
 }
 
-GLboolean glIsEnabled(GLenum cap)
+GLboolean glp_impl_glIsEnabled(GLenum cap)
 {
     unsigned int arg = cap;
     int i = array_index(cap);
@@ -1750,7 +1847,7 @@ static void query2(unsigned int fn, unsigned int a, unsigned int b, void *reply,
 }
 
 #define GET_PNAME(name, group, T)                                                                  \
-    void name(GLenum a, GLenum pname, T *params)                                                   \
+    void glp_impl_##name(GLenum a, GLenum pname, T *params)                                        \
     {                                                                                              \
         TRACE(name);                                                                               \
         query2(GLP_FN_##name, a, pname, params, (unsigned int)(glp_pname_count(group, pname) * sizeof(T))); \
@@ -1768,7 +1865,7 @@ GET_PNAME(glGetTexGenfv, GLP_GROUP_TEXGEN, GLfloat)
 GET_PNAME(glGetTexGeniv, GLP_GROUP_TEXGEN, GLint)
 GET_PNAME(glGetTexGendv, GLP_GROUP_TEXGEN, GLdouble)
 
-void glGetTexLevelParameterfv(GLenum target, GLint level, GLenum pname, GLfloat *params)
+void glp_impl_glGetTexLevelParameterfv(GLenum target, GLint level, GLenum pname, GLfloat *params)
 {
     unsigned int a[3];
     TRACE(glGetTexLevelParameterfv);
@@ -1776,7 +1873,7 @@ void glGetTexLevelParameterfv(GLenum target, GLint level, GLenum pname, GLfloat 
     if (params) glp_query(GLP_FN_glGetTexLevelParameterfv, params, 4, a, 3);
 }
 
-void glGetTexLevelParameteriv(GLenum target, GLint level, GLenum pname, GLint *params)
+void glp_impl_glGetTexLevelParameteriv(GLenum target, GLint level, GLenum pname, GLint *params)
 {
     unsigned int a[3];
     TRACE(glGetTexLevelParameteriv);
@@ -1784,7 +1881,7 @@ void glGetTexLevelParameteriv(GLenum target, GLint level, GLenum pname, GLint *p
     if (params) glp_query(GLP_FN_glGetTexLevelParameteriv, params, 4, a, 3);
 }
 
-void glGetClipPlane(GLenum plane, GLdouble *equation)
+void glp_impl_glGetClipPlane(GLenum plane, GLdouble *equation)
 {
     unsigned int arg = plane;
     TRACE(glGetClipPlane);
@@ -1792,7 +1889,7 @@ void glGetClipPlane(GLenum plane, GLdouble *equation)
 }
 
 /* Image reads: the host fills the program's buffer following the pack state. */
-void glGetPolygonStipple(GLubyte *mask)
+void glp_impl_glGetPolygonStipple(GLubyte *mask)
 {
     TRACE(glGetPolygonStipple);
     if (mask) {
@@ -1801,7 +1898,7 @@ void glGetPolygonStipple(GLubyte *mask)
     }
 }
 
-void glReadPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, GLvoid *pixels)
+void glp_impl_glReadPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, GLvoid *pixels)
 {
     unsigned int a[6], bytes = image_bytes(&ctx()->client.pack, width, height, format, type);
     TRACE(glReadPixels);
@@ -1811,7 +1908,7 @@ void glReadPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format
     glp_query(GLP_FN_glReadPixels, pixels, bytes, a, 6);
 }
 
-void glGetTexImage(GLenum target, GLint level, GLenum format, GLenum type, GLvoid *pixels)
+void glp_impl_glGetTexImage(GLenum target, GLint level, GLenum format, GLenum type, GLvoid *pixels)
 {
     GLint width = 0, height = 1, depth = 1;
     unsigned int a[4], bytes;
@@ -1826,7 +1923,7 @@ void glGetTexImage(GLenum target, GLint level, GLenum format, GLenum type, GLvoi
     glp_query(GLP_FN_glGetTexImage, pixels, bytes, a, 4);
 }
 
-void glGetPointerv(GLenum pname, GLvoid **params)
+void glp_impl_glGetPointerv(GLenum pname, GLvoid **params)
 {
     GLXContext c = ctx();
     int i = -1;
@@ -1845,39 +1942,39 @@ void glGetPointerv(GLenum pname, GLvoid **params)
     *params = (GLvoid *)c->client.arrays[i].pointer;
 }
 
-void glGetPointervEXT(GLenum pname, GLvoid **params) { glGetPointerv(pname, params); }
+void glp_impl_glGetPointervEXT(GLenum pname, GLvoid **params) { glGetPointerv(pname, params); }
 
-GLboolean glIsList(GLuint list)
+GLboolean glp_impl_glIsList(GLuint list)
 {
     TRACE(glIsList);
     return (GLboolean)glp_query(GLP_FN_glIsList, 0, 0, &list, 1);
 }
 
-GLboolean glIsTexture(GLuint texture)
+GLboolean glp_impl_glIsTexture(GLuint texture)
 {
     TRACE(glIsTexture);
     return (GLboolean)glp_query(GLP_FN_glIsTexture, 0, 0, &texture, 1);
 }
 
-GLboolean glIsTextureEXT(GLuint texture) { return glIsTexture(texture); }
+GLboolean glp_impl_glIsTextureEXT(GLuint texture) { return glIsTexture(texture); }
 
-GLuint glGenLists(GLsizei range)
+GLuint glp_impl_glGenLists(GLsizei range)
 {
     unsigned int arg = (unsigned int)range;
     TRACE(glGenLists);
     return (GLuint)glp_query(GLP_FN_glGenLists, 0, 0, &arg, 1);
 }
 
-void glGenTextures(GLsizei n, GLuint *textures)
+void glp_impl_glGenTextures(GLsizei n, GLuint *textures)
 {
     unsigned int arg = (unsigned int)n;
     TRACE(glGenTextures);
     if (n > 0 && textures) glp_query(GLP_FN_glGenTextures, textures, (unsigned int)n * 4, &arg, 1);
 }
 
-void glGenTexturesEXT(GLsizei n, GLuint *textures) { glGenTextures(n, textures); }
+void glp_impl_glGenTexturesEXT(GLsizei n, GLuint *textures) { glGenTextures(n, textures); }
 
-GLboolean glAreTexturesResident(GLsizei n, const GLuint *textures, GLboolean *residences)
+GLboolean glp_impl_glAreTexturesResident(GLsizei n, const GLuint *textures, GLboolean *residences)
 {
     TRACE(glAreTexturesResident);
     if (n <= 0 || !textures || !residences) return GL_TRUE;
@@ -1885,7 +1982,7 @@ GLboolean glAreTexturesResident(GLsizei n, const GLuint *textures, GLboolean *re
                                 (unsigned int)n);
 }
 
-GLboolean glAreTexturesResidentEXT(GLsizei n, const GLuint *textures, GLboolean *residences)
+GLboolean glp_impl_glAreTexturesResidentEXT(GLsizei n, const GLuint *textures, GLboolean *residences)
 {
     return glAreTexturesResident(n, textures, residences);
 }
@@ -1916,7 +2013,7 @@ static int has_word(const char *list, const char *word)
     return 0;
 }
 
-const GLubyte *glGetString(GLenum name)
+const GLubyte *glp_impl_glGetString(GLenum name)
 {
     GLXContext current = current_context();
     static char renderer[256], host_list[8192], extensions[2048];
@@ -2684,18 +2781,18 @@ static void set_index(double index)
     index_changed(current, INDEX_CHANGED_INDEX);
 }
 
-void glIndexd(GLdouble c) { TRACE(glIndexd); set_index(c); }
-void glIndexf(GLfloat c) { TRACE(glIndexf); set_index(c); }
-void glIndexi(GLint c) { TRACE(glIndexi); set_index(c); }
-void glIndexs(GLshort c) { TRACE(glIndexs); set_index(c); }
-void glIndexub(GLubyte c) { TRACE(glIndexub); set_index(c); }
-void glIndexdv(const GLdouble *c) { TRACE(glIndexdv); set_index(c[0]); }
-void glIndexfv(const GLfloat *c) { TRACE(glIndexfv); set_index(c[0]); }
-void glIndexiv(const GLint *c) { TRACE(glIndexiv); set_index(c[0]); }
-void glIndexsv(const GLshort *c) { TRACE(glIndexsv); set_index(c[0]); }
-void glIndexubv(const GLubyte *c) { TRACE(glIndexubv); set_index(c[0]); }
+void glp_impl_glIndexd(GLdouble c) { TRACE(glIndexd); set_index(c); }
+void glp_impl_glIndexf(GLfloat c) { TRACE(glIndexf); set_index(c); }
+void glp_impl_glIndexi(GLint c) { TRACE(glIndexi); set_index(c); }
+void glp_impl_glIndexs(GLshort c) { TRACE(glIndexs); set_index(c); }
+void glp_impl_glIndexub(GLubyte c) { TRACE(glIndexub); set_index(c); }
+void glp_impl_glIndexdv(const GLdouble *c) { TRACE(glIndexdv); set_index(c[0]); }
+void glp_impl_glIndexfv(const GLfloat *c) { TRACE(glIndexfv); set_index(c[0]); }
+void glp_impl_glIndexiv(const GLint *c) { TRACE(glIndexiv); set_index(c[0]); }
+void glp_impl_glIndexsv(const GLshort *c) { TRACE(glIndexsv); set_index(c[0]); }
+void glp_impl_glIndexubv(const GLubyte *c) { TRACE(glIndexubv); set_index(c[0]); }
 
-void glClearIndex(GLfloat c)
+void glp_impl_glClearIndex(GLfloat c)
 {
     GLXContext current = current_context();
     unsigned int i;
@@ -2722,19 +2819,19 @@ static void put_cap(unsigned int fn, GLenum cap)
     put_word(fn, cap);
 }
 
-void glEnable(GLenum cap)
+void glp_impl_glEnable(GLenum cap)
 {
     TRACE(glEnable);
     put_cap(GLP_FN_glEnable, cap);
 }
 
-void glDisable(GLenum cap)
+void glp_impl_glDisable(GLenum cap)
 {
     TRACE(glDisable);
     put_cap(GLP_FN_glDisable, cap);
 }
 
-void glLogicOp(GLenum opcode)
+void glp_impl_glLogicOp(GLenum opcode)
 {
     GLXContext current = current_context();
     TRACE(glLogicOp);
@@ -2746,7 +2843,7 @@ void glLogicOp(GLenum opcode)
     index_changed(current, INDEX_CHANGED_OP);
 }
 
-void glIndexMask(GLuint mask)
+void glp_impl_glIndexMask(GLuint mask)
 {
     GLXContext current = current_context();
     TRACE(glIndexMask);
@@ -2759,7 +2856,7 @@ void glIndexMask(GLuint mask)
 /* glClear ignores the logic op but obeys the index mask. A mask of whole
    channels clears through the colour mask; another is cleared exactly by a
    window-sized rectangle per pass (see index_passes). */
-void glClear(GLbitfield mask)
+void glp_impl_glClear(GLbitfield mask)
 {
     GLXContext c = current_context();
     struct glp_index *ix;
@@ -2822,7 +2919,7 @@ void glClear(GLbitfield mask)
 
 /* The index state is attribute state: GL_COLOR_BUFFER_BIT (mask, logic op,
    clear index), GL_ENABLE_BIT (logic op on/off), GL_CURRENT_BIT (index). */
-void glPushAttrib(GLbitfield mask)
+void glp_impl_glPushAttrib(GLbitfield mask)
 {
     GLXContext c = current_context();
     TRACE(glPushAttrib);
@@ -2836,7 +2933,7 @@ void glPushAttrib(GLbitfield mask)
     ++c->ix.depth;
 }
 
-void glPopAttrib(void)
+void glp_impl_glPopAttrib(void)
 {
     GLXContext c = current_context();
     struct glp_index *ix;
@@ -3233,7 +3330,7 @@ static int list_expand(GLXContext c, const GLuint *ids, GLsizei n)
     return ok;
 }
 
-void glNewList(GLuint list, GLenum mode)
+void glp_impl_glNewList(GLuint list, GLenum mode)
 {
     GLXContext c = current_context();
     unsigned int *p;
@@ -3250,7 +3347,7 @@ void glNewList(GLuint list, GLenum mode)
     recording_start(&c->ix.compile, glp_self(), LIST_MAX_WORDS);
 }
 
-void glEndList(void)
+void glp_impl_glEndList(void)
 {
     GLXContext c = current_context();
     struct glp_index *ix;
@@ -3307,7 +3404,7 @@ void glEndList(void)
     if (!ix->host.known) index_update(c);
 }
 
-void glDeleteLists(GLuint list, GLsizei range)
+void glp_impl_glDeleteLists(GLuint list, GLsizei range)
 {
     GLXContext c = current_context();
     unsigned int *p;
@@ -3402,7 +3499,7 @@ static void index_before_lists(GLXContext c)
     put_index_color(ix->state.index % PALETTE_SIZE);
 }
 
-void glCallList(GLuint list)
+void glp_impl_glCallList(GLuint list)
 {
     GLXContext c = current_context();
     TRACE(glCallList);
@@ -3416,7 +3513,7 @@ void glCallList(GLuint list)
     }
 }
 
-void glDepthFunc(GLenum func)
+void glp_impl_glDepthFunc(GLenum func)
 {
     GLXContext c = current_context();
     TRACE(glDepthFunc);
@@ -3603,6 +3700,15 @@ static void install_error_handler(void)
 x_error_handler glpass_set_error_handler(x_error_handler handler)
 {
     x_error_handler old;
+    if (glp_forwarding()) { /* IRIX's OpenGL: the program's handler, as it is */
+        static x_error_handler (*real)(x_error_handler);
+        if (!real) {
+            void *x11 = dlopen("libX11.so.1", RTLD_LAZY);
+            if (!x11) x11 = dlopen("libX11.so", RTLD_LAZY);
+            if (x11) real = (x_error_handler (*)(x_error_handler))dlsym(x11, "XSetErrorHandler");
+        }
+        return real ? real(handler) : 0;
+    }
     install_error_handler();
     old = program_handler;
     program_handler = handler ? handler : xlib_default;
@@ -4191,7 +4297,7 @@ static void present_flushed(void)
     current->shown_words = t->submitted;
 }
 
-void glFlush(void)
+void glp_impl_glFlush(void)
 {
     GLXContext current = current_context();
     TRACE(glFlush);
@@ -4200,7 +4306,7 @@ void glFlush(void)
     present_flushed();
 }
 
-void glFinish(void)
+void glp_impl_glFinish(void)
 {
     GLXContext current = current_context();
     TRACE(glFinish);
@@ -4301,7 +4407,7 @@ static int overlay_config_value(int attribute, int *value)
     return 0;
 }
 
-Bool glXQueryExtension(Display *dpy, int *error, int *event)
+Bool glp_impl_glXQueryExtension(Display *dpy, int *error, int *event)
 {
     (void)dpy;
     if (error) *error = 0;
@@ -4309,7 +4415,7 @@ Bool glXQueryExtension(Display *dpy, int *error, int *event)
     return glp_available() ? True : False;
 }
 
-Bool glXQueryVersion(Display *dpy, int *major, int *minor)
+Bool glp_impl_glXQueryVersion(Display *dpy, int *major, int *minor)
 {
     (void)dpy;
     if (major) *major = 1;
@@ -4341,7 +4447,7 @@ static int config_value(int attribute, int *value)
     return 0;
 }
 
-int glXGetConfig(Display *dpy, XVisualInfo *vis, int attribute, int *value)
+int glp_impl_glXGetConfig(Display *dpy, XVisualInfo *vis, int attribute, int *value)
 {
     (void)dpy;
     if (!vis || !value) return GLX_BAD_VISUAL;
@@ -4475,7 +4581,7 @@ static int chosen_mode(const XVisualInfo *vi)
     return mode;
 }
 
-XVisualInfo *glXChooseVisual(Display *dpy, int screen, int *attributes)
+XVisualInfo *glp_impl_glXChooseVisual(Display *dpy, int screen, int *attributes)
 {
     int count = 0;
     XVisualInfo *vi;
@@ -4522,7 +4628,7 @@ XVisualInfo *glXChooseVisual(Display *dpy, int screen, int *attributes)
     return vi;
 }
 
-GLXFBConfig *glXGetFBConfigs(Display *dpy, int screen, int *nelements)
+GLXFBConfig *glp_impl_glXGetFBConfigs(Display *dpy, int screen, int *nelements)
 {
     int count = 0, i;
     XVisualInfo *vi = gl_visuals(dpy, screen, &count, 0);
@@ -4540,7 +4646,7 @@ GLXFBConfig *glXGetFBConfigs(Display *dpy, int screen, int *nelements)
     return list;
 }
 
-GLXFBConfig *glXChooseFBConfig(Display *dpy, int screen, int *attributes, int *nitems)
+GLXFBConfig *glp_impl_glXChooseFBConfig(Display *dpy, int screen, int *attributes, int *nitems)
 {
     log_attributes("glXChooseFBConfig", attributes);
     if (nitems) *nitems = 0;
@@ -4548,12 +4654,12 @@ GLXFBConfig *glXChooseFBConfig(Display *dpy, int screen, int *attributes, int *n
     return glXGetFBConfigs(dpy, screen, nitems);
 }
 
-GLXFBConfigSGIX *glXChooseFBConfigSGIX(Display *dpy, int screen, int *attributes, int *nitems)
+GLXFBConfigSGIX *glp_impl_glXChooseFBConfigSGIX(Display *dpy, int screen, int *attributes, int *nitems)
 {
     return glXChooseFBConfig(dpy, screen, attributes, nitems);
 }
 
-int glXGetFBConfigAttrib(Display *dpy, GLXFBConfig config, int attribute, int *value)
+int glp_impl_glXGetFBConfigAttrib(Display *dpy, GLXFBConfig config, int attribute, int *value)
 {
     (void)dpy;
     if (!config || !value) return GLX_BAD_ATTRIBUTE;
@@ -4564,12 +4670,12 @@ int glXGetFBConfigAttrib(Display *dpy, GLXFBConfig config, int attribute, int *v
     return config_value(attribute, value);
 }
 
-int glXGetFBConfigAttribSGIX(Display *dpy, GLXFBConfigSGIX config, int attribute, int *value)
+int glp_impl_glXGetFBConfigAttribSGIX(Display *dpy, GLXFBConfigSGIX config, int attribute, int *value)
 {
     return glXGetFBConfigAttrib(dpy, config, attribute, value);
 }
 
-XVisualInfo *glXGetVisualFromFBConfig(Display *dpy, GLXFBConfig config)
+XVisualInfo *glp_impl_glXGetVisualFromFBConfig(Display *dpy, GLXFBConfig config)
 {
     XVisualInfo templ;
     int count = 0;
@@ -4578,12 +4684,12 @@ XVisualInfo *glXGetVisualFromFBConfig(Display *dpy, GLXFBConfig config)
     return XGetVisualInfo(dpy, VisualIDMask, &templ, &count);
 }
 
-XVisualInfo *glXGetVisualFromFBConfigSGIX(Display *dpy, GLXFBConfigSGIX config)
+XVisualInfo *glp_impl_glXGetVisualFromFBConfigSGIX(Display *dpy, GLXFBConfigSGIX config)
 {
     return glXGetVisualFromFBConfig(dpy, config);
 }
 
-GLXFBConfigSGIX glXGetFBConfigFromVisualSGIX(Display *dpy, XVisualInfo *vis)
+GLXFBConfigSGIX glp_impl_glXGetFBConfigFromVisualSGIX(Display *dpy, XVisualInfo *vis)
 {
     GLXFBConfig config;
     (void)dpy;
@@ -4635,7 +4741,7 @@ static GLXContext new_context(Display *dpy, int screen, VisualID visual, GLXCont
     return c;
 }
 
-GLXContext glXCreateContext(Display *dpy, XVisualInfo *vis, GLXContext share, Bool direct)
+GLXContext glp_impl_glXCreateContext(Display *dpy, XVisualInfo *vis, GLXContext share, Bool direct)
 {
     GLXContext c;
     int mode = chosen_mode(vis);
@@ -4650,7 +4756,7 @@ GLXContext glXCreateContext(Display *dpy, XVisualInfo *vis, GLXContext share, Bo
     return c;
 }
 
-GLXContext glXCreateNewContext(Display *dpy, GLXFBConfig config, int render_type, GLXContext share, Bool direct)
+GLXContext glp_impl_glXCreateNewContext(Display *dpy, GLXFBConfig config, int render_type, GLXContext share, Bool direct)
 {
     GLXContext c;
     (void)direct;
@@ -4659,7 +4765,7 @@ GLXContext glXCreateNewContext(Display *dpy, GLXFBConfig config, int render_type
     return c;
 }
 
-GLXContext glXCreateContextWithConfigSGIX(Display *dpy, GLXFBConfigSGIX config, int render_type, GLXContext share,
+GLXContext glp_impl_glXCreateContextWithConfigSGIX(Display *dpy, GLXFBConfigSGIX config, int render_type, GLXContext share,
                                           Bool direct)
 {
     return glXCreateNewContext(dpy, config, render_type, share, direct);
@@ -4715,7 +4821,7 @@ static void context_release(struct glp_thread *t, GLXContext c)
 
 /* As GLX: a context current in another thread is destroyed when that thread
    releases it (its state stays valid until then); otherwise at once. */
-void glXDestroyContext(Display *dpy, GLXContext c)
+void glp_impl_glXDestroyContext(Display *dpy, GLXContext c)
 {
     struct glp_thread *t = glp_self();
     int deferred;
@@ -4737,7 +4843,7 @@ void glXDestroyContext(Display *dpy, GLXContext c)
     destroy_now(c);
 }
 
-void glXCopyContext(Display *dpy, GLXContext src, GLXContext dst, unsigned long mask)
+void glp_impl_glXCopyContext(Display *dpy, GLXContext src, GLXContext dst, unsigned long mask)
 {
     static int logged;
     (void)dpy; (void)src; (void)dst; (void)mask;
@@ -4775,7 +4881,7 @@ static int window_is_index(Display *app, GLXDrawable drawable)
     return index;
 }
 
-Bool glXMakeCurrent(Display *dpy, GLXDrawable drawable, GLXContext c)
+Bool glp_impl_glXMakeCurrent(Display *dpy, GLXDrawable drawable, GLXContext c)
 {
     struct glp_thread *t = glp_self();
     GLXContext current = t->current;
@@ -4861,18 +4967,18 @@ Bool glXMakeCurrent(Display *dpy, GLXDrawable drawable, GLXContext c)
     return True;
 }
 
-Bool glXMakeContextCurrent(Display *dpy, GLXDrawable draw, GLXDrawable read, GLXContext c)
+Bool glp_impl_glXMakeContextCurrent(Display *dpy, GLXDrawable draw, GLXDrawable read, GLXContext c)
 {
     (void)read;
     return glXMakeCurrent(dpy, draw, c);
 }
 
-Bool glXMakeCurrentReadSGI(Display *dpy, GLXDrawable draw, GLXDrawable read, GLXContext c)
+Bool glp_impl_glXMakeCurrentReadSGI(Display *dpy, GLXDrawable draw, GLXDrawable read, GLXContext c)
 {
     return glXMakeContextCurrent(dpy, draw, read, c);
 }
 
-void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
+void glp_impl_glXSwapBuffers(Display *dpy, GLXDrawable drawable)
 {
     struct glp_thread *t = glp_self();
     GLXContext current = t->current;
@@ -4898,33 +5004,33 @@ void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
     present(dpy ? dpy : (current ? current->dpy : 0), drawable, 1);
 }
 
-GLXContext glXGetCurrentContext(void) { return current_context(); }
+GLXContext glp_impl_glXGetCurrentContext(void) { return current_context(); }
 
-GLXDrawable glXGetCurrentDrawable(void)
+GLXDrawable glp_impl_glXGetCurrentDrawable(void)
 {
     GLXContext current = current_context();
     return current ? current->drawable : 0;
 }
 
-GLXDrawable glXGetCurrentReadDrawable(void) { return glXGetCurrentDrawable(); }
-GLXDrawable glXGetCurrentReadDrawableSGI(void) { return glXGetCurrentDrawable(); }
-GLXDrawable glXGetCurrentDrawableEXT(void) { return glXGetCurrentDrawable(); }
-Display *glXGetCurrentDisplay(void)
+GLXDrawable glp_impl_glXGetCurrentReadDrawable(void) { return glXGetCurrentDrawable(); }
+GLXDrawable glp_impl_glXGetCurrentReadDrawableSGI(void) { return glXGetCurrentDrawable(); }
+GLXDrawable glp_impl_glXGetCurrentDrawableEXT(void) { return glXGetCurrentDrawable(); }
+Display *glp_impl_glXGetCurrentDisplay(void)
 {
     GLXContext current = current_context();
     return current ? current->dpy : 0;
 }
 
-Display *glXGetCurrentDisplayEXT(void) { return glXGetCurrentDisplay(); }
-Bool glXIsDirect(Display *dpy, GLXContext c) { (void)dpy; (void)c; return True; }
-void glXWaitGL(void) { glFinish(); }
-void glXWaitX(void)
+Display *glp_impl_glXGetCurrentDisplayEXT(void) { return glXGetCurrentDisplay(); }
+Bool glp_impl_glXIsDirect(Display *dpy, GLXContext c) { (void)dpy; (void)c; return True; }
+void glp_impl_glXWaitGL(void) { glFinish(); }
+void glp_impl_glXWaitX(void)
 {
     GLXContext current = current_context();
     if (current) XSync(current->dpy, False);
 }
 
-int glXQueryContext(Display *dpy, GLXContext c, int attribute, int *value)
+int glp_impl_glXQueryContext(Display *dpy, GLXContext c, int attribute, int *value)
 {
     (void)dpy;
     if (!c || !value) return GLX_BAD_CONTEXT;
@@ -4936,7 +5042,7 @@ int glXQueryContext(Display *dpy, GLXContext c, int attribute, int *value)
     }
 }
 
-int glXQueryContextInfoEXT(Display *dpy, GLXContext c, int attribute, int *value)
+int glp_impl_glXQueryContextInfoEXT(Display *dpy, GLXContext c, int attribute, int *value)
 {
     (void)dpy;
     if (!c || !value) return GLX_BAD_CONTEXT;
@@ -4948,19 +5054,19 @@ int glXQueryContextInfoEXT(Display *dpy, GLXContext c, int attribute, int *value
     }
 }
 
-GLXContextID glXGetContextIDEXT(const GLXContext c) { return c ? c->id : 0; }
-GLXContext glXImportContextEXT(Display *dpy, GLXContextID id) { (void)dpy; (void)id; return 0; }
-void glXFreeContextEXT(Display *dpy, GLXContext c) { (void)dpy; (void)c; }
+GLXContextID glp_impl_glXGetContextIDEXT(const GLXContext c) { return c ? c->id : 0; }
+GLXContext glp_impl_glXImportContextEXT(Display *dpy, GLXContextID id) { (void)dpy; (void)id; return 0; }
+void glp_impl_glXFreeContextEXT(Display *dpy, GLXContext c) { (void)dpy; (void)c; }
 
 /* ---- GLX windows, pixmaps, pbuffers --------------------------------------------------- */
 
-GLXWindow glXCreateWindow(Display *dpy, GLXFBConfig config, Window win, int *attributes)
+GLXWindow glp_impl_glXCreateWindow(Display *dpy, GLXFBConfig config, Window win, int *attributes)
 {
     (void)dpy; (void)config; (void)attributes;
     return win;
 }
 
-void glXDestroyWindow(Display *dpy, GLXWindow win) { (void)dpy; (void)win; }
+void glp_impl_glXDestroyWindow(Display *dpy, GLXWindow win) { (void)dpy; (void)win; }
 
 static GLXPixmap new_pixmap(VisualID visual, Pixmap pixmap)
 {
@@ -4971,25 +5077,25 @@ static GLXPixmap new_pixmap(VisualID visual, Pixmap pixmap)
     return pixmap;
 }
 
-GLXPixmap glXCreateGLXPixmap(Display *dpy, XVisualInfo *vis, Pixmap pixmap)
+GLXPixmap glp_impl_glXCreateGLXPixmap(Display *dpy, XVisualInfo *vis, Pixmap pixmap)
 {
     (void)dpy;
     return new_pixmap(vis ? vis->visualid : 0, pixmap);
 }
 
-GLXPixmap glXCreatePixmap(Display *dpy, GLXFBConfig config, Pixmap pixmap, int *attributes)
+GLXPixmap glp_impl_glXCreatePixmap(Display *dpy, GLXFBConfig config, Pixmap pixmap, int *attributes)
 {
     (void)dpy; (void)attributes;
     return new_pixmap(config ? config->visual : 0, pixmap);
 }
 
-GLXPixmap glXCreateGLXPixmapWithConfigSGIX(Display *dpy, GLXFBConfigSGIX config, Pixmap pixmap)
+GLXPixmap glp_impl_glXCreateGLXPixmapWithConfigSGIX(Display *dpy, GLXFBConfigSGIX config, Pixmap pixmap)
 {
     return glXCreatePixmap(dpy, config, pixmap, 0);
 }
 
-void glXDestroyGLXPixmap(Display *dpy, GLXPixmap pix) { (void)dpy; remove_drawable(pix); }
-void glXDestroyPixmap(Display *dpy, GLXPixmap pix) { (void)dpy; remove_drawable(pix); }
+void glp_impl_glXDestroyGLXPixmap(Display *dpy, GLXPixmap pix) { (void)dpy; remove_drawable(pix); }
+void glp_impl_glXDestroyPixmap(Display *dpy, GLXPixmap pix) { (void)dpy; remove_drawable(pix); }
 
 static XID new_pbuffer(unsigned int width, unsigned int height)
 {
@@ -5004,7 +5110,7 @@ static XID new_pbuffer(unsigned int width, unsigned int height)
     return d->id;
 }
 
-GLXPbuffer glXCreatePbuffer(Display *dpy, GLXFBConfig config, int *attributes)
+GLXPbuffer glp_impl_glXCreatePbuffer(Display *dpy, GLXFBConfig config, int *attributes)
 {
     unsigned int width = 0, height = 0;
     const int *a;
@@ -5016,17 +5122,17 @@ GLXPbuffer glXCreatePbuffer(Display *dpy, GLXFBConfig config, int *attributes)
     return new_pbuffer(width, height);
 }
 
-GLXPbufferSGIX glXCreateGLXPbufferSGIX(Display *dpy, GLXFBConfigSGIX config, unsigned int width,
+GLXPbufferSGIX glp_impl_glXCreateGLXPbufferSGIX(Display *dpy, GLXFBConfigSGIX config, unsigned int width,
                                         unsigned int height, int *attributes)
 {
     (void)dpy; (void)config; (void)attributes;
     return new_pbuffer(width, height);
 }
 
-void glXDestroyPbuffer(Display *dpy, GLXPbuffer pbuf) { (void)dpy; remove_drawable(pbuf); }
-void glXDestroyGLXPbufferSGIX(Display *dpy, GLXPbufferSGIX pbuf) { (void)dpy; remove_drawable(pbuf); }
+void glp_impl_glXDestroyPbuffer(Display *dpy, GLXPbuffer pbuf) { (void)dpy; remove_drawable(pbuf); }
+void glp_impl_glXDestroyGLXPbufferSGIX(Display *dpy, GLXPbufferSGIX pbuf) { (void)dpy; remove_drawable(pbuf); }
 
-void glXQueryDrawable(Display *dpy, GLXDrawable draw, int attribute, unsigned int *value)
+void glp_impl_glXQueryDrawable(Display *dpy, GLXDrawable draw, int attribute, unsigned int *value)
 {
     GLXContext current = current_context();
     int sx, sy;
@@ -5042,17 +5148,17 @@ void glXQueryDrawable(Display *dpy, GLXDrawable draw, int attribute, unsigned in
     }
 }
 
-int glXQueryGLXPbufferSGIX(Display *dpy, GLXPbufferSGIX pbuf, int attribute, unsigned int *value)
+int glp_impl_glXQueryGLXPbufferSGIX(Display *dpy, GLXPbufferSGIX pbuf, int attribute, unsigned int *value)
 {
     glXQueryDrawable(dpy, pbuf, attribute, value);
     return 0;
 }
 
 /* No buffer-clobber events: the host buffers are never damaged. */
-void glXSelectEvent(Display *dpy, GLXDrawable drawable, unsigned long mask) { (void)dpy; (void)drawable; (void)mask; }
-void glXGetSelectedEvent(Display *dpy, GLXDrawable drawable, unsigned long *mask) { (void)dpy; (void)drawable; if (mask) *mask = 0; }
-void glXSelectEventSGIX(Display *dpy, GLXDrawable drawable, unsigned long mask) { glXSelectEvent(dpy, drawable, mask); }
-void glXGetSelectedEventSGIX(Display *dpy, GLXDrawable drawable, unsigned long *mask) { glXGetSelectedEvent(dpy, drawable, mask); }
+void glp_impl_glXSelectEvent(Display *dpy, GLXDrawable drawable, unsigned long mask) { (void)dpy; (void)drawable; (void)mask; }
+void glp_impl_glXGetSelectedEvent(Display *dpy, GLXDrawable drawable, unsigned long *mask) { (void)dpy; (void)drawable; if (mask) *mask = 0; }
+void glp_impl_glXSelectEventSGIX(Display *dpy, GLXDrawable drawable, unsigned long mask) { glXSelectEvent(dpy, drawable, mask); }
+void glp_impl_glXGetSelectedEventSGIX(Display *dpy, GLXDrawable drawable, unsigned long *mask) { glXGetSelectedEvent(dpy, drawable, mask); }
 
 /* ---- GLX strings, procedures, sync -------------------------------------------------------------- */
 
@@ -5060,7 +5166,7 @@ static const char glx_extensions[] =
     "GLX_EXT_visual_info GLX_EXT_import_context GLX_SGI_make_current_read GLX_SGI_swap_control "
     "GLX_SGI_video_sync GLX_SGIX_fbconfig GLX_SGIX_pbuffer";
 
-const char *glXGetClientString(Display *dpy, int name)
+const char *glp_impl_glXGetClientString(Display *dpy, int name)
 {
     (void)dpy;
     switch (name) {
@@ -5071,30 +5177,30 @@ const char *glXGetClientString(Display *dpy, int name)
     }
 }
 
-const char *glXQueryServerString(Display *dpy, int screen, int name)
+const char *glp_impl_glXQueryServerString(Display *dpy, int screen, int name)
 {
     (void)screen;
     return glXGetClientString(dpy, name);
 }
 
-const char *glXQueryExtensionsString(Display *dpy, int screen)
+const char *glp_impl_glXQueryExtensionsString(Display *dpy, int screen)
 {
     (void)dpy; (void)screen;
     return glx_extensions;
 }
 
-void (*glXGetProcAddress(const GLubyte *name))(void)
+glp_proc glp_impl_glXGetProcAddress(const GLubyte *name)
 {
     static void *self;
     if (!self) self = dlopen("libGL.so", RTLD_LAZY);
     return self ? (void (*)(void))dlsym(self, (const char *)name) : 0;
 }
 
-void (*glXGetProcAddressARB(const GLubyte *name))(void) { return glXGetProcAddress(name); }
+glp_proc glp_impl_glXGetProcAddressARB(const GLubyte *name) { return glXGetProcAddress(name); }
 
 static unsigned int video_count;
 
-int glXGetVideoSyncSGI(unsigned int *count)
+int glp_impl_glXGetVideoSyncSGI(unsigned int *count)
 {
     glp_lock();
     ++video_count;
@@ -5103,7 +5209,7 @@ int glXGetVideoSyncSGI(unsigned int *count)
     return 0;
 }
 
-int glXWaitVideoSyncSGI(int divisor, int remainder, unsigned int *count)
+int glp_impl_glXWaitVideoSyncSGI(int divisor, int remainder, unsigned int *count)
 {
     glp_lock();
     ++video_count;
@@ -5115,36 +5221,36 @@ int glXWaitVideoSyncSGI(int divisor, int remainder, unsigned int *count)
     return 0;
 }
 
-int glXSwapIntervalSGI(int interval) { (void)interval; return 0; }
+int glp_impl_glXSwapIntervalSGI(int interval) { (void)interval; return 0; }
 
 /* Large-system features (channels, hyperpipes, swap groups, video sources) do not exist here. */
-int glXBindChannelToWindowSGIX(Display *dpy, int screen, int channel, Window window) { (void)dpy; (void)screen; (void)channel; (void)window; return 0; }
-int glXQueryChannelDeltasSGIX(Display *dpy, int screen, int channel, int *dx, int *dy, int *dw, int *dh) { (void)dpy; (void)screen; (void)channel; (void)dx; (void)dy; (void)dw; (void)dh; return 0; }
-int glXChannelRectSGIX(Display *dpy, int screen, int channel, int x, int y, int w, int h) { (void)dpy; (void)screen; (void)channel; (void)x; (void)y; (void)w; (void)h; return 0; }
-int glXQueryChannelRectSGIX(Display *dpy, int screen, int channel, int *x, int *y, int *w, int *h) { (void)dpy; (void)screen; (void)channel; (void)x; (void)y; (void)w; (void)h; return 0; }
-int glXChannelRectSyncSGIX(Display *dpy, int screen, int channel, GLenum synctype) { (void)dpy; (void)screen; (void)channel; (void)synctype; return 0; }
-GLXHyperpipeNetworkSGIX *glXQueryHyperpipeNetworkSGIX(Display *dpy, int *npipes) { (void)dpy; if (npipes) *npipes = 0; return 0; }
-int glXHyperpipeConfigSGIX(Display *dpy, int networkId, int npipes, GLXHyperpipeConfigSGIX *cfg, int *hpId) { (void)dpy; (void)networkId; (void)npipes; (void)cfg; (void)hpId; return GLX_BAD_CONTEXT; }
-int glXDestroyHyperpipeConfigSGIX(Display *dpy, int hpId) { (void)dpy; (void)hpId; return GLX_BAD_CONTEXT; }
-GLXHyperpipeConfigSGIX *glXQueryHyperpipeConfigSGIX(Display *dpy, int hpId, int *npipes) { (void)dpy; (void)hpId; if (npipes) *npipes = 0; return 0; }
-int glXBindHyperpipeSGIX(Display *dpy, int hpId) { (void)dpy; (void)hpId; return GLX_BAD_CONTEXT; }
-int glXQueryHyperpipeBestAttribSGIX(Display *dpy, int timeSlice, int attrib, int size, void *attribList, void *returnAttribList) { (void)dpy; (void)timeSlice; (void)attrib; (void)size; (void)attribList; (void)returnAttribList; return GLX_BAD_CONTEXT; }
-int glXQueryHyperpipeAttribSGIX(Display *dpy, int timeSlice, int attrib, int size, void *returnAttribList) { (void)dpy; (void)timeSlice; (void)attrib; (void)size; (void)returnAttribList; return GLX_BAD_CONTEXT; }
-int glXHyperpipeAttribSGIX(Display *dpy, int timeSlice, int attrib, int size, void *attribList) { (void)dpy; (void)timeSlice; (void)attrib; (void)size; (void)attribList; return GLX_BAD_CONTEXT; }
-void glXJoinSwapGroupSGIX(Display *dpy, GLXDrawable drawable, GLXDrawable member) { (void)dpy; (void)drawable; (void)member; }
-void glXBindSwapBarrierSGIX(Display *dpy, GLXDrawable drawable, int barrier) { (void)dpy; (void)drawable; (void)barrier; }
-Bool glXQueryMaxSwapBarriersSGIX(Display *dpy, int screen, int *max) { (void)dpy; (void)screen; if (max) *max = 0; return False; }
+int glp_impl_glXBindChannelToWindowSGIX(Display *dpy, int screen, int channel, Window window) { (void)dpy; (void)screen; (void)channel; (void)window; return 0; }
+int glp_impl_glXQueryChannelDeltasSGIX(Display *dpy, int screen, int channel, int *dx, int *dy, int *dw, int *dh) { (void)dpy; (void)screen; (void)channel; (void)dx; (void)dy; (void)dw; (void)dh; return 0; }
+int glp_impl_glXChannelRectSGIX(Display *dpy, int screen, int channel, int x, int y, int w, int h) { (void)dpy; (void)screen; (void)channel; (void)x; (void)y; (void)w; (void)h; return 0; }
+int glp_impl_glXQueryChannelRectSGIX(Display *dpy, int screen, int channel, int *x, int *y, int *w, int *h) { (void)dpy; (void)screen; (void)channel; (void)x; (void)y; (void)w; (void)h; return 0; }
+int glp_impl_glXChannelRectSyncSGIX(Display *dpy, int screen, int channel, GLenum synctype) { (void)dpy; (void)screen; (void)channel; (void)synctype; return 0; }
+GLXHyperpipeNetworkSGIX *glp_impl_glXQueryHyperpipeNetworkSGIX(Display *dpy, int *npipes) { (void)dpy; if (npipes) *npipes = 0; return 0; }
+int glp_impl_glXHyperpipeConfigSGIX(Display *dpy, int networkId, int npipes, GLXHyperpipeConfigSGIX *cfg, int *hpId) { (void)dpy; (void)networkId; (void)npipes; (void)cfg; (void)hpId; return GLX_BAD_CONTEXT; }
+int glp_impl_glXDestroyHyperpipeConfigSGIX(Display *dpy, int hpId) { (void)dpy; (void)hpId; return GLX_BAD_CONTEXT; }
+GLXHyperpipeConfigSGIX *glp_impl_glXQueryHyperpipeConfigSGIX(Display *dpy, int hpId, int *npipes) { (void)dpy; (void)hpId; if (npipes) *npipes = 0; return 0; }
+int glp_impl_glXBindHyperpipeSGIX(Display *dpy, int hpId) { (void)dpy; (void)hpId; return GLX_BAD_CONTEXT; }
+int glp_impl_glXQueryHyperpipeBestAttribSGIX(Display *dpy, int timeSlice, int attrib, int size, void *attribList, void *returnAttribList) { (void)dpy; (void)timeSlice; (void)attrib; (void)size; (void)attribList; (void)returnAttribList; return GLX_BAD_CONTEXT; }
+int glp_impl_glXQueryHyperpipeAttribSGIX(Display *dpy, int timeSlice, int attrib, int size, void *returnAttribList) { (void)dpy; (void)timeSlice; (void)attrib; (void)size; (void)returnAttribList; return GLX_BAD_CONTEXT; }
+int glp_impl_glXHyperpipeAttribSGIX(Display *dpy, int timeSlice, int attrib, int size, void *attribList) { (void)dpy; (void)timeSlice; (void)attrib; (void)size; (void)attribList; return GLX_BAD_CONTEXT; }
+void glp_impl_glXJoinSwapGroupSGIX(Display *dpy, GLXDrawable drawable, GLXDrawable member) { (void)dpy; (void)drawable; (void)member; }
+void glp_impl_glXBindSwapBarrierSGIX(Display *dpy, GLXDrawable drawable, int barrier) { (void)dpy; (void)drawable; (void)barrier; }
+Bool glp_impl_glXQueryMaxSwapBarriersSGIX(Display *dpy, int screen, int *max) { (void)dpy; (void)screen; if (max) *max = 0; return False; }
 /* glx.h declares these only with the video and media library headers; their
    argument types are opaque here. */
-GLXVideoSourceSGIX glXCreateGLXVideoSourceSGIX(Display *dpy, int screen, void *server, int path, int nodeClass, int node) { (void)dpy; (void)screen; (void)server; (void)path; (void)nodeClass; (void)node; return 0; }
-void glXDestroyGLXVideoSourceSGIX(Display *dpy, GLXVideoSourceSGIX source) { (void)dpy; (void)source; }
-Bool glXAssociateDMPbufferSGIX(Display *dpy, GLXPbufferSGIX pbuffer, void *params, void *buffer) { (void)dpy; (void)pbuffer; (void)params; (void)buffer; return False; }
+GLXVideoSourceSGIX glp_impl_glXCreateGLXVideoSourceSGIX(Display *dpy, int screen, void *server, int path, int nodeClass, int node) { (void)dpy; (void)screen; (void)server; (void)path; (void)nodeClass; (void)node; return 0; }
+void glp_impl_glXDestroyGLXVideoSourceSGIX(Display *dpy, GLXVideoSourceSGIX source) { (void)dpy; (void)source; }
+Bool glp_impl_glXAssociateDMPbufferSGIX(Display *dpy, GLXPbufferSGIX pbuffer, void *params, void *buffer) { (void)dpy; (void)pbuffer; (void)params; (void)buffer; return False; }
 
 /* ---- glXUseXFont ---------------------------------------------------------------------------------- */
 
 /* One glBitmap display list per glyph, drawn by X into a bitmap (the method
    of Mesa's xfonts.c). */
-void glXUseXFont(Font font, int first, int count, int listBase)
+void glp_impl_glXUseXFont(Font font, int first, int count, int listBase)
 {
     GLXContext current = current_context();
     Display *dpy = current ? current->dpy : 0;

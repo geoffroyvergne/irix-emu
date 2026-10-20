@@ -8,14 +8,16 @@
 #            (libglpass_x with freed colormaps, closed displays and threads) and
 #            glshare (one context current in one thread at most) and glmasks
 #            (colour index masks taking several host passes, pixel by pixel) and
-#            glstubs (unsupported entry points logged once, NULL arrays ignored)
+#            glstubs (unsupported entry points logged once, NULL arrays ignored),
+#            and glpass-probe (whether the emulator's GL bridge answers, for
+#            the boot script of the system-wide install: install.sh)
 # glpass_gen.c and glpass_fn.h come from glpass/tools/glpass-gen.py on the host.
 CC      = /usr/freeware/bin/gcc
 CFLAGS  = -mabi=n32 -O2 -fPIC -Wall
 HEADERS = glpass_protocol.h glpass_fn.h glpass_internal.h glpass_xstore.h
 OBJS    = glpass.o glpass_gen.o
 
-all: libGL.so libglpass_x.so gltri glthreads glthreads_pt glmove glcheck glgone glcolors glshare glmasks glstubs
+all: libGL.so libglpass_x.so gltri glthreads glthreads_pt glmove glcheck glgone glcolors glshare glmasks glstubs glpass-probe
 
 glpass.o: glpass.c $(HEADERS)
 	$(CC) $(CFLAGS) -c glpass.c
@@ -60,8 +62,11 @@ glshare: glshare.c libGL.so
 glmasks: glmasks.c libGL.so
 	$(CC) -mabi=n32 -O2 -o glmasks glmasks.c -L. -lGL -lX11
 
+glpass-probe: glprobe.c glpass_protocol.h libGL.so
+	$(CC) -mabi=n32 -O2 -o glpass-probe glprobe.c -L. -lGL -lX11
+
 glstubs: glstubs.c libGL.so
 	$(CC) -mabi=n32 -O2 -o glstubs glstubs.c -L. -lGL -lX11
 
 clean:
-	rm -f *.o libGL.so libglpass_x.so gltri glthreads glthreads_pt glmove glcheck glgone glcolors glshare glmasks glstubs
+	rm -f *.o libGL.so libglpass_x.so gltri glthreads glthreads_pt glmove glcheck glgone glcolors glshare glmasks glstubs glpass-probe

@@ -107,7 +107,11 @@ System::System(SystemConfig config, FrameBuffer& display)
     glBridge_ = GlBridge::create([this](uint32_t drawable, const DisplayOverlay* overlay) {
         if (auto* newport = dynamic_cast<Newport*>(graphics_.get())) newport->setOverlay(drawable, overlay);
     });
-    static_cast<R5000&>(*cpu_).setHypercallHandler([this](R5000& cpu) { handleHypercall(cpu); });
+    // INDY_NO_HYPERCALL: the hypercall word traps as on real hardware (the
+    // guest's glpass then falls back to IRIX's own OpenGL).
+    if (std::getenv("INDY_NO_HYPERCALL") == nullptr) {
+        static_cast<R5000&>(*cpu_).setHypercallHandler([this](R5000& cpu) { handleHypercall(cpu); });
+    }
     static_cast<R5000&>(*cpu_).setBusErrorHook(
         [this](PhysAddr addr, bool isWrite) { mc_->reportCpuBusError(addr, isWrite); });
     hpc3_.setScsiIrqCallback([this, updateScsiIrq](unsigned channel, bool level) {
